@@ -1,6 +1,6 @@
 {
   "name": "@guotree/magpie-websearch",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Web search APIs for magpie. Current: AnySearch, Keenable, Linkup and Querit; all require a key, managed by magpie.",
   "type": "module",
   "main": "./index.mjs",
