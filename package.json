@@ -43,6 +43,8 @@
   },
   "scripts": {
     "test": "node --test test/anysearch.test.mjs test/keenable.test.mjs test/linkup.test.mjs test/querit.test.mjs test/index.test.mjs test/search-contract.test.mjs test/core.test.mjs test/anonymous.test.mjs",
-    "check": "node scripts/check.mjs && npm test"
+    "check": "node scripts/check.mjs && npm test",
+    "check:bun": "bun scripts/check.mjs && bun test ./test/*.test.mjs",
+    "smoke:magpie": "node scripts/smoke-magpie.mjs"
   }
 }

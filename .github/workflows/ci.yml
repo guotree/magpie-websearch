@@ -30,3 +30,36 @@ jobs:
 
       - name: Check what npm would publish
         run: npm pack --dry-run
+
+  bun:
+    name: Bun runtime
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun run check:bun
+
+  magpie:
+    name: Magpie host smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - name: Install magpie
+        run: |
+          curl -fsSL https://usemagpie.ai/install.sh | sh -s -- --cli
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Unpack the npm package for host testing
+        run: |
+          npm pack --pack-destination "$RUNNER_TEMP"
+          mkdir -p "$RUNNER_TEMP/magpie-websearch"
+          tar -xzf "$RUNNER_TEMP"/guotree-magpie-websearch-*.tgz -C "$RUNNER_TEMP/magpie-websearch" --strip-components=1
+      - run: npm run smoke:magpie
+        env:
+          MAGPIE_PLUGIN_DIR: ${{ runner.temp }}/magpie-websearch
