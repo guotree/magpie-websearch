@@ -4,6 +4,7 @@ import { createLinkup } from "./src/providers/linkup.mjs"
 import { createMetaso } from "./src/providers/metaso.mjs"
 import { createParallel } from "./src/providers/parallel.mjs"
 import { createQuerit } from "./src/providers/querit.mjs"
+import { createSerpapi } from "./src/providers/serpapi.mjs"
 import { createTinyfish } from "./src/providers/tinyfish.mjs"
 import { optionGroup } from "./src/core.mjs"
 
@@ -14,6 +15,7 @@ const PROVIDERS = [
   ["metaso", createMetaso],
   ["parallel", createParallel],
   ["querit", createQuerit],
+  ["serpapi", createSerpapi],
   ["tinyfish", createTinyfish],
 ]
 const KNOWN = new Set(PROVIDERS.map(([id]) => id))

@@ -283,3 +283,57 @@ export const PARALLEL_MCP_RESPONSE = {
     structuredContent: PARALLEL_CASE.response,
   },
 }
+
+// SerpApi Google Search API observed 2026-11-04:
+// https://serpapi.com/search-api
+// https://serpapi.com/organic-results
+export const SERPAPI_CASE = {
+  response: {
+    search_metadata: {
+      status: "Success",
+    },
+    organic_results: [
+      {
+        position: 1,
+        title: "SerpApi hit",
+        link: "https://example.com/serpapi",
+        snippet: "SerpApi snippet",
+        date: "2026-11-04",
+      },
+      {
+        position: 2,
+        title: "SerpApi fallback",
+        link: "https://example.com/serpapi-fallback",
+        snippet: "Solo snippet",
+      },
+      {
+        position: 3,
+        title: "",
+        link: "https://example.com/bare",
+      },
+      {
+        position: 4,
+        title: "No URL",
+        snippet: "dropped",
+      },
+    ],
+  },
+  expected: [
+    {
+      url: "https://example.com/serpapi",
+      title: "SerpApi hit",
+      text: "SerpApi snippet",
+      age: "2026-11-04",
+    },
+    {
+      url: "https://example.com/serpapi-fallback",
+      title: "SerpApi fallback",
+      text: "Solo snippet",
+    },
+    {
+      url: "https://example.com/bare",
+      title: "https://example.com/bare",
+      text: "",
+    },
+  ],
+}

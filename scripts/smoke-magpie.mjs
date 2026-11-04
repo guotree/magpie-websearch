@@ -36,14 +36,41 @@ const upstream = createServer(async (req, res) => {
   calls.push({ path: req.url, method: req.method, body, key: req.headers.authorization,
     apiKey: req.headers["x-api-key"], title: req.headers["x-keenable-title"],
     accessMode: req.headers["x-tinyfish-access-mode"] })
-  const query = body?.params?.arguments?.query ?? body?.params?.arguments?.search_queries?.[0] ?? body?.search_queries?.[0] ?? body?.q ?? body?.query ?? target.searchParams.get("query")
+  const query = body?.params?.arguments?.query ?? body?.params?.arguments?.search_queries?.[0] ?? body?.search_queries?.[0] ?? body?.q ?? body?.query ?? target.searchParams.get("query") ?? target.searchParams.get("q")
   if (query === "rate limited") {
     res.writeHead(429, { "Retry-After": body?.q ? "30" : "120" }).end("slow down")
     return
   }
   if (query === "timeout") return
   res.setHeader("Content-Type", "application/json")
-  if (target.pathname.startsWith("/tinyfish/")) {
+  if (target.pathname.startsWith("/serpapi/")) {
+    if (query === "serpapi private refusal" || target.searchParams.get("api_key") === "serpapi-resting-dummy-key") {
+      // Echo the request and leave the body open: a known 429 must return
+      // immediately without consuming or exposing the credential-bearing body.
+      res.writeHead(429, { "Retry-After": "0007", "X-Private": "private header" })
+      res.write(req.url)
+    } else if (query === "serpapi private status") {
+      res.end(JSON.stringify({ search_metadata: { status: req.url } }))
+    } else if (query === "serpapi private JSON") {
+      res.end("invalid JSON: " + req.url)
+    } else if (query === "serpapi private error") {
+      res.end(JSON.stringify({ error: req.url, organic_results: [{ link: "https://example.com/invalid" }] }))
+    } else if (query === "serpapi empty") {
+      res.end(JSON.stringify({
+        search_metadata: { status: "Success" },
+        search_information: { organic_results_state: "Fully empty" },
+        error: "Google hasn't returned any results for this query.",
+      }))
+    } else {
+      res.end(JSON.stringify({
+        search_metadata: { status: "Success" },
+        organic_results: [
+          { title: "SerpApi smoke page", link: "https://example.com/serpapi", snippet: "Local SerpApi result", date: "Nov 4, 2026" },
+          { title: "Over the local cap", link: "https://example.com/serpapi-extra", snippet: "Must be capped" },
+        ],
+      }))
+    }
+  } else if (target.pathname.startsWith("/tinyfish/")) {
     const result = { query, total_results: 2, page: 0, results: [
       { title: "TinyFish smoke page", url: "https://example.com/tinyfish", snippet: "Local TinyFish result", date: "Nov 4, 2026" },
       { title: "Over the local cap", url: "https://example.com/tinyfish-extra", snippet: "Must be capped" },
@@ -117,7 +144,7 @@ try {
   console.log("Loading the plugin in an isolated magpie configuration…")
   await run("plugin", "add", root)
   const definitions = await loadedSearches()
-  assert.deepEqual(definitions.map((entry) => entry.id).sort(), ["anysearch", "keenable", "linkup", "metaso", "parallel", "querit", "tinyfish"])
+  assert.deepEqual(definitions.map((entry) => entry.id).sort(), ["anysearch", "keenable", "linkup", "metaso", "parallel", "querit", "serpapi", "tinyfish"])
   assert.deepEqual(definitions.filter((entry) => entry.keyOptional).map((entry) => entry.id).sort(), ["anysearch", "keenable", "parallel", "tinyfish"])
   await run("plugin", "options", root, JSON.stringify({ enable: ["linkup", "querit"], disable: ["querit"] }))
   assert.deepEqual(await loadedIDs(), ["linkup"])
@@ -126,6 +153,7 @@ try {
     anysearch: { cacheTTL: 0 }, keenable: { cacheTTL: 0 },
     metaso: { maxResults: 2, cacheTTL: 0, timeout: 500 },
     parallel: { maxResults: 1, mode: "fast", cacheTTL: 0, timeout: 500 },
+    serpapi: { maxResults: 1, hl: "en", gl: "us", cacheTTL: 0, timeout: 500 },
     tinyfish: { maxResults: 1, language: "zh", cacheTTL: 0, timeout: 500 },
   }))
   await run("search", "add", "magpie-websearch:linkup", "smoke-dummy-key", `url=http://127.0.0.1:${upstream.address().port}/proxy/v1/search`)
@@ -296,7 +324,75 @@ try {
   assert.equal(metasoCall.body.scope, "webpage")
   assert.equal(metasoCall.body.size, 2)
   await run("search", "rm", "magpie-websearch:metaso")
-  console.log("✓ magpie loads seven APIs, filters registrations, applies options/custom URLs, handles timeout/429, and runs anonymous search with cooldown and fallback; Parallel and TinyFish support MCP JSON/SSE and keyed REST")
+  console.log("Checking SerpApi URL auth, empty results, timeout, refusal fallback, and private errors…")
+  const serpapiURL = `http://127.0.0.1:${upstream.address().port}/serpapi`
+  await run("search", "add", "magpie-websearch:serpapi", "serpapi-dummy-key", `url=${serpapiURL}/search`)
+  await run("search", "move", "magpie-websearch:serpapi", "1")
+  const serpapiResult = await search("serpapi smoke query")
+  assert.match(serpapiResult, /example\.com\/serpapi/)
+  assert.doesNotMatch(serpapiResult, /serpapi-extra/)
+  const serpapiCall = calls.at(-1)
+  assert.equal(serpapiCall.method, "GET")
+  const serpapiTarget = new URL(serpapiCall.path, "http://localhost")
+  assert.equal(serpapiTarget.pathname, "/serpapi/search")
+  assert.equal(serpapiTarget.searchParams.get("engine"), "google")
+  assert.equal(serpapiTarget.searchParams.get("output"), "json")
+  assert.equal(serpapiTarget.searchParams.get("q"), "serpapi smoke query")
+  assert.equal(serpapiTarget.searchParams.get("api_key"), "serpapi-dummy-key")
+  assert.equal(serpapiTarget.searchParams.get("hl"), "en")
+  assert.equal(serpapiTarget.searchParams.get("gl"), "us")
+  assert.match(await failure("serpapi empty"), /found nothing/)
+  assert.match(await failure("timeout"), /SerpApi search timed out after 500ms/)
+  const assertPrivate = (output, query) => {
+    for (const marker of ["serpapi-dummy-key", "serpapi-fallback-dummy-key",
+      "serpapi-resting-dummy-key", "serpapi-good-dummy-key", query,
+      encodeURIComponent(query), new URLSearchParams({ q: query }).toString().slice(2), "api_key="]) {
+      assert.equal((output + gatewayLog).includes(marker), false, "host errors must not expose SerpApi request data")
+    }
+  }
+  for (const [query, expected] of [
+    ["serpapi private status", /unexpected search status/],
+    ["serpapi private JSON", /malformed JSON/],
+    ["serpapi private error", /SerpApi search failed/],
+  ]) {
+    const output = await failure(query)
+    assert.match(output, expected)
+    assertPrivate(output, query)
+  }
+  const refused = await failure("serpapi private refusal")
+  assert.match(refused, /429/)
+  assert.match(gatewayLog, /SerpApi API error 429: rate limit or search quota exceeded, retry after 7s/)
+  assertPrivate(refused, "serpapi private refusal")
+  await run("search", "rm", "magpie-websearch:serpapi")
+  await run("search", "add", "magpie-websearch:serpapi", "serpapi-fallback-dummy-key", `url=${serpapiURL}/search`)
+  await run("search", "move", "magpie-websearch:serpapi", "1")
+  await run("search", "on", "magpie-websearch:linkup")
+  const beforeSerpapiFallback = calls.length
+  const fallback = await search("serpapi private refusal")
+  assert.match(fallback, /example\.com\/smoke/)
+  assert.equal(calls.length, beforeSerpapiFallback + 2)
+  assert.ok(calls.at(-2).path.startsWith("/serpapi/search?"))
+  assert.equal(calls.at(-1).path, "/proxy/v1/search")
+  assertPrivate(fallback, "serpapi private refusal")
+  await run("search", "rm", "magpie-websearch:serpapi")
+  // magpie defers resting keys behind healthy keys of the same API; it does
+  // not disable a singleton. Fixed order proves the rest changes preference.
+  await run("search", "add", "magpie-websearch:serpapi",
+    "serpapi-resting-dummy-key,serpapi-good-dummy-key", `url=${serpapiURL}/search`, "pick=order")
+  await run("search", "move", "magpie-websearch:serpapi", "1")
+  const beforeRotation = calls.length
+  assert.match(await search("serpapi key rotation"), /example\.com\/serpapi/)
+  assert.equal(calls.length, beforeRotation + 2)
+  assert.equal(new URL(calls.at(-2).path, "http://localhost").searchParams.get("api_key"), "serpapi-resting-dummy-key")
+  assert.equal(new URL(calls.at(-1).path, "http://localhost").searchParams.get("api_key"), "serpapi-good-dummy-key")
+  const beforeRested = calls.length
+  const preferred = await search("serpapi resting preference")
+  assert.match(preferred, /example\.com\/serpapi/)
+  assert.equal(calls.length, beforeRested + 1, "a resting key must follow the healthy key even in fixed order")
+  assert.equal(new URL(calls.at(-1).path, "http://localhost").searchParams.get("api_key"), "serpapi-good-dummy-key")
+  assertPrivate(preferred, "serpapi resting preference")
+  await run("search", "rm", "magpie-websearch:serpapi")
+  console.log("✓ magpie loads eight APIs, filters registrations, applies options/custom URLs, handles timeout/429, and runs anonymous search with cooldown and fallback; Parallel and TinyFish support MCP JSON/SSE and keyed REST; SerpApi supports keyed REST with URL auth and leak protection")
 } catch (error) {
   console.error(gatewayLog)
   throw error

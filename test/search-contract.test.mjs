@@ -3,9 +3,9 @@ import assert from "node:assert/strict"
 import { WebSearch } from "../index.mjs"
 import { resolveEndpoint } from "../src/core.mjs"
 import { context, json, stubFetch } from "./harness.mjs"
-import { ANYSEARCH_CASE, KEENABLE_CASE, LINKUP_CASE, METASO_CASE, PARALLEL_CASE, QUERIT_CASE, TINYFISH_CASE } from "./cases.mjs"
+import { ANYSEARCH_CASE, KEENABLE_CASE, LINKUP_CASE, METASO_CASE, PARALLEL_CASE, QUERIT_CASE, SERPAPI_CASE, TINYFISH_CASE } from "./cases.mjs"
 
-const fixtures = { anysearch: ANYSEARCH_CASE, keenable: KEENABLE_CASE, linkup: LINKUP_CASE, metaso: METASO_CASE, parallel: PARALLEL_CASE, querit: QUERIT_CASE, tinyfish: TINYFISH_CASE }
+const fixtures = { anysearch: ANYSEARCH_CASE, keenable: KEENABLE_CASE, linkup: LINKUP_CASE, metaso: METASO_CASE, parallel: PARALLEL_CASE, querit: QUERIT_CASE, serpapi: SERPAPI_CASE, tinyfish: TINYFISH_CASE }
 
 test("custom Base URL uses the exact endpoint as given and validates HTTP(S)", () => {
   for (const [base, want] of [
@@ -38,7 +38,7 @@ for (const [id, fixture] of Object.entries(fixtures)) {
       const u3 = new URL(fake.calls[3].url)
       assert.equal(u0.origin + u0.pathname, "https://custom.example/proxy/v1")
       assert.equal(u3.origin + u3.pathname, "https://other.example/v1/search")
-      if (id === "tinyfish") {
+      if (id === "tinyfish" || id === "serpapi") {
         assert.equal(fake.calls[2].init.method, "GET")
         assert.equal(fake.calls[2].body, undefined)
       } else {
@@ -124,6 +124,7 @@ test("invalid provider options fail loading and disabled providers are not initi
     { linkup: { timeout: 2_147_483_648 } },
     { tinyfish: { domainType: "invalid" } }, { tinyfish: { maxResults: 0 } },
     { parallel: { mode: "invalid" } }, { parallel: { maxResults: 0 } }, { parallel: { maxResults: 21 } },
+    { serpapi: { safe: "invalid" } }, { serpapi: { maxResults: 0 } }, { serpapi: { maxResults: 11 } },
   ]) await assert.rejects(WebSearch({}, options), TypeError)
   const { search } = await WebSearch({}, { disable: ["linkup"], linkup: { depth: "invalid" } })
   assert.equal(search.linkup, undefined)
@@ -131,6 +132,8 @@ test("invalid provider options fail loading and disabled providers are not initi
   assert.equal(disabled.search.tinyfish, undefined)
   const disabledParallel = await WebSearch({}, { disable: ["parallel"], parallel: { mode: "invalid" } })
   assert.equal(disabledParallel.search.parallel, undefined)
+  const disabledSerpapi = await WebSearch({}, { disable: ["serpapi"], serpapi: { safe: "invalid" } })
+  assert.equal(disabledSerpapi.search.serpapi, undefined)
 })
 
 test("timeouts and host cancellation abort the upstream request", async () => {
