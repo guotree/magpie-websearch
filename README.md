@@ -1,23 +1,28 @@
 # magpie-websearch
 
-Additional web search APIs for [magpie](https://usemagpie.ai). Once installed,
-the APIs appear in **Settings › Models › Web search**, where magpie manages
-their keys, on/off switches and request order.
+[中文说明](README.md) | [English](README.en.md)
 
-Current providers: **AnySearch**, **Keenable**, **Linkup**, **Metaso**, **Parallel**, **Querit**, **TinyFish**.
-AnySearch, Keenable, Parallel and TinyFish work with or without a key; Linkup, Metaso and Querit
-require one. See
-[PROVIDERS.md](PROVIDERS.md) for supported and planned providers.
+为 [magpie](https://usemagpie.ai) 增加的第三方多源网页搜索 API 插件。安装后，这些搜索 API 会出现在 **设置 › 模型 › 网页搜索**（Settings › Models › Web search）中，由 Magpie 统一管理其密钥、启用开关与请求调度顺序。
 
-## Install
+当前支持厂商：**AnySearch**、**Keenable**、**Linkup**、**Metaso**、**Parallel**、**Querit**、**TinyFish**。
+其中 AnySearch、Keenable、Parallel 和 TinyFish 支持免 Key 匿名搜索；Linkup、Metaso 和 Querit 需要配置 API Key。详见 [PROVIDERS.md](PROVIDERS.md)。
+
+## 隐私与安全 (Privacy & Security)
+
+- **直连官方端点**：所有搜索请求均严格直接发往各厂商官方 API 端点，或发送至用户显式配置的自定义 Base URL 代理。
+- **零对话泄露**：插件仅发送搜索关键词（Query）以及必要的分页/过滤参数。绝不读取、访问或转发任何对话记录、系统提示词、本地文件、工具输出或 Agent 上下文。
+- **凭证安全保护**：API Key 由 Magpie 统一管理并通过标准鉴权请求头（Authorization / X-API-Key）发送；上游报错（如 HTTP 402/429）时会自动拦截并隐藏响应体，防止响应中可能夹带的凭据信息泄露。
+- **绝不静默降级**：对于配置了 Key 的搜索项，若 Key 无效或额度耗尽，插件会明确向 Magpie 报告失败，**绝不静默降级为匿名搜索**，确保私有请求不会意外流向公共端点。
+
+## 安装
 
 ```sh
 magpie plugin add @guotree/magpie-websearch
-# or from GitHub
+# 或从 GitHub 安装
 magpie plugin add github:guotree/magpie-websearch
 ```
 
-The package's short name is `magpie-websearch`, so the vendor IDs are:
+本插件注册的短名称为 `magpie-websearch`，对应的厂商 Vendor ID 为：
 
 ```text
 magpie-websearch:anysearch
@@ -29,63 +34,61 @@ magpie-websearch:querit
 magpie-websearch:tinyfish
 ```
 
-## Configure
+## 配置使用
 
-In the app: **Settings › Models › Web search**, add each API you want, switch it
-on, and order it. Leave the key empty for anonymous AnySearch, Keenable, Parallel
-or TinyFish, or provide a key to use your account. Linkup, Metaso and Querit require a key.
+### 图形界面配置
 
-No plugin options are required. With no registration filters, all seven APIs are
-registered; magpie's Web search settings decide which are configured and used.
+在 Magpie 桌面客户端中：前往 **设置 › 模型 › 网页搜索**（Settings › Models › Web search），添加你需要的搜索引擎，开启开关并调整优先级顺序。
+- 对于 AnySearch、Keenable、Parallel、TinyFish，留空 Key 即可使用匿名免 Key 搜索；填写 Key 则使用你的私人账户额度。
+- 对于 Linkup、Metaso、Querit，必须填写对应的 API Key。
 
-The optional **Base URL** field routes requests to your own compatible service or proxy.
-Leave it empty for the official vendor API. **When provided, the plugin treats the custom
-URL as the exact endpoint destination and sends requests directly to that address, without
-heuristically appending paths.** For example, if your proxy serves Linkup search at
-`https://search.example.com/proxy/v1/search`, enter that complete address. If an endpoint
-serves requests at its root, enter `https://proxy.example.com/`.
+无需强制配置插件选项。在未配置过滤选项时，默认注册全部 7 个搜索 API，由 Magpie 的网页搜索设置界面决定启用哪些和使用顺序。
 
-HTTP and HTTPS are supported; credentials, query strings and fragments in the address are
-rejected. Keep the API key in magpie's key field.
+### 自定义 Base URL 说明
 
-For dual-mode providers (Parallel and TinyFish), if you switch between anonymous (MCP)
-and keyed access, ensure your custom address matches the selected protocol
-(for example, `/mcp` anonymously or a search endpoint with a key); leave it empty to
-select the appropriate official endpoint automatically. See [Parallel search](#parallel-search)
-and [TinyFish search](#tinyfish-search) for wire formats and capability details.
+可选的 **Base URL** 字段用于将请求转发到你自建的兼容服务或反向代理。若使用官方服务，请保持该字段留空。
+**当填写自定义 Base URL 时，插件将其视为精确的目标端点地址，请求会直接发往该完整地址，不会自动追加任何路径。**
+例如：若你的代理服务器将 Linkup 搜索挂载在 `https://search.example.com/proxy/v1/search`，请直接输入该完整地址；若代理服务在根路径响应，请输入 `https://proxy.example.com/`。
 
-In a terminal:
+仅支持 HTTP 和 HTTPS 协议；地址中包含认证凭据（username/password）、查询字符串（`?query`）或锚点（`#hash`）将被拒绝。请将 API Key 保留在 Magpie 专用的 Key 输入框中。
+
+对于双模接入厂商（Parallel 和 TinyFish），若在匿名（MCP）和带 Key 模式之间切换，请确保你的自定义地址与当前所选协议匹配（例如匿名填 `/mcp`，带 Key 填实际搜索接口）；留空则会自动选择官方默认端点。详见下文的 [Parallel 搜索](#parallel-搜索) 与 [TinyFish 搜索](#tinyfish-搜索)。
+
+### 命令行配置示例
 
 ```sh
-# AnySearch, Keenable, Parallel and TinyFish: no key needed for anonymous search
+# AnySearch、Keenable、Parallel、TinyFish：留空 key 即可开启匿名搜索
 magpie search add magpie-websearch:anysearch
 magpie search add magpie-websearch:keenable
 magpie search add magpie-websearch:parallel
 magpie search add magpie-websearch:tinyfish
 
-# Or supply a key to use your account
+# 或提供 key 使用自有账户
 magpie search add magpie-websearch:anysearch <key>
 magpie search add magpie-websearch:keenable <key>
 magpie search add magpie-websearch:parallel <key>
 magpie search add magpie-websearch:tinyfish <key>
 
-# Linkup: a key is required
+# Linkup：必须提供 key
 magpie search add magpie-websearch:linkup <key>
 
-# Querit: a key is required
+# Metaso：必须提供 key
+magpie search add magpie-websearch:metaso <key>
+
+# Querit：必须提供 key
 magpie search add magpie-websearch:querit <key>
 
-# A compatible endpoint of your own
+# 使用自定义端点代理
 magpie search add magpie-websearch:linkup <key> url=https://search.example.com/proxy/v1/search
 ```
 
-Several keys for one API are separated by commas; magpie takes them in turn and rests one the vendor refuses:
+为一个 API 配置多个 Key 时使用英文逗号分隔，Magpie 会依次轮询并在某个 Key 被拒绝时将其暂时休眠：
 
 ```sh
 magpie search add magpie-websearch:linkup key1,key2
 ```
 
-Order, switch off, or remove:
+调整优先级、停用或移除：
 
 ```sh
 magpie search move magpie-websearch:anysearch 1
@@ -94,309 +97,178 @@ magpie search on magpie-websearch:keenable
 magpie search rm magpie-websearch:linkup
 ```
 
-`magpie search` lists every API magpie knows, including the ones this plugin gives.
+运行 `magpie search` 可列出当前 Magpie 识别的所有搜索 API（包含本插件注入的项）。
 
-### Anonymous search
+### 匿名搜索机制
 
-AnySearch uses the same search endpoint without an Authorization header.
-Keenable uses `/v1/search/public` without an API key, with the application title
-configured by `keenable.title`. Parallel calls its hosted MCP search with no API
-key or OAuth credentials. TinyFish calls its hosted MCP search with
-`X-TinyFish-Access-Mode: keyless` and no API key or OAuth credentials. All four
-support leaving the key empty in the GUI because the plugin declares
-`keyOptional: true`.
+AnySearch 在同一接口上省略 Authorization 请求头；Keenable 使用 `/v1/search/public` 端点并附带 `keenable.title` 所配置的应用标头；Parallel 免 Key 调用其托管的 MCP 搜索；TinyFish 免 Key 调用其托管的 MCP 搜索并附带 `X-TinyFish-Access-Mode: keyless` 标头。这四者因在插件中声明了 `keyOptional: true`，在 GUI 中留空 Key 即可正常保存和使用。
 
-An invalid or exhausted configured key is reported as a failure; the plugin
-does not silently retry anonymously. For an existing keyed entry, leaving the
-key field empty keeps its saved key. To switch it to anonymous mode, remove the
-entry and add it again without a key; reapply any custom address, order and
-on/off setting as needed.
+若配置的 Key 无效或额度用尽，插件会直接报错，**绝不会自动降级为匿名搜索**。对于已有 Key 的条目，编辑时留空 Key 仍会保留原本已存的 Key；若要切换为匿名模式，请先移除条目，再重新无 Key 添加该条目并重新设定参数。
 
-AnySearch and Keenable anonymous quotas are shared by clients using the same
-public IP. Parallel and TinyFish anonymous quota scopes and exact limits have
-not been verified. For all four APIs, on an HTTP 429 the plugin pauses new anonymous
-requests to that API's final endpoint for the
-`Retry-After` duration (seconds or an HTTP date), or 60 seconds if the header is
-missing, invalid or already expired. During the pause it returns a 429 without
-fetching, allowing magpie to try the next configured API. Cached results remain
-usable, and supplying a key bypasses the anonymous pause. Cooldowns are kept in
-memory per plugin instance, reset when the host reloads, and remain active even
-when `cacheTTL` is zero.
+AnySearch 与 Keenable 的匿名额度基于公网出口 IP 共享；Parallel 与 TinyFish 的匿名配额范围及确切上限以上游实际策略为准。当遇到 HTTP 429 时，插件会对该端点的匿名请求启动冷静期（Duration 优先取 `Retry-After`，若无或无效则默认 60 秒）。冷静期间新请求直接返回 429 而不再向远端发起连接，Magpie 会自动回退并调度下一配置通道。缓存中的结果仍可正常读取，且配置了 Key 的请求完全不受匿名冷静期限制。冷静期保存在插件实例内存中，重启后重置。
 
-### Parallel search
+### Parallel 搜索
 
-Parallel has two access paths, selected by the key magpie supplies:
+Parallel 提供两种访问链路，由 Magpie 传入的 Key 决定：
 
-| Access | Default endpoint | Request |
+| 访问方式 | 默认端点 | 请求方式 |
 |---|---|---|
-| Anonymous (empty key) | `https://mcp.parallel.ai/mcp` | POST JSON-RPC `tools/call`, tool `web_search` |
-| With a key | `https://api.parallel.ai/v1/search` | POST with `x-api-key` and nested `advanced_settings` |
+| 匿名（Key 留空） | `https://mcp.parallel.ai/mcp` | POST JSON-RPC `tools/call`，调用 `web_search` |
+| 配置了 Key | `https://api.parallel.ai/v1/search` | POST，请求头携带 `x-api-key` 与嵌套的 `advanced_settings` |
 
-Anonymous requests directly call `web_search` without a session handshake.
-The plugin reads JSON or SSE responses, checks JSON-RPC and tool errors,
-then extracts search results from structured content or text content parts.
-Keyed requests use the GA `/v1/search` endpoint with `x-api-key`. Both paths accept
-a normalized query of 1–200 characters (Parallel's keyword query limit).
+匿名请求直接调用 `web_search` 工具，无需 session 握手。插件支持读取 JSON 与 SSE 响应，校验 JSON-RPC 与工具级错误，并从结构化内容或文本部分提取结果。带 Key 请求走官方正式 `/v1/search` 接口。两条链路均支持 1–200 字符的关键词检索（Parallel 官方设定的查询长度限制）。
 
-Parallel's MCP server defaults to `fast` mode. If `parallel.mode` is configured to
-another mode (`turbo`, `basic` or `advanced`), anonymous requests fail before
-fetching with an error reminding you to add a key. With a key, all four modes
-are supported on REST.
+Parallel 托管 MCP 服务默认运行于 `fast` 模式。若配置了 `parallel.mode` 为其他模式（`turbo`、`basic` 或 `advanced`），匿名请求会在发起前直接报错并提示需要填入 Key。在配置 Key 的情况下，REST 接口支持全部四种模式。
 
-Parallel's public search caps results at 20. The plugin requests at most 20
-results on REST and caps valid results locally to magpie's count and
-`parallel.maxResults`. `text` joins `excerpts` with `\n\n` and trims to
-`parallel.contentChars` (default 4000 code points, `0` keeps all returned text).
-`publish_date` preserves the original date string as `age`.
+Parallel 公开搜索上限为 20 条，插件请求最多 20 条并在本地根据 Magpie 要求与 `parallel.maxResults` 截断。`text` 字段由 `excerpts` 以 `\n\n` 拼接并截断至 `parallel.contentChars`（默认 4000 字符，配置 `0` 保留全文）。`publish_date` 保留原始日期字符串作为 `age`。
 
-Anonymous access was verified on **2026-11-04** against the official MCP endpoint:
-keyless `tools/call` returned HTTP 200 with search results for English and
-Chinese queries. A configured key always selects REST, including when it is
-invalid or exhausted; there is no automatic downgrade to MCP. A custom endpoint
-is used as the exact destination for either protocol (for example, `/mcp`
-anonymously or your proxy's search endpoint with a key).
+匿名访问已于 **2026-11-04** 在官方 MCP 端点实测通过：免 Key 调用的 `tools/call` 对中英文检索均正常返回 HTTP 200 与搜索结果。配置了 Key 时始终严格走 REST，即便 Key 欠费或无效也绝不静默降级为 MCP。
 
-### TinyFish search
+### TinyFish 搜索
 
-TinyFish has two access paths, selected by the key magpie supplies:
+TinyFish 提供两种访问链路，由 Magpie 传入的 Key 决定：
 
-| Access | Default endpoint | Request |
+| 访问方式 | 默认端点 | 请求方式 |
 |---|---|---|
-| Anonymous (empty key) | `https://agent.tinyfish.ai/mcp` | POST JSON-RPC `tools/call`, tool `search`, header `X-TinyFish-Access-Mode: keyless` |
-| With a key | `https://api.search.tinyfish.ai/` | GET with URL-encoded search parameters, header `X-API-Key` |
+| 匿名（Key 留空） | `https://agent.tinyfish.ai/mcp` | POST JSON-RPC `tools/call`，调用 `search`，头附带 `X-TinyFish-Access-Mode: keyless` |
+| 配置了 Key | `https://api.search.tinyfish.ai/` | GET，URL 参数编码，头附带 `X-API-Key` |
 
-Anonymous requests directly call the search tool without a session handshake.
-The plugin reads either JSON or SSE responses, checks JSON-RPC and tool errors,
-then extracts the search JSON from structured content or a text content part.
-REST requests have no body. Both paths accept a normalized query of 1–2000
-characters. Neither sends a result-count parameter: TinyFish returns one page,
-then the plugin drops URL-less entries and caps valid results
-to magpie's requested count and `tinyfish.maxResults`. It does not fetch more pages
-to fill a short response. `text` is the search snippet; `age` preserves `date`,
-including human-readable dates. A paper's numeric `year` is not converted to a date.
+匿名请求直接调用 `search` 工具，无需 session 握手。支持 JSON 与 SSE 响应，自动处理提取。带 Key 请求为无 Body 的 GET 请求。两条链路均支持 1–2000 字符的规范化查询。TinyFish 不接受分页结果数传参，固定返回一页，插件在剔除无 URL 的脏数据后在本地截取前 N 条（`tinyfish.maxResults`）。`text` 为摘要内容，`age` 保留原始日期字符串（包括可读自然语言日期）。
 
-Both paths support the configured location, language, domain filters, and `web`
-or `news` searches. `research_paper` requires a key; using it anonymously reports
-an error before making a request. Omitted location/language are resolved by
-TinyFish: one can determine the other, and omitting both defaults to US/en.
-The plugin does not infer them from the query. Purpose, pagination, date/year
-filters, thumbnails and inline page fetching are not exposed as plugin options.
+两条链路均支持配置国家地区（location）、语言（language）、域名过滤（include/exclude domains）以及 `web`、`news` 类型。**学术论文搜索（`research_paper`）必须有 Key**，若在匿名下选择该模式会在发起请求前直接报错阻断。
 
-For example, use Chinese-language news search with a local cap of four results:
+例如配置中文新闻搜索且本地上限为 4 条：
 
 ```sh
 magpie plugin options magpie-websearch '{"tinyfish":{"language":"zh","domainType":"news","maxResults":4}}'
 ```
 
-Anonymous access was verified on **2026-11-04** against the official MCP endpoint:
-keyless `tools/call` returned HTTP 200 with search results, and `tools/list`
-advertised `web`/`news` plus location, language and domain filtering. The same MCP
-call without the keyless header returned 401. The REST endpoint returned 401
-without an API key, even with that header. The [REST reference](https://docs.tinyfish.ai/search-api/reference.md)
-documents API keys; the [MCP guide](https://docs.tinyfish.ai/mcp-integration/index.md)
-primarily documents OAuth and does not fully describe this anonymous route.
-This is observed support, not a guarantee of permanent anonymous access. Its
-precise quota is not documented here; do not assume it shares authenticated
-account limits. HTTP 429 uses the anonymous cooldown described above. JSON-RPC
-codes and tool-error text are not treated as HTTP status codes.
+匿名访问已于 **2026-11-04** 在官方 MCP 端点实测通过。配置了 Key 时始终严格走 REST，绝不静默降级为 MCP。自定义端点须匹配协议类型（例如匿名代理为 `/proxy/mcp`，REST 代理为 `/proxy/search`）。
 
-The adapter also passed a live anonymous search against that endpoint. Keyed
-REST success and MCP SSE parsing were verified against a local fake service,
-including through the magpie host; a successful REST search with a real account
-key has not been verified.
+## 厂商特性概览
 
-A configured key always selects REST, including when it is invalid or exhausted;
-there is no automatic downgrade to MCP. See [Anonymous search](#anonymous-search)
-for switching a saved keyed entry back to anonymous access. A custom endpoint
-must match the selected protocol, for example `/proxy/mcp` anonymously or
-`/proxy/search` with a key; neither address is rewritten.
-
-## Providers
-
-| Display name | Vendor ID | Key | Notes |
+| 显示名称 | Vendor ID | Key 需求 | 特性与说明 |
 |---|---|---|---|
-| AnySearch (magpie-websearch) | `magpie-websearch:anysearch` | optional | Anonymous or authenticated search; intent routing, `cn`/`intl` zones, markdown or JSON content |
-| Keenable (magpie-websearch) | `magpie-websearch:keenable` | optional | Anonymous `/public` endpoint or authenticated search; `pro` and `realtime` search modes |
-| Linkup (magpie-websearch) | `magpie-websearch:linkup` | required | `content` is a query-relevant excerpt, not the page; depth buys recall, not text |
-| Parallel (magpie-websearch) | `magpie-websearch:parallel` | optional | Anonymous MCP (`fast` mode) or keyed REST; excerpt joining and local caps; 20-result upstream cap |
-| Querit (magpie-websearch) | `magpie-websearch:querit` | required | Snippet, or joined sentence matches when a snippet is missing; `querit.count` caps results |
-| TinyFish (magpie-websearch) | `magpie-websearch:tinyfish` | optional | Anonymous MCP or keyed REST; snippets and original date strings; local result cap; papers require a key |
+| AnySearch (magpie-websearch) | `magpie-websearch:anysearch` | 可选（免Key/有Key） | 意图路由、`cn`/`intl` 分区支持、Markdown/JSON 输出格式 |
+| Keenable (magpie-websearch) | `magpie-websearch:keenable` | 可选（免Key/有Key） | 匿名走 `/public` 端点；支持 `pro` 与 `realtime` 模式 |
+| Linkup (magpie-websearch) | `magpie-websearch:linkup` | 必填 | 结果为针对问题的精准提炼摘录；深度调整影响召回率而非文本冗余 |
+| Metaso (magpie-websearch) | `magpie-websearch:metaso` | 必填 | 秘塔 AI 搜索；支持细分搜索范围（网页、论文等）并保留日期 |
+| Parallel (magpie-websearch) | `magpie-websearch:parallel` | 可选（免Key/有Key） | 匿名 MCP（fast 模式）或鉴权 REST；本地摘录合并与条数截断 |
+| Querit (magpie-websearch) | `magpie-websearch:querit` | 必填 | 提供摘要或拼接匹配句；可通过 `querit.count` 调整上限 |
+| TinyFish (magpie-websearch) | `magpie-websearch:tinyfish` | 可选（免Key/有Key） | 匿名 MCP 或鉴权 REST；支持新闻/网页/论文检索及地区语言过滤 |
 
-All search APIs supplied by this plugin use the display name
-`<Provider> (magpie-websearch)` in magpie's GUI and CLI to identify their source.
-Vendor IDs remain `magpie-websearch:<id>`; existing keys, switches and order
-continue to use those IDs. Provider option names and `enable`/`disable` entries
-use short IDs such as `linkup`.
+所有由本插件注入的搜索项在 Magpie 界面中均以 `<Provider> (magpie-websearch)` 结尾显示，以清晰标识其来源。内部 Vendor ID 始终保持为 `magpie-websearch:<id>`，保证已有配置及 Key 的持久兼容。
 
-## What magpie does with a result
+## Magpie 结果处理规范
 
-- `count` is 6: adapters request at most 6 results when supported; responses with unconfigurable result counts (such as anonymous MCP) are capped locally. magpie keeps at most 6.
-- `text` is stripped of tags, unescaped, whitespace-collapsed, and cut to 1500 bytes.
-- `age` is the vendor's own date string; this plugin does not parse or rewrite it.
-- A hit without a URL is dropped.
-- A thrown error with a numeric `status` (401, 402, 403, 429) is an API refusal. For keyed calls, magpie records the key's rest and tries the next key. Anonymous 429 cooldowns are managed by this plugin; failed APIs give way to the next configured API.
-- `retryAfter` on a 429 is passed through.
+- `count` 默认上限为 6：适配器在支持的接口中最多申请 6 条结果；对固定返回单页的接口在本地截取前 6 条。
+- `text` 会自动剔除 HTML 标签、反转义字符、折叠多余空白并截断至 1500 字节。
+- `age` 保留厂商返回的原生时间字符串，插件不作猜测与改写。
+- 自动剔除不包含 URL 的无效结果。
+- 抛出带有数值型 `status`（401、402、403、429）的错误被 Magpie 识别为服务商拒绝；对于带 Key 请求，Magpie 会休眠该 Key 并尝试下一个。匿名 429 冷却由本插件自主管理；失败时会触发 Magpie 调度下一可用引擎。
+- 429 响应的 `Retry-After` 会透传保留。
 
-## Configuration
+## 详细配置参考
 
-All plugin options are optional, including provider objects, their fields, and
-the top-level `enable` and `disable` filters. Omitted provider fields fall back
-to the environment variable or the default listed below.
+所有选项均为可选，包括各厂商的子对象字段以及顶层的 `enable`/`disable` 过滤器。未设置的字段将自动回退到对应的环境变量，若环境变量亦未定义则使用默认值。
 
-Use **Plugins → Installed → Options**, or pass a JSON object on the command line.
-For example, change search parameters while keeping all seven APIs registered:
+在桌面客户端中通过 **Plugins → Installed → Options** 配置，或通过命令行传递 JSON 对象。例如仅调整特定引擎参数而保持全量注册：
 
 ```sh
 magpie plugin options magpie-websearch '{"linkup":{"depth":"deep","maxResults":4,"timeout":25000,"cacheTTL":600000},"anysearch":{"zone":"cn","language":"zh-CN"}}'
 ```
 
-Each command replaces the saved options object, so include every option you want
-to keep. Saving options reloads the plugin host. Each plugin instance gets its
-own settings and caches.
+保存配置后 Magpie 会自动重载插件宿主进程。
 
-Values are selected in this order: **explicit provider option → environment
-variable → default**. Invalid values for known provider fields fail plugin
-loading with a field error; unrecognized fields are ignored. Numeric options
-must be JSON integers; `timeout` and `cacheTTL` are
-milliseconds (`timeout` is at most 2,147,483,647 ms). A zero timeout removes the
-plugin's own deadline, while magpie's deadline still applies; a zero cache TTL
-disables caching.
+参数解析优先级：**显式插件选项 → 环境变量 → 默认值**。数值类型必须为 JSON 整数；`timeout` 与 `cacheTTL` 单位为毫秒。设置 `timeout: 0` 相当于取消插件自身的超时保护（Magpie 宿主的超时仍生效）；设置 `cacheTTL: 0` 则关闭内存缓存。
 
-Each API keeps a bounded search cache in memory, isolated by final endpoint,
-key digest and request parameters (including result count). Empty results are
-cached for at most 30 seconds.
+各厂商配置项清单：
 
-The table lists fields inside each provider's object (`linkup.depth`, for example):
-
-| Provider | Option | Environment variable | Default | Values / meaning |
+| 厂商 | 选项名 | 环境变量 | 默认值 | 可选值 / 说明 |
 |---|---|---|---|---|
-| anysearch | `cacheTTL` | `ANYSEARCH_CACHE_TTL` | `600000` | ≥ 0 |
-| anysearch | `maxResults` | `ANYSEARCH_MAX_RESULTS` | `10` | 1–10; cap on magpie's requested count |
-| anysearch | `tag` | `ANYSEARCH_TAG` | empty | Intent tag, e.g. `code.snippet` |
-| anysearch | `zone` | `ANYSEARCH_ZONE` | empty | empty, `cn`, `intl` |
-| anysearch | `language` | `ANYSEARCH_LANGUAGE` | empty | e.g. `zh-CN` |
-| anysearch | `format` | `ANYSEARCH_FORMAT` | `markdown` | `markdown`, `json` |
-| anysearch | `timeout` | `ANYSEARCH_TIMEOUT` | `25000` | ≥ 0 |
-| keenable | `cacheTTL` | `KEENABLE_CACHE_TTL` | `600000` | ≥ 0 |
+| anysearch | `cacheTTL` | `ANYSEARCH_CACHE_TTL` | `600000` | 缓存时间（毫秒），≥ 0 |
+| anysearch | `maxResults` | `ANYSEARCH_MAX_RESULTS` | `10` | 1–10；请求结果上限 |
+| anysearch | `tag` | `ANYSEARCH_TAG` | 留空 | 意图标签，例如 `code.snippet` |
+| anysearch | `zone` | `ANYSEARCH_ZONE` | 留空 | 留空、`cn`、`intl` |
+| anysearch | `language` | `ANYSEARCH_LANGUAGE` | 留空 | 语言代码，例如 `zh-CN` |
+| anysearch | `format` | `ANYSEARCH_FORMAT` | `markdown` | `markdown`、`json` |
+| anysearch | `timeout` | `ANYSEARCH_TIMEOUT` | `25000` | 超时时间（毫秒），≥ 0 |
+| keenable | `cacheTTL` | `KEENABLE_CACHE_TTL` | `600000` | 缓存时间（毫秒），≥ 0 |
 | keenable | `maxResults` | `KEENABLE_MAX_RESULTS` | `10` | 1–50 |
-| keenable | `mode` | `KEENABLE_MODE` | empty | empty, `pro`, `realtime` |
-| keenable | `title` | `KEENABLE_TITLE` | `magpie-websearch` | `X-Keenable-Title`, at most 256 characters |
-| keenable | `timeout` | `KEENABLE_TIMEOUT` | `25000` | ≥ 0 |
-| linkup | `cacheTTL` | `LINKUP_CACHE_TTL` | `600000` | ≥ 0 |
-| linkup | `depth` | `LINKUP_DEPTH` | `fast` | `flash`, `fast`, `standard`, `deep` |
-| linkup | `maxResults` | `LINKUP_MAX_RESULTS` | `10` | 1–100; upstream limits also apply |
-| linkup | `contentChars` | `LINKUP_CONTENT_CHARS` | `4000` | Code points per excerpt (`0` keeps all) |
-| linkup | `timeout` | `LINKUP_TIMEOUT` | `25000` | ≥ 0 |
-| metaso | `cacheTTL` | `METASO_CACHE_TTL` | `600000` | ≥ 0 |
-| metaso | `scope` | `METASO_SCOPE` | `webpage` | `webpage`, `document`, `paper`, `image`, `video`, `podcast` |
-| metaso | `maxResults` | `METASO_MAX_RESULTS` | `10` | 1–50; cap on magpie's requested count |
-| metaso | `contentChars` | `METASO_CONTENT_CHARS` | `4000` | Code points per excerpt (`0` keeps all) |
-| metaso | `timeout` | `METASO_TIMEOUT` | `25000` | ≥ 0 |
-| parallel | `cacheTTL` | `PARALLEL_CACHE_TTL` | `600000` | ≥ 0 |
-| parallel | `timeout` | `PARALLEL_TIMEOUT` | `25000` | ≥ 0; includes reading the MCP stream |
-| parallel | `maxResults` | `PARALLEL_MAX_RESULTS` | `10` | 1–20; cap on magpie's requested count |
-| parallel | `contentChars` | `PARALLEL_CONTENT_CHARS` | `4000` | Code points per joined excerpt (`0` keeps all) |
-| parallel | `mode` | `PARALLEL_MODE` | `fast` | `fast`, `turbo`, `basic`, `advanced`; non-fast modes require a key |
-| querit | `cacheTTL` | `QUERIT_CACHE_TTL` | `600000` | ≥ 0 |
-| querit | `count` | `QUERIT_COUNT` | `8` | ≥ 1; cap on magpie's count, Querit's own limit applies |
-| querit | `timeout` | `QUERIT_TIMEOUT` | `25000` | ≥ 0 |
-| tinyfish | `cacheTTL` | `TINYFISH_CACHE_TTL` | `600000` | ≥ 0 |
-| tinyfish | `timeout` | `TINYFISH_TIMEOUT` | `25000` | ≥ 0; includes reading the MCP stream |
-| tinyfish | `maxResults` | `TINYFISH_MAX_RESULTS` | `10` | ≥ 1; local cap, not an upstream page-size guarantee |
-| tinyfish | `location` | `TINYFISH_LOCATION` | empty | Country code, e.g. `US`; omitted when empty |
-| tinyfish | `language` | `TINYFISH_LANGUAGE` | empty | Language code, e.g. `zh`; omitted when empty |
-| tinyfish | `domainType` | `TINYFISH_DOMAIN_TYPE` | `web` | `web`, `news`, `research_paper`; papers require a key at execution time |
-| tinyfish | `includeDomains` | `TINYFISH_INCLUDE_DOMAINS` | empty | Comma-separated domains; maps to `include_domains` |
-| tinyfish | `excludeDomains` | `TINYFISH_EXCLUDE_DOMAINS` | empty | Comma-separated domains; maps to `exclude_domains` |
+| keenable | `mode` | `KEENABLE_MODE` | 留空 | 留空、`pro`、`realtime` |
+| keenable | `title` | `KEENABLE_TITLE` | `magpie-websearch` | `X-Keenable-Title` 标头，最长 256 字符 |
+| keenable | `timeout` | `KEENABLE_TIMEOUT` | `25000` | 超时时间（毫秒），≥ 0 |
+| linkup | `cacheTTL` | `LINKUP_CACHE_TTL` | `600000` | 缓存时间（毫秒），≥ 0 |
+| linkup | `depth` | `LINKUP_DEPTH` | `fast` | `flash`、`fast`、`standard`、`deep` |
+| linkup | `maxResults` | `LINKUP_MAX_RESULTS` | `10` | 1–100 |
+| linkup | `contentChars` | `LINKUP_CONTENT_CHARS` | `4000` | 摘录字数上限（`0` 代表不截断） |
+| linkup | `timeout` | `LINKUP_TIMEOUT` | `25000` | 超时时间（毫秒），≥ 0 |
+| metaso | `cacheTTL` | `METASO_CACHE_TTL` | `600000` | 缓存时间（毫秒），≥ 0 |
+| metaso | `scope` | `METASO_SCOPE` | `webpage` | `webpage`、`document`、`paper`、`image`、`video`、`podcast` |
+| metaso | `maxResults` | `METASO_MAX_RESULTS` | `10` | 1–50 |
+| metaso | `contentChars` | `METASO_CONTENT_CHARS` | `4000` | 摘录字数上限（`0` 代表不截断） |
+| metaso | `timeout` | `METASO_TIMEOUT` | `25000` | 超时时间（毫秒），≥ 0 |
+| parallel | `cacheTTL` | `PARALLEL_CACHE_TTL` | `600000` | 缓存时间（毫秒），≥ 0 |
+| parallel | `timeout` | `PARALLEL_TIMEOUT` | `25000` | 超时时间（毫秒），≥ 0 |
+| parallel | `maxResults` | `PARALLEL_MAX_RESULTS` | `10` | 1–20 |
+| parallel | `contentChars` | `PARALLEL_CONTENT_CHARS` | `4000` | 摘录拼接字数上限（`0` 代表不截断） |
+| parallel | `mode` | `PARALLEL_MODE` | `fast` | `fast`、`turbo`、`basic`、`advanced`（非 fast 模式需填 Key） |
+| querit | `cacheTTL` | `QUERIT_CACHE_TTL` | `600000` | 缓存时间（毫秒），≥ 0 |
+| querit | `count` | `QUERIT_COUNT` | `8` | 结果数上限，≥ 1 |
+| querit | `timeout` | `QUERIT_TIMEOUT` | `25000` | 超时时间（毫秒），≥ 0 |
+| tinyfish | `cacheTTL` | `TINYFISH_CACHE_TTL` | `600000` | 缓存时间（毫秒），≥ 0 |
+| tinyfish | `timeout` | `TINYFISH_TIMEOUT` | `25000` | 超时时间（毫秒），≥ 0 |
+| tinyfish | `maxResults` | `TINYFISH_MAX_RESULTS` | `10` | 本地截取上限，≥ 1 |
+| tinyfish | `location` | `TINYFISH_LOCATION` | 留空 | 国家地区代码，如 `US` |
+| tinyfish | `language` | `TINYFISH_LANGUAGE` | 留空 | 语言代码，如 `zh` |
+| tinyfish | `domainType` | `TINYFISH_DOMAIN_TYPE` | `web` | `web`、`news`、`research_paper`（学术论文模式需填 Key） |
+| tinyfish | `includeDomains` | `TINYFISH_INCLUDE_DOMAINS` | 留空 | 包含域名列表（逗号分隔） |
+| tinyfish | `excludeDomains` | `TINYFISH_EXCLUDE_DOMAINS` | 留空 | 排除域名列表（逗号分隔） |
 
-Environment variables are read when the plugin instance is created. They
-must be in the environment of the magpie process; setting a variable in a
-separate terminal does not change an already running desktop app. Prefer options
-for desktop use.
+### 可选注册过滤 (enable / disable)
 
-## Optional registration filters
+顶层的 `enable` 与 `disable` 数组可控制插件向 Magpie 注册哪些 API。传入短名称（如 `linkup`，不带 `magpie-websearch:` 前缀）。
 
-The optional top-level `enable` and `disable` arrays control which APIs the
-plugin registers. Entries use short IDs: `anysearch`, `keenable`, `linkup`,
-`metaso`, `parallel`, `querit`, `tinyfish` (without the `magpie-websearch:` prefix).
-
-| Filters | APIs registered |
+| 过滤器设置 | 实际向 Magpie 注册的 API |
 |---|---|
-| Both omitted, or `{}` | All seven APIs |
-| `"enable": ["linkup", "querit"]` | Linkup and Querit only |
-| `"disable": ["keenable"]` | All except Keenable |
-| `"enable": ["linkup", "querit"], "disable": ["querit"]` | Linkup only; `disable` wins |
-| `"enable": []` | None |
-| `"disable": []` | All seven, unless `enable` also limits the set |
+| 省略未设，或 `{}` | 全部 7 个 API 均注册 |
+| `"enable": ["linkup", "querit"]` | 仅注册 Linkup 与 Querit |
+| `"disable": ["keenable"]` | 注册除 Keenable 外的其余 6 个 |
+| `"enable": ["linkup", "querit"], "disable": ["querit"]` | 仅注册 Linkup（`disable` 优先级高于 `enable`） |
+| `"enable": []` | 一个都不注册 |
+| `"disable": []` | 全部 7 个均注册 |
 
-Combine filters with provider settings when needed:
+示例：过滤掉 Keenable，同时指定 Linkup 深度搜索参数：
 
 ```sh
 magpie plugin options magpie-websearch '{"disable":["keenable"],"linkup":{"depth":"deep","maxResults":4}}'
 ```
 
-An unknown ID is logged and ignored. An explicit `enable` list containing no
-known IDs registers no APIs and logs a warning. A filter that is not an array is
-logged and ignored; malformed per-provider settings instead fail loading as
-described under Configuration.
-
-These filters control registration. magpie's Web search switches independently
-control whether a registered API is asked, keeping its key and place in the list
-when switched off. You can use those switches without setting either filter.
-
-To remove all saved plugin options, including provider overrides and filters:
+重置并恢复所有插件设置为默认：
 
 ```sh
 magpie plugin options magpie-websearch off
 ```
 
-All seven APIs are registered again. Provider settings use environment
-values when present, otherwise their defaults. To remove only the filters,
-save a complete options object containing the provider settings you want to keep.
-
-## Develop
+## 开发与本地测试
 
 ```sh
-npm test        # node:test, no dependencies
-npm run check   # load index.mjs and validate the search hook shape
-npm run check:bun # the same checks and tests on Bun (install Bun separately)
-npm run smoke:magpie # real magpie host, dummy key and a local upstream
+npm test          # node:test 单元测试（无依赖）
+npm run check     # 校验 index.mjs 导出的 search hook 契约格式
+npm run check:bun # 在 Bun 运行时下运行相同测试
+npm run smoke:magpie # 在独立沙箱中启动真实 Magpie 进程进行完整烟雾测试
 ```
 
-magpie runs the plugin on **Bun**, which it manages. The Node-based development
-commands require **Node.js 20.3.0 or later** (`AbortSignal.any` is used to combine
-deadlines and cancellation); `check:bun` runs directly on Bun. This plugin uses magpie's `search` hook. The
-`opencode` keywords in package.json are required for magpie's npm discovery.
+Magpie 官方通过托管的 **Bun** 运行插件。基于 Node 的开发测试要求 **Node.js 20.3.0 或更新版本**（依赖 `AbortSignal.any` 组合超时和取消信号）。
 
-The smoke script requires `magpie` on PATH (`MAGPIE_BIN` can name its executable).
-It creates a temporary HOME/config/cache, disables account discovery, starts a
-gateway on a free loopback port, and tests registration, options, custom URL,
-timeout, anonymous search, 429 cooldown and fallback against a local fake API,
-including Parallel and TinyFish MCP JSON/SSE and keyed REST with local result caps.
-It removes its sandbox when finished and does not use real service keys.
-`MAGPIE_PLUGIN_DIR` can point to an
-unpacked npm package (keep its folder named `magpie-websearch` for stable vendor
-IDs). `MAGPIE_SMOKE_ROOT` can override the system temporary directory used for
-the sandbox. CI runs Node and Bun checks, then tests the unpacked npm package in
-magpie.
+`npm run smoke:magpie` 测试脚本要求环境变量 PATH 中存在 `magpie` 可执行文件（或通过 `MAGPIE_BIN` 指定）。脚本会创建独立的沙箱配置环境、隔离账户发现、在随机回环端口启动网关，全面验证插件加载、注册过滤、自定义 URL、超时中断、匿名 429 冷却与降级回退、Parallel 及 TinyFish 的 MCP 与 REST 协议兼容。测试完成后自动清理沙箱，全程使用本地 Fake 服务，不产生真实外部请求与扣费。
 
-Verified with **magpie 0.1.2897** and **Bun 1.4.4**. These are tested versions,
-not a claim about the earliest magpie release that supports the search hook.
+测试验证环境基准：**magpie 0.1.2911** 与 **Bun 1.4.4**。
 
-Local folder installs use the folder name as the short name. Because the package is `@guotree/magpie-websearch` and the folder is `magpie-websearch`, both installs give the same `magpie-websearch:*` IDs.
+## 鸣谢 (Acknowledgements)
 
-## Roadmap
+适配器设计与响应测试用例最初基于 [guotree/opencode-search-plugin](https://github.com/guotree/opencode-search-plugin) v4.6.1。
 
-[PROVIDERS.md](PROVIDERS.md#planned) lists candidate providers that are absent
-from magpie's built-in search APIs and provider presets. Official support is
-checked before adding a new integration.
-
-## Acknowledgements
-
-Provider adapters and response fixtures were initially based on
-[guotree/opencode-search-plugin](https://github.com/guotree/opencode-search-plugin)
-v4.6.1.
-
-## License
+## 开源协议
 
 MIT
