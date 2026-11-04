@@ -1,0 +1,51 @@
+name: Publish to npm
+
+# Normal release: bump the version, commit, tag v<version>, push the tag.
+# The first publish is done by hand (see RELEASING.md); after that this
+# workflow uses npm Trusted Publishing (OIDC), so there is no NPM_TOKEN.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # Required for npm Trusted Publishing / provenance.
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+
+      - name: Check the tag matches package.json
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          node -e '
+            const pkg = require("./package.json");
+            const tag = process.env.GITHUB_REF_NAME.replace(/^v/, "");
+            if (pkg.version !== tag) {
+              console.error(`tag ${process.env.GITHUB_REF_NAME} does not match package.json ${pkg.version}`);
+              process.exit(1);
+            }
+            console.log(`publishing ${pkg.name}@${pkg.version}`);
+          '
+
+      - name: Check the plugin shape and run the tests
+        run: npm run check
+
+      - name: Check what npm would publish
+        run: npm pack --dry-run
+
+      - name: Publish
+        # Trusted publishing authenticates with the OIDC token from
+        # `id-token: write`; provenance is generated automatically.
+        run: npm publish --access public
