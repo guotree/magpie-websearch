@@ -7,17 +7,17 @@ Pilot: **AnySearch**, **Keenable**, **Linkup**. All three require a key; magpie 
 ## Install
 
 ```sh
-magpie plugin add @guotree/tools-websearch
+magpie plugin add @guotree/magpie-websearch
 # or from GitHub
 magpie plugin add github:guotree/magpie-websearch
 ```
 
-The package's short name is `websearch`, so the vendor IDs are:
+The package's short name is `magpie-websearch`, so the vendor IDs are:
 
 ```text
-websearch:anysearch
-websearch:keenable
-websearch:linkup
+magpie-websearch:anysearch
+magpie-websearch:keenable
+magpie-websearch:linkup
 ```
 
 ## Configure
@@ -28,28 +28,28 @@ In a terminal:
 
 ```sh
 # AnySearch: a key is required
-magpie search add websearch:anysearch <key>
+magpie search add magpie-websearch:anysearch <key>
 
 # Keenable: a key is required
-magpie search add websearch:keenable <key>
+magpie search add magpie-websearch:keenable <key>
 
 # Linkup: a key is required
-magpie search add websearch:linkup <key>
+magpie search add magpie-websearch:linkup <key>
 ```
 
 Several keys for one API are separated by commas; magpie takes them in turn and rests one the vendor refuses:
 
 ```sh
-magpie search add websearch:linkup key1,key2
+magpie search add magpie-websearch:linkup key1,key2
 ```
 
 Order, switch off, or remove:
 
 ```sh
-magpie search move websearch:anysearch 1
-magpie search off websearch:keenable
-magpie search on websearch:keenable
-magpie search rm websearch:linkup
+magpie search move magpie-websearch:anysearch 1
+magpie search off magpie-websearch:keenable
+magpie search on magpie-websearch:keenable
+magpie search rm magpie-websearch:linkup
 ```
 
 `magpie search` lists every API magpie knows, including the ones this plugin gives.
@@ -58,9 +58,9 @@ magpie search rm websearch:linkup
 
 | API | Vendor ID | Key | Notes |
 |---|---|---|---|
-| AnySearch | `websearch:anysearch` | required | Intent routing, `cn`/`intl` zones, markdown or JSON content. The anonymous tier is deliberately not wired up |
-| Keenable | `websearch:keenable` | required | 100,000 free requests/month. The keyless `/public` pool is deliberately not wired up; see below |
-| Linkup | `websearch:linkup` | required | `content` is a query-relevant excerpt, not the page; depth buys recall, not text |
+| AnySearch | `magpie-websearch:anysearch` | required | Intent routing, `cn`/`intl` zones, markdown or JSON content. The anonymous tier is deliberately not wired up |
+| Keenable | `magpie-websearch:keenable` | required | 100,000 free requests/month. The keyless `/public` pool is deliberately not wired up; see below |
+| Linkup | `magpie-websearch:linkup` | required | `content` is a query-relevant excerpt, not the page; depth buys recall, not text |
 
 ### Why the pilot requires keys
 
@@ -110,7 +110,7 @@ Knobs are read from the environment when the plugin loads. Restart magpie (or tu
 The plugin accepts magpie's plugin options:
 
 ```sh
-magpie plugin options websearch '{"disable":["keenable"]}'
+magpie plugin options magpie-websearch '{"disable":["keenable"]}'
 ```
 
 - `enable`: only these IDs are registered.
@@ -124,7 +124,7 @@ npm test        # node:test, no dependencies
 npm run check   # load index.mjs and validate the search hook shape
 ```
 
-Local folder installs use the folder name as the short name. If the folder is `magpie-websearch`, `magpie plugin add ./` gives `magpie-websearch:*`; use `npm pack` and install the tarball to test the `websearch:*` IDs.
+Local folder installs use the folder name as the short name. Because the package is `@guotree/magpie-websearch` and the folder is `magpie-websearch`, both installs give the same `magpie-websearch:*` IDs.
 
 ## Roadmap
 

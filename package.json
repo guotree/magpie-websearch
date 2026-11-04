@@ -1,5 +1,5 @@
 {
-  "name": "@guotree/tools-websearch",
+  "name": "@guotree/magpie-websearch",
   "version": "0.1.0",
   "description": "Web search APIs for magpie. Pilot: AnySearch, Keenable and Linkup; all three require a key, managed by magpie.",
   "type": "module",

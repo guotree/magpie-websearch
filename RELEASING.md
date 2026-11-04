@@ -1,6 +1,6 @@
 # Releasing
 
-The package is published as `@guotree/tools-websearch` from this repository.
+The package is published as `@guotree/magpie-websearch` from this repository.
 
 ## First publish (once, from your machine)
 
@@ -17,7 +17,7 @@ is only an explicit reminder.
 
 Then, on npmjs.com:
 
-1. Open **Packages → @guotree/tools-websearch → Settings → Trusted Publisher**.
+1. Open **Packages → @guotree/magpie-websearch → Settings → Trusted Publisher**.
 2. Choose **GitHub Actions** and fill in:
    - **Organization or user:** `guotree`
    - **Repository:** `magpie-websearch`
@@ -65,7 +65,7 @@ git push --follow-tags
 ## Token fallback
 
 If you ever need to publish without OIDC, create a granular access token on
-npmjs.com with read/write access to `@guotree/tools-websearch` and 2FA bypass,
+npmjs.com with read/write access to `@guotree/magpie-websearch` and 2FA bypass,
 save it as the `NPM_TOKEN` repository secret, and add this to the publish step:
 
 ```yaml
@@ -78,7 +78,7 @@ Trusted publishing is preferred; keep a token only as a fallback.
 ## Verify
 
 ```sh
-npm view @guotree/tools-websearch version
+npm view @guotree/magpie-websearch version
 npm audit signatures
 ```
 
