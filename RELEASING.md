@@ -2,10 +2,10 @@
 
 The package is published as `@guotree/magpie-websearch` from this repository.
 
-## First publish (once, from your machine)
+## Trusted publishing setup
 
-Trusted publishing is configured on a package that already exists, so publish
-the first version by hand:
+Trusted publishing requires an existing npm package. For a new package, publish
+its first version manually before configuring it:
 
 ```sh
 npm login
@@ -33,11 +33,32 @@ Two important details:
 - A new trusted publisher must complete its first successful publish within
   **2 days**, or it expires. If it expires, delete it and create it again.
 
-Do **not** push a `v0.1.0` tag after the manual publish: that version already
-exists, and the workflow would fail trying to publish it again. The tag flow
-starts at the next version (for example `0.1.1`).
+Do not push a release tag for a version already published manually. The tag
+workflow starts with the next unpublished version.
 
 ## Later releases
+
+Before bumping the version:
+
+- Run `npm run check`, `npm run check:bun` and `npm run smoke:magpie`.
+- Record the magpie version verified by the smoke test in the release notes.
+- Keep [README's configuration reference](README.md#configuration) and the
+  [provider checklist](PROVIDERS.md#adding-a-provider) in sync with any option changes.
+  All options are optional: omitted `enable`/`disable` register every API;
+  `enable: []` registers none, `disable: []` excludes none, and `disable` wins
+  when both name the same API. Document per-provider fields, defaults and
+  environment mappings. Confirm that parameter-only examples still register all
+  APIs and that the smoke test covers the combined registration filters.
+- Verify that AnySearch and Keenable can be added with no key, remain ready in
+  magpie, and reach their anonymous endpoints. The host smoke test must check
+  anonymous 429 cooldown and fallback; keyed calls must keep their authentication
+  and remain independent of an anonymous cooldown.
+- Run `npm pack --dry-run` and check that the entry, `src/` and `assets/icon.png`
+  are included. Keep runtime files committed so GitHub installs work without a build.
+- If `assets/icon.png` changes, change the `magpie.icon` URL's `v` parameter in
+  `package.json` too. magpie caches a successful icon URL; new bytes at the same
+  URL may keep showing the old picture. Push the image to `main` before publishing
+  a package whose metadata points to it.
 
 ```sh
 npm version patch   # or minor / major
@@ -52,15 +73,28 @@ Pushing the tag runs `.github/workflows/publish.yml`, which:
 3. publishes with OIDC (`id-token: write`), with provenance generated
    automatically.
 
-If you prefer to tag by hand:
+If you tag by hand, first commit the version bump and all release files, then
+create `v<version>` using exactly the version in package.json. For example,
+replace `NEXT_VERSION` below with the new version:
 
 ```sh
-# bump the version in package.json first
-git add package.json
-git commit -m "release: 0.1.1"
-git tag v0.1.1
+# Commit all release changes before creating the tag
+git tag -a vNEXT_VERSION -m "Release vNEXT_VERSION"
 git push --follow-tags
 ```
+
+Use an annotated tag as above: `--follow-tags` does not push lightweight tags.
+
+After CI and the npm publish workflow succeed, publish the GitHub Release using
+the existing tag. Write the release notes to a UTF-8 Markdown file with actual
+line breaks and blank lines between paragraphs and lists, then pass that file:
+
+```sh
+gh release create vNEXT_VERSION --verify-tag --title "vNEXT_VERSION" --notes-file release-notes.md
+```
+
+The release notes file is an input to the release command; it is not part of the
+npm package. Check that the published release body retains its line breaks.
 
 ## Token fallback
 
@@ -79,8 +113,7 @@ Trusted publishing is preferred; keep a token only as a fallback.
 
 ```sh
 npm view @guotree/magpie-websearch version
-npm audit signatures
 ```
 
-The npm package page should show the provenance badge for versions published by
-the workflow.
+Confirm that npm reports the intended release version, then check the npm
+package page for the provenance badge and its link to the publishing workflow.
