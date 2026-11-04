@@ -4,6 +4,10 @@ import { envInt, envStr, list, makeCache, page, requestJSON, sizeFor } from "../
 // code -1 with a human-readable message otherwise. request_id is the only
 // handle support has on a request, so it rides along on every failure.
 //
+// A key is required. AnySearch's anonymous tier is deliberately not wired up:
+// the pilot keeps one predictable quota per key instead of a second shared
+// pool.
+//
 //   ANYSEARCH_CACHE_TTL     ms to reuse a response for the same query (0 disables)
 //   ANYSEARCH_MAX_RESULTS   cap on results, 1-10 (the API's range)
 //   ANYSEARCH_TAG           pin the intent router to a sub-domain, e.g. "code.snippet"
@@ -50,22 +54,24 @@ const cache = makeCache(CACHE_TTL)
 export const anysearch = {
   name: "AnySearch",
   keysURL: "https://www.anysearch.com/",
-  // Anonymous access is a first-class mode: no key only means no
-  // Authorization header goes out.
-  keyOptional: true,
 
   async execute({ query, count, key }, ctx) {
+    // magpie does not call a key-required API without a key, but keep the
+    // failure explicit if that changes.
+    if (!key) throw new Error("AnySearch needs a key: add one in magpie's Web search settings")
+
     const cached = cache.read(query)
     if (cached) return cached
-
-    const headers = { Accept: "application/json", "Content-Type": "application/json" }
-    if (key) headers.Authorization = "Bearer " + key
 
     const body = await requestJSON(
       ENDPOINT,
       {
         method: "POST",
-        headers,
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + key,
+        },
         body: JSON.stringify({
           query: query.trim().replace(/\s+/g, " "),
           max_results: sizeFor(count, PREFERRED, MAX),
@@ -81,9 +87,9 @@ export const anysearch = {
         timeout: TIMEOUT,
         messages: {
           402:
-            "AnySearch quota exhausted (HTTP 402). Add an AnySearch key in magpie's " +
-            "Web search settings, or wait for the free quota to reset. The response " +
-            "body is withheld because it may contain credentials.",
+            "AnySearch quota exhausted (HTTP 402). Add a new AnySearch key in " +
+            "magpie's Web search settings, or wait for the quota to reset. The " +
+            "response body is withheld because it may contain credentials.",
         },
       },
     )

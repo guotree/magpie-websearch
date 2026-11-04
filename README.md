@@ -2,7 +2,7 @@
 
 Web search APIs for [magpie](https://usemagpie.ai). This is a **magpie plugin**, not an MCP tool: once installed, the APIs appear in **Settings › Models › Web search**, and magpie uses them for its `web_search` tool when no provider can search.
 
-Pilot: **AnySearch**, **Keenable**, **Linkup**. The remaining providers from [guotree/opencode-search-plugin](https://github.com/guotree/opencode-search-plugin) will be ported in batches; see [PROVIDERS.md](PROVIDERS.md).
+Pilot: **AnySearch**, **Keenable**, **Linkup**. All three require a key; magpie owns the keys. The remaining providers from [guotree/opencode-search-plugin](https://github.com/guotree/opencode-search-plugin) will be ported in batches; see [PROVIDERS.md](PROVIDERS.md).
 
 ## Install
 
@@ -27,8 +27,8 @@ In the app: **Settings › Models › Web search**, add a key for each API you w
 In a terminal:
 
 ```sh
-# AnySearch: the key is optional; anonymous access uses the free per-IP tier
-magpie search add websearch:anysearch
+# AnySearch: a key is required
+magpie search add websearch:anysearch <key>
 
 # Keenable: a key is required
 magpie search add websearch:keenable <key>
@@ -58,15 +58,15 @@ magpie search rm websearch:linkup
 
 | API | Vendor ID | Key | Notes |
 |---|---|---|---|
-| AnySearch | `websearch:anysearch` | optional | Free per-IP tier; intent routing, `cn`/`intl` zones, markdown or JSON content |
+| AnySearch | `websearch:anysearch` | required | Intent routing, `cn`/`intl` zones, markdown or JSON content. The anonymous tier is deliberately not wired up |
 | Keenable | `websearch:keenable` | required | 100,000 free requests/month. The keyless `/public` pool is deliberately not wired up; see below |
 | Linkup | `websearch:linkup` | required | `content` is a query-relevant excerpt, not the page; depth buys recall, not text |
 
-### Why Keenable needs a key
+### Why the pilot requires keys
 
 Keenable's keyless `/public` pool is shared per egress IP (1,000 requests an hour and 10 a second), and magpie does not rest an empty key after a 429. Every search would therefore hit the shared pool again with no cooldown, and a proxy, NAT or cloud runner can make that pool unpredictable. This package requires a key; the keyed account gets 100,000 free requests a month.
 
-AnySearch remains the only keyless pilot: its anonymous tier is a separate free pool, and its key is optional.
+AnySearch's anonymous tier is also not wired up: the pilot keeps one predictable quota per key instead of a second shared pool. Linkup already required a key.
 
 ## What magpie does with a result
 
