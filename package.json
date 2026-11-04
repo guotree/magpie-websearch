@@ -1,7 +1,7 @@
 {
   "name": "@guotree/magpie-websearch",
-  "version": "0.2.1",
-  "description": "Web search APIs for magpie: AnySearch, Keenable and TinyFish with optional keys, plus Linkup and Querit. Keys are managed by magpie.",
+  "version": "0.3.0",
+  "description": "Web search APIs for magpie: AnySearch, Keenable, Parallel and TinyFish with optional keys, plus Linkup and Querit. Keys are managed by magpie.",
   "type": "module",
   "main": "./index.mjs",
   "files": [
@@ -22,6 +22,7 @@
     "anysearch",
     "keenable",
     "linkup",
+    "parallel",
     "querit",
     "tinyfish"
   ],
@@ -45,7 +46,7 @@
     "icon": "https://raw.githubusercontent.com/guotree/magpie-websearch/main/assets/icon.png?v=1"
   },
   "scripts": {
-    "test": "node --test test/anysearch.test.mjs test/keenable.test.mjs test/linkup.test.mjs test/querit.test.mjs test/tinyfish.test.mjs test/tinyfish-mcp.test.mjs test/index.test.mjs test/search-contract.test.mjs test/core.test.mjs test/anonymous.test.mjs",
+    "test": "node --test test/anysearch.test.mjs test/keenable.test.mjs test/linkup.test.mjs test/parallel.test.mjs test/querit.test.mjs test/tinyfish.test.mjs test/mcp.test.mjs test/index.test.mjs test/search-contract.test.mjs test/core.test.mjs test/anonymous.test.mjs",
     "check": "node scripts/check.mjs && npm test",
     "check:bun": "bun scripts/check.mjs && bun test ./test/*.test.mjs",
     "smoke:magpie": "node scripts/smoke-magpie.mjs"
