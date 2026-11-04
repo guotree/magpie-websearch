@@ -45,7 +45,7 @@
   },
   "magpie": {
     "name": "magpie-websearch",
-    "icon": "https://raw.githubusercontent.com/guotree/magpie-websearch/main/assets/icon.png?v=1"
+    "icon": "https://raw.githubusercontent.com/guotree/magpie-websearch/main/assets/icon-128.png"
   },
   "scripts": {
     "test": "node --test test/anysearch.test.mjs test/keenable.test.mjs test/linkup.test.mjs test/metaso.test.mjs test/parallel.test.mjs test/querit.test.mjs test/tinyfish.test.mjs test/mcp.test.mjs test/index.test.mjs test/search-contract.test.mjs test/core.test.mjs test/anonymous.test.mjs",
