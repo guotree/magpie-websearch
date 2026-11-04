@@ -49,10 +49,16 @@ Before bumping the version:
   when both name the same API. Document per-provider fields, defaults and
   environment mappings. Confirm that parameter-only examples still register all
   APIs and that the smoke test covers the combined registration filters.
-- Verify that AnySearch and Keenable can be added with no key, remain ready in
-  magpie, and reach their anonymous endpoints. The host smoke test must check
+- Verify that AnySearch, Keenable and TinyFish can be added with no key, remain
+  ready in magpie, and reach their anonymous endpoints. The host smoke test must check
   anonymous 429 cooldown and fallback; keyed calls must keep their authentication
   and remain independent of an anonymous cooldown.
+- For TinyFish, check anonymous MCP JSON/SSE and keyed REST GET, complete custom
+  endpoint URLs, local result caps, and the requirement for a key when searching
+  papers. Keep the provider-specific transport in
+  [src/providers/tinyfish-mcp.mjs](src/providers/tinyfish-mcp.mjs) included in the
+  npm package. Distinguish live anonymous verification from local fake-service
+  checks; do not claim a live keyed success or an anonymous quota without evidence.
 - Run `npm pack --dry-run` and check that the entry, `src/` and `assets/icon.png`
   are included. Keep runtime files committed so GitHub installs work without a build.
 - If `assets/icon.png` changes, change the `magpie.icon` URL's `v` parameter in
