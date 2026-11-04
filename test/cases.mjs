@@ -107,6 +107,52 @@ export const LINKUP_CASE = {
   ],
 }
 
+export const METASO_CASE = {
+  response: {
+    credits: 3,
+    total: 21,
+    webpages: [
+      {
+        title: "Metaso hit",
+        link: "https://example.com/metaso",
+        snippet: "Metaso snippet",
+        date: "2026-11-04",
+      },
+      {
+        title: "Metaso fallback",
+        link: "https://example.com/metaso-fallback",
+        snippet: "Solo snippet",
+      },
+      {
+        title: "",
+        link: "https://example.com/bare",
+      },
+      {
+        title: "No URL",
+        snippet: "dropped",
+      },
+    ],
+  },
+  expected: [
+    {
+      url: "https://example.com/metaso",
+      title: "Metaso hit",
+      text: "Metaso snippet",
+      age: "2026-11-04",
+    },
+    {
+      url: "https://example.com/metaso-fallback",
+      title: "Metaso fallback",
+      text: "Solo snippet",
+    },
+    {
+      url: "https://example.com/bare",
+      title: "https://example.com/bare",
+      text: "",
+    },
+  ],
+}
+
 export const QUERIT_CASE = {
   response: {
     error_code: 200,

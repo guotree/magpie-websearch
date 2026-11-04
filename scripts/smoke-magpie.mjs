@@ -77,6 +77,10 @@ const upstream = createServer(async (req, res) => {
     res.end(JSON.stringify({ results: [
       { title: "Anonymous Keenable", url: "https://example.com/keenable", snippet: "Anonymous smoke result" },
     ] }))
+  } else if (req.url.startsWith("/metaso/")) {
+    res.end(JSON.stringify({ credits: 1, total: 1, webpages: [
+      { title: "Metaso smoke page", link: "https://example.com/metaso", snippet: "Local Metaso result" },
+    ] }))
   } else {
     res.end(JSON.stringify({ results: [{ name: "Smoke page", url: "https://example.com/smoke", content: "Local smoke result" }] }))
   }
@@ -113,13 +117,14 @@ try {
   console.log("Loading the plugin in an isolated magpie configuration…")
   await run("plugin", "add", root)
   const definitions = await loadedSearches()
-  assert.deepEqual(definitions.map((entry) => entry.id).sort(), ["anysearch", "keenable", "linkup", "parallel", "querit", "tinyfish"])
+  assert.deepEqual(definitions.map((entry) => entry.id).sort(), ["anysearch", "keenable", "linkup", "metaso", "parallel", "querit", "tinyfish"])
   assert.deepEqual(definitions.filter((entry) => entry.keyOptional).map((entry) => entry.id).sort(), ["anysearch", "keenable", "parallel", "tinyfish"])
   await run("plugin", "options", root, JSON.stringify({ enable: ["linkup", "querit"], disable: ["querit"] }))
   assert.deepEqual(await loadedIDs(), ["linkup"])
   await run("plugin", "options", root, JSON.stringify({
     linkup: { depth: "deep", maxResults: 2, cacheTTL: 0, timeout: 500 },
     anysearch: { cacheTTL: 0 }, keenable: { cacheTTL: 0 },
+    metaso: { maxResults: 2, cacheTTL: 0, timeout: 500 },
     parallel: { maxResults: 1, mode: "fast", cacheTTL: 0, timeout: 500 },
     tinyfish: { maxResults: 1, language: "zh", cacheTTL: 0, timeout: 500 },
   }))
@@ -276,7 +281,22 @@ try {
   const beforeParallelRefusal = calls.length
   assert.match(await failure("rate limited"), /429|slow down|error/i)
   assert.equal(calls.length, beforeParallelRefusal + 1, "a refused REST key never falls back to MCP")
-  console.log("✓ magpie loads six APIs, filters registrations, applies options/custom URLs, handles timeout/429, and runs anonymous search with cooldown and fallback; Parallel and TinyFish support MCP JSON/SSE and keyed REST")
+  await run("search", "rm", "magpie-websearch:parallel")
+  console.log("Checking Metaso search, key handling, and options…")
+  const metasoURL = `http://127.0.0.1:${upstream.address().port}/metaso`
+  await run("search", "add", "magpie-websearch:metaso", "metaso-dummy-key", `url=${metasoURL}/search`)
+  await run("search", "move", "magpie-websearch:metaso", "1")
+  const metasoResult = await search("metaso smoke query")
+  assert.match(metasoResult, /example\.com\/metaso/)
+  const metasoCall = calls.at(-1)
+  assert.equal(metasoCall.path, "/metaso/search")
+  assert.equal(metasoCall.method, "POST")
+  assert.equal(metasoCall.key, "Bearer metaso-dummy-key")
+  assert.equal(metasoCall.body.q, "metaso smoke query")
+  assert.equal(metasoCall.body.scope, "webpage")
+  assert.equal(metasoCall.body.size, 2)
+  await run("search", "rm", "magpie-websearch:metaso")
+  console.log("✓ magpie loads seven APIs, filters registrations, applies options/custom URLs, handles timeout/429, and runs anonymous search with cooldown and fallback; Parallel and TinyFish support MCP JSON/SSE and keyed REST")
 } catch (error) {
   console.error(gatewayLog)
   throw error
