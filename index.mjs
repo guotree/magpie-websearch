@@ -1,24 +1,18 @@
-import { anysearch } from "./src/providers/anysearch.mjs"
-import { keenable } from "./src/providers/keenable.mjs"
-import { linkup } from "./src/providers/linkup.mjs"
-import { querit } from "./src/providers/querit.mjs"
+import { createAnysearch } from "./src/providers/anysearch.mjs"
+import { createKeenable } from "./src/providers/keenable.mjs"
+import { createLinkup } from "./src/providers/linkup.mjs"
+import { createQuerit } from "./src/providers/querit.mjs"
+import { optionGroup } from "./src/core.mjs"
 
-// Each entry is the id magpie shows as `magpie-websearch:<id>` and the
-// definition its search hook reads. Adding a provider means adding its module
-// and one line here.
 const PROVIDERS = [
-  ["anysearch", anysearch],
-  ["keenable", keenable],
-  ["linkup", linkup],
-  ["querit", querit],
+  ["anysearch", createAnysearch],
+  ["keenable", createKeenable],
+  ["linkup", createLinkup],
+  ["querit", createQuerit],
 ]
-
 const KNOWN = new Set(PROVIDERS.map(([id]) => id))
 const WARNING = "[magpie-websearch]"
 
-// Reads the `enable` or `disable` plugin option: an array of provider IDs.
-// A wrong shape is ignored, and an ID naming no provider here is dropped with
-// a warning rather than costing the user every provider.
 function readOption(options, name) {
   const requested = options?.[name]
   if (requested === undefined) return undefined
@@ -28,41 +22,26 @@ function readOption(options, name) {
   }
   const ids = new Set(requested.filter((entry) => typeof entry === "string"))
   const unknown = [...ids].filter((id) => !KNOWN.has(id))
-  if (unknown.length > 0) {
-    console.warn(
-      `${WARNING} ${name} names no provider this package registers: ${unknown.join(", ")}`,
-    )
-  }
+  if (unknown.length > 0) console.warn(`${WARNING} ${name} names no provider this package registers: ${unknown.join(", ")}`)
   return ids
 }
 
-// magpie calls every function this module exports as a plugin, so this is the
-// only export. Helpers live in src/.
+// magpie calls every exported function as a plugin. Keep this the only one.
 export const WebSearch = async (_input, options = {}) => {
   const opts = options ?? {}
   const allowed = readOption(opts, "enable")
   const disabled = readOption(opts, "disable") ?? new Set()
-
-  // Deny wins on the overlap: a provider `disable` names stays out even when
-  // `enable` lists it, so a per-provider exclusion is never overridden by a
-  // bulk allow-list. The overlap is named because the config is redundant,
-  // not fatal.
   const overlap = allowed ? [...allowed].filter((id) => disabled.has(id)) : []
   if (overlap.length > 0) {
-    console.warn(
-      `${WARNING} disable overrides enable for: ${overlap.join(", ")} -- those providers stay out`,
-    )
+    console.warn(`${WARNING} disable overrides enable for: ${overlap.join(", ")} -- those providers stay out`)
   }
-
   if (allowed !== undefined && ![...allowed].some((id) => KNOWN.has(id))) {
     console.warn(`${WARNING} enable lists no known provider; the search pool will be empty`)
   }
-
   const search = {}
-  for (const [id, definition] of PROVIDERS) {
-    if (disabled.has(id)) continue
-    if (allowed !== undefined && !allowed.has(id)) continue
-    search[id] = definition
+  for (const [id, create] of PROVIDERS) {
+    if (disabled.has(id) || (allowed !== undefined && !allowed.has(id))) continue
+    search[id] = create(optionGroup(opts, id))
   }
   return { search }
 }

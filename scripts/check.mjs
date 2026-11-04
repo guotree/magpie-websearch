@@ -25,6 +25,8 @@ if (!search || typeof search !== "object" || Array.isArray(search)) {
     if (!ID.test(id)) fail(`${id}: id must match ${ID}`)
     if (typeof definition?.name !== "string" || !definition.name.trim()) {
       fail(`${id}: name is missing`)
+    } else if (!definition.name.endsWith(" (magpie-websearch)")) {
+      fail(`${id}: name must end with " (magpie-websearch)"`)
     }
     if (typeof definition?.execute !== "function") fail(`${id}: execute is missing`)
     if (definition?.keysURL !== undefined && !/^https?:\/\//.test(definition.keysURL)) {

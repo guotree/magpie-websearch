@@ -1,11 +1,65 @@
 // Shared helpers for the magpie search hook. This package has no runtime
 // dependencies: Bun's fetch, AbortSignal and Map cover everything here.
 
+import { createHash } from "node:crypto"
+
+export function optionGroup(options, name) {
+  const value = options?.[name]
+  if (value === undefined) return {}
+  if (value && typeof value === "object" && !Array.isArray(value)) return value
+  throw new TypeError(`${name} options must be an object`)
+}
+
+// Explicit options win over environment variables. Invalid explicit
+// values fail loading with a useful error instead of silently changing a tier.
+export function configInt(options, name, env, fallback, min = 0, max = Number.MAX_SAFE_INTEGER) {
+  if (options[name] === undefined) return clamp(envInt(env, fallback), min, max)
+  const value = options[name]
+  if (!Number.isSafeInteger(value) || value < min || value > max) {
+    throw new TypeError(`${env.split("_")[0].toLowerCase()}.${name} must be an integer from ${min} to ${max}`)
+  }
+  return value
+}
+
+export function configStr(options, name, env, fallback = "", values) {
+  const explicit = options[name] !== undefined
+  const field = `${env.split("_")[0].toLowerCase()}.${name}`
+  if (explicit && typeof options[name] !== "string") throw new TypeError(`${field} must be a string`)
+  const value = explicit ? options[name].trim() : envStr(env) || fallback
+  if (!values || values.includes(value)) return value
+  if (explicit) throw new TypeError(`${field} must be one of ${values.map((v) => JSON.stringify(v)).join(", ")}`)
+  console.warn(`[magpie-websearch] ${env} is invalid; using ${JSON.stringify(fallback)}`)
+  return fallback
+}
+
+export function normalizeQuery(query) {
+  return String(query ?? "").trim().replace(/\s+/g, " ")
+}
+
+// Base URL may be an origin, a prefix, a /v1 base or the full search endpoint.
+// Preserve prefixes such as /proxy instead of resolving against the origin.
+export function searchEndpoint(base, fallback) {
+  if (!base?.trim()) return fallback
+  const url = new URL(base.trim())
+  if (!["http:", "https:"].includes(url.protocol) || url.search || url.hash || url.username || url.password) {
+    throw new TypeError("Search Base URL must be HTTP(S), without credentials, query or fragment")
+  }
+  const path = url.pathname.replace(/\/+$/, "")
+  url.pathname = path.endsWith("/search") ? path : path.endsWith("/v1") ? path + "/search" : path + "/v1/search"
+  return url.href
+}
+
+// Hash the complete request identity, so keys, endpoints, counts and search
+// parameters cannot share results. No raw credential is kept in the cache key.
+export function cacheKey(endpoint, body, key) {
+  return createHash("sha256").update(JSON.stringify([endpoint, body, key])).digest("hex")
+}
+
 export function envInt(name, fallback) {
   const raw = (process.env[name] ?? "").trim()
   if (raw === "") return fallback
   const value = Number(raw)
-  return Number.isInteger(value) && value >= 0 ? value : fallback
+  return Number.isSafeInteger(value) && value >= 0 ? value : fallback
 }
 
 export function envStr(name) {
@@ -16,7 +70,7 @@ export function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max)
 }
 
-// magpie asks for `count` pages (6 today). The environment knob is a cap, so
+// magpie asks for `count` pages (6 today). The configured number is a cap, so
 // a user who sets a smaller number keeps it; the API's own maximum still wins.
 export function sizeFor(count, preferred, max) {
   const wanted = Number.isFinite(count) && count > 0 ? Math.floor(count) : preferred
@@ -52,6 +106,42 @@ export function apiError(status, message, retryAfter) {
   error.status = status
   if (retryAfter) error.retryAfter = retryAfter
   return error
+}
+
+// magpie does not rest an empty key. Keep anonymous 429s here, per API instance
+// and final endpoint, so the next search can fail over without another fetch.
+// Cached results may still be served; keyed requests never enter this cooldown.
+export function makeAnonymousCooldown(label) {
+  const deadlines = new Map()
+  return {
+    async run(endpoint, key, request) {
+      if (key) return request()
+      const now = Date.now()
+      const until = deadlines.get(endpoint) ?? 0
+      if (until > now) {
+        const remaining = String(Math.ceil((until - now) / 1000))
+        throw apiError(429, `${label} anonymous search is cooling down, retry after ${remaining}s`, remaining)
+      }
+      deadlines.delete(endpoint)
+      try {
+        return await request()
+      } catch (error) {
+        if (error?.status === 429) {
+          const at = Date.now()
+          const retry = String(error.retryAfter ?? "").trim()
+          const deadline = /^\d+$/.test(retry)
+            ? at + Number(retry) * 1000
+            : Date.parse(retry)
+          const next = Number.isSafeInteger(deadline) && deadline >= at ? deadline : at + 60_000
+          // Concurrent failures can extend a cooldown but never shorten it.
+          for (const [url, expires] of deadlines) if (expires <= at) deadlines.delete(url)
+          deadlines.set(endpoint, Math.max(next, deadlines.get(endpoint) ?? 0))
+          if (deadlines.size > 200) deadlines.delete(deadlines.keys().next().value)
+        }
+        throw error
+      }
+    },
+  }
 }
 
 // A hung upstream must not hang the agent. The host's ctx.abort is the real
@@ -126,6 +216,7 @@ export async function requestJSON(input, init, ctx, options = {}) {
   try {
     response = await fetch(input, { ...init, signal })
   } catch (error) {
+    if (ctx?.abort?.aborted) throw new Error(`${label} search cancelled`)
     if (timedOut(error, signal, ctx)) {
       throw new Error(`${label} search timed out after ${timeout}ms`)
     }
@@ -142,6 +233,11 @@ export async function requestJSON(input, init, ctx, options = {}) {
   try {
     raw = await response.text()
   } catch (error) {
+    if (response.status === 429) {
+      const retry = response.headers.get("Retry-After")
+      throw apiError(429, `${label} API error 429: response body unavailable${retryHint(retry)}`, retry)
+    }
+    if (ctx?.abort?.aborted) throw new Error(`${label} search cancelled`)
     if (timedOut(error, signal, ctx)) {
       throw new Error(`${label} search timed out after ${timeout}ms`)
     }

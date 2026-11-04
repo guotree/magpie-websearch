@@ -1,9 +1,11 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 
-import { linkup } from "../src/providers/linkup.mjs"
+import { createLinkup } from "../src/providers/linkup.mjs"
 import { LINKUP_CASE } from "./cases.mjs"
 import { context, json, stubFetch, text } from "./harness.mjs"
+
+const linkup = createLinkup()
 
 test("linkup: maps results, drops images and URL-less hits", async () => {
   const fake = stubFetch(() => json(LINKUP_CASE.response))

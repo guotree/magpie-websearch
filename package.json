@@ -1,7 +1,7 @@
 {
   "name": "@guotree/magpie-websearch",
   "version": "0.1.2",
-  "description": "Web search APIs for magpie. Current: AnySearch, Keenable, Linkup and Querit; all require a key, managed by magpie.",
+  "description": "Web search APIs for magpie: AnySearch and Keenable with optional keys, plus Linkup and Querit. Keys are managed by magpie.",
   "type": "module",
   "main": "./index.mjs",
   "files": [
@@ -36,13 +36,13 @@
     "url": "https://github.com/guotree/magpie-websearch/issues"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=20.3.0"
   },
   "magpie": {
     "name": "Web Search"
   },
   "scripts": {
-    "test": "node --test test/anysearch.test.mjs test/keenable.test.mjs test/linkup.test.mjs test/querit.test.mjs test/index.test.mjs",
-    "check": "node scripts/check.mjs && node --test test/anysearch.test.mjs test/keenable.test.mjs test/linkup.test.mjs test/querit.test.mjs test/index.test.mjs"
+    "test": "node --test test/anysearch.test.mjs test/keenable.test.mjs test/linkup.test.mjs test/querit.test.mjs test/index.test.mjs test/search-contract.test.mjs test/core.test.mjs test/anonymous.test.mjs",
+    "check": "node scripts/check.mjs && npm test"
   }
 }

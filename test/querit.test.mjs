@@ -1,9 +1,11 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 
-import { querit } from "../src/providers/querit.mjs"
+import { createQuerit } from "../src/providers/querit.mjs"
 import { QUERIT_CASE } from "./cases.mjs"
 import { context, json, stubFetch, text } from "./harness.mjs"
+
+const querit = createQuerit()
 
 test("querit: maps results, falls back to sentences, drops URL-less hits", async () => {
   const fake = stubFetch(() => json(QUERIT_CASE.response))
@@ -100,9 +102,7 @@ test("querit: passes QUERIT_COUNT through when magpie gives no count", async () 
   const old = process.env.QUERIT_COUNT
   process.env.QUERIT_COUNT = "5000"
   try {
-    // A query-string import is a fresh module instance, so it reads the
-    // environment set above; the static import at the top stays at its default.
-    const { querit: unclamped } = await import("../src/providers/querit.mjs?count=5000")
+    const unclamped = createQuerit()
     const fake = stubFetch(() => json({ results: { result: [] } }))
     try {
       await unclamped.execute({ query: "querit unclamped", key: "k" }, context())

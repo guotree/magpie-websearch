@@ -1,9 +1,6 @@
-// Response fixtures copied from guotree/opencode-search-plugin test/cases.ts
-// at v4.6.1. The old suite asserts `content`; magpie's search hook accepts
-// `content` too, but this package returns `text` (the canonical field).
-//
-// The extra hits (full content, empty snippet, no URL, image) exercise the
-// fallbacks and drops that the old provider-specific tests cover.
+// Response fixtures sourced from guotree/opencode-search-plugin test/cases.ts
+// at v4.6.1, with expected results in magpie's { title, url, text, age? } shape.
+// Cases cover full content, snippet fallback, missing URLs and image filtering.
 
 export const ANYSEARCH_CASE = {
   response: {

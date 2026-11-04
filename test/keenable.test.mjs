@@ -1,9 +1,11 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 
-import { keenable } from "../src/providers/keenable.mjs"
+import { createKeenable } from "../src/providers/keenable.mjs"
 import { KEENABLE_CASE } from "./cases.mjs"
 import { context, json, stubFetch, text } from "./harness.mjs"
+
+const keenable = createKeenable()
 
 test("keenable: maps results with a key", async () => {
   const fake = stubFetch(() => json(KEENABLE_CASE.response))
@@ -23,14 +25,17 @@ test("keenable: maps results with a key", async () => {
   }
 })
 
-test("keenable: needs a key before it calls the API", async () => {
-  const fake = stubFetch(() => json({ results: [] }))
+test("keenable: anonymous search uses the public endpoint and application title", async () => {
+  const fake = stubFetch(() => json(KEENABLE_CASE.response))
   try {
-    await assert.rejects(
-      keenable.execute({ query: "keenable no key", count: 6, key: "" }, context()),
-      /needs a key/,
-    )
-    assert.equal(fake.calls.length, 0)
+    const pages = await keenable.execute({ query: "keenable no key", count: 6, key: "" }, context())
+    assert.deepEqual(pages, KEENABLE_CASE.expected)
+    assert.equal(keenable.keyOptional, true)
+    assert.equal(fake.calls.length, 1)
+    assert.equal(fake.calls[0].url, "https://api.keenable.ai/v1/search/public")
+    assert.equal(fake.calls[0].init.headers["X-Keenable-Title"], "magpie-websearch")
+    assert.equal(new Headers(fake.calls[0].init.headers).has("X-API-Key"), false)
+    assert.equal(new Headers(fake.calls[0].init.headers).has("Authorization"), false)
   } finally {
     fake.restore()
   }

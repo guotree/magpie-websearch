@@ -1,9 +1,11 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 
-import { anysearch } from "../src/providers/anysearch.mjs"
+import { createAnysearch } from "../src/providers/anysearch.mjs"
 import { ANYSEARCH_CASE } from "./cases.mjs"
 import { context, json, stubFetch, text } from "./harness.mjs"
+
+const anysearch = createAnysearch()
 
 test("anysearch: maps data.results, prefers content, drops URL-less hits", async () => {
   const fake = stubFetch(() => json(ANYSEARCH_CASE.response))
@@ -24,14 +26,15 @@ test("anysearch: maps data.results, prefers content, drops URL-less hits", async
   }
 })
 
-test("anysearch: needs a key before it calls the API", async () => {
-  const fake = stubFetch(() => json({ code: 0, data: { results: [] } }))
+test("anysearch: anonymous search omits authentication on the same endpoint", async () => {
+  const fake = stubFetch(() => json(ANYSEARCH_CASE.response))
   try {
-    await assert.rejects(
-      anysearch.execute({ query: "anysearch no key", count: 6, key: "" }, context()),
-      /needs a key/,
-    )
-    assert.equal(fake.calls.length, 0)
+    const pages = await anysearch.execute({ query: "anysearch no key", count: 6 }, context())
+    assert.deepEqual(pages, ANYSEARCH_CASE.expected)
+    assert.equal(anysearch.keyOptional, true)
+    assert.equal(fake.calls.length, 1)
+    assert.equal(fake.calls[0].url, "https://api.anysearch.com/v1/search")
+    assert.equal(new Headers(fake.calls[0].init.headers).has("Authorization"), false)
   } finally {
     fake.restore()
   }
