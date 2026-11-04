@@ -1,6 +1,6 @@
 import {
   cacheKey, configInt, configStr, list, makeAnonymousCooldown, makeCache, normalizeQuery,
-  page, requestJSON, searchEndpoint, sizeFor,
+  page, requestJSON, resolveEndpoint, sizeFor,
 } from "../core.mjs"
 
 export function createKeenable(options = {}) {
@@ -18,11 +18,7 @@ export function createKeenable(options = {}) {
     keyOptional: true,
     async execute({ query, count, key = "", url }, ctx) {
       key = key.trim()
-      // A full public endpoint is accepted as a Base URL too; the supplied key
-      // decides which twin is called, including when a key is added later.
-      const base = url?.trim().replace(/\/search\/public\/?$/, "/search")
-      const searchURL = searchEndpoint(base, "https://api.keenable.ai/v1/search")
-      const endpoint = key ? searchURL : searchURL + "/public"
+      const endpoint = resolveEndpoint(url, key ? "https://api.keenable.ai/v1/search" : "https://api.keenable.ai/v1/search/public")
       const body = { query: normalizeQuery(query), max_results: sizeFor(count, maxResults, 50), ...(mode ? { mode } : {}) }
       const identity = cacheKey(endpoint, body, key)
       const cached = cache.read(identity)

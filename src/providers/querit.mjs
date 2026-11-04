@@ -1,6 +1,6 @@
 import {
   cacheKey, configInt, list, makeCache, normalizeQuery,
-  page, requestJSON, searchEndpoint, sizeFor,
+  page, requestJSON, resolveEndpoint, sizeFor,
 } from "../core.mjs"
 
 export function createQuerit(options = {}) {
@@ -15,7 +15,7 @@ export function createQuerit(options = {}) {
     keysURL: "https://querit.ai",
     async execute({ query, count, key, url }, ctx) {
       if (!key) throw new Error("Querit needs a key: add one in magpie's Web search settings")
-      const endpoint = searchEndpoint(url, "https://api.querit.ai/v1/search")
+      const endpoint = resolveEndpoint(url, "https://api.querit.ai/v1/search")
       const body = { query: normalizeQuery(query), count: sizeFor(count, countCap, countCap) }
       const identity = cacheKey(endpoint, body, key)
       const cached = cache.read(identity)

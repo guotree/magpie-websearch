@@ -2,18 +2,23 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { createAnysearch } from "../src/providers/anysearch.mjs"
 import { createKeenable } from "../src/providers/keenable.mjs"
+import { createParallel } from "../src/providers/parallel.mjs"
 import { createTinyfish } from "../src/providers/tinyfish.mjs"
-import { ANYSEARCH_CASE, KEENABLE_CASE, TINYFISH_CASE, TINYFISH_MCP_RESPONSE } from "./cases.mjs"
+import { ANYSEARCH_CASE, KEENABLE_CASE, PARALLEL_CASE, PARALLEL_MCP_RESPONSE, TINYFISH_CASE, TINYFISH_MCP_RESPONSE } from "./cases.mjs"
 import { context, json, stubFetch, text } from "./harness.mjs"
 
 const providers = [
   ["anysearch", createAnysearch, ANYSEARCH_CASE],
   ["keenable", createKeenable, KEENABLE_CASE],
+  ["parallel", createParallel, PARALLEL_CASE],
   ["tinyfish", createTinyfish, TINYFISH_CASE],
 ]
 
-const success = (id, fixture, call) => json(id === "tinyfish" && call.init.method === "POST"
-  ? TINYFISH_MCP_RESPONSE : fixture.response)
+const success = (id, fixture, call) => {
+  if (id === "tinyfish" && call.init.method === "POST") return json(TINYFISH_MCP_RESPONSE)
+  if (id === "parallel" && !call.init.headers?.["x-api-key"]) return json(PARALLEL_MCP_RESPONSE)
+  return json(fixture.response)
+}
 
 for (const [id, create, fixture] of providers) {
   test(`${id}: anonymous cooldown respects seconds, isolates endpoints, and lets keyed requests through`, async () => {
@@ -68,7 +73,9 @@ for (const [id, create, fixture] of providers) {
 
   test(`${id}: anonymous cached results remain usable during cooldown and never cross to a key`, async () => {
     const api = create()
-    const fake = stubFetch((call) => (call.body?.params?.arguments.query ?? call.body?.query ?? call.body?.q) === "limited"
+    const queryFor = (call) => call.body?.params?.arguments?.query ?? call.body?.params?.arguments?.search_queries?.[0]
+      ?? call.body?.search_queries?.[0] ?? call.body?.query ?? call.body?.q
+    const fake = stubFetch((call) => queryFor(call) === "limited"
       ? text("limited", 429, { "Retry-After": "120" }) : success(id, fixture, call))
     try {
       const pages = await api.execute({ query: "cached" }, context())
@@ -86,7 +93,7 @@ for (const [id, create, fixture] of providers) {
     try {
       await assert.rejects(api.execute({ query: "auth", key: "invalid" }, context()), (e) => e.status === 401)
       assert.equal(fake.calls.length, 1)
-      assert.ok(!fake.calls[0].url.endsWith("/public"))
+      assert.ok(!fake.calls[0].url.endsWith("/public") && !fake.calls[0].url.endsWith("/mcp"))
     } finally { fake.restore() }
   })
 
@@ -104,19 +111,23 @@ for (const [id, create, fixture] of providers) {
   })
 }
 
-test("keenable: custom public endpoints follow the current authentication mode", async () => {
+test("keenable: default endpoints follow the current authentication mode and custom URLs are exact", async () => {
   const api = createKeenable({ cacheTTL: 0 })
   const fake = stubFetch(() => json(KEENABLE_CASE.response))
   try {
-    for (const base of ["https://custom.example/proxy", "https://custom.example/proxy/v1/",
-      "https://custom.example/proxy/v1/search", "https://custom.example/proxy/v1/search/public/"]) {
-      await api.execute({ query: "custom", key: " ", url: base }, context())
-      assert.equal(fake.calls.at(-1).url, "https://custom.example/proxy/v1/search/public")
-      assert.equal(new Headers(fake.calls.at(-1).init.headers).has("X-API-Key"), false)
-      await api.execute({ query: "custom", key: "k", url: base }, context())
-      assert.equal(fake.calls.at(-1).url, "https://custom.example/proxy/v1/search")
-      assert.equal(fake.calls.at(-1).init.headers["X-API-Key"], "k")
-    }
+    // default endpoints without url
+    await api.execute({ query: "default", key: " " }, context())
+    assert.equal(fake.calls.at(-1).url, "https://api.keenable.ai/v1/search/public")
+    assert.equal(new Headers(fake.calls.at(-1).init.headers).has("X-API-Key"), false)
+    await api.execute({ query: "default", key: "k" }, context())
+    assert.equal(fake.calls.at(-1).url, "https://api.keenable.ai/v1/search")
+    assert.equal(fake.calls.at(-1).init.headers["X-API-Key"], "k")
+
+    // custom URL is used as given
+    await api.execute({ query: "custom", key: " ", url: "https://custom.example/my-public" }, context())
+    assert.equal(fake.calls.at(-1).url, "https://custom.example/my-public")
+    await api.execute({ query: "custom", key: "k", url: "https://custom.example/my-keyed" }, context())
+    assert.equal(fake.calls.at(-1).url, "https://custom.example/my-keyed")
   } finally { fake.restore() }
 })
 

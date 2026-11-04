@@ -1,6 +1,6 @@
 import {
   cacheKey, configInt, configStr, list, makeAnonymousCooldown, makeCache, normalizeQuery,
-  page, requestJSON, searchEndpoint, sizeFor,
+  page, requestJSON, resolveEndpoint, sizeFor,
 } from "../core.mjs"
 
 export function createAnysearch(options = {}) {
@@ -20,7 +20,7 @@ export function createAnysearch(options = {}) {
     keyOptional: true,
     async execute({ query, count, key = "", url }, ctx) {
       key = key.trim()
-      const endpoint = searchEndpoint(url, "https://api.anysearch.com/v1/search")
+      const endpoint = resolveEndpoint(url, "https://api.anysearch.com/v1/search")
       const body = {
         query: normalizeQuery(query),
         max_results: sizeFor(count, maxResults, 10),

@@ -1,6 +1,6 @@
 import {
   cacheKey, configInt, configStr, list, makeCache, normalizeQuery,
-  page, requestJSON, searchEndpoint, sizeFor,
+  page, requestJSON, resolveEndpoint, sizeFor,
 } from "../core.mjs"
 
 export function createLinkup(options = {}) {
@@ -22,7 +22,7 @@ export function createLinkup(options = {}) {
     keysURL: "https://app.linkup.so",
     async execute({ query, count, key, url }, ctx) {
       if (!key) throw new Error("Linkup needs a key: add one in magpie's Web search settings")
-      const endpoint = searchEndpoint(url, "https://api.linkup.so/v1/search")
+      const endpoint = resolveEndpoint(url, "https://api.linkup.so/v1/search")
       const body = { q: normalizeQuery(query), depth, outputType: "searchResults", maxResults: sizeFor(count, maxResults, 100) }
       const identity = cacheKey(endpoint, body, key)
       const cached = cache.read(identity)

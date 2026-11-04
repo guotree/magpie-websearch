@@ -36,16 +36,15 @@ export function normalizeQuery(query) {
   return String(query ?? "").trim().replace(/\s+/g, " ")
 }
 
-// Base URL may be an origin, a prefix, a /v1 base or the full search endpoint.
-// Preserve prefixes such as /proxy instead of resolving against the origin.
-export function searchEndpoint(base, fallback) {
-  if (!base?.trim()) return fallback
-  const url = new URL(base.trim())
+// Resolves the search endpoint: if a custom URL is given, validate that it is
+// HTTP(S) without credentials, query or fragment, and use it as the exact
+// endpoint without heuristic rewriting. When omitted, use defaultEndpoint.
+export function resolveEndpoint(customUrl, defaultEndpoint) {
+  if (!customUrl?.trim()) return defaultEndpoint
+  const url = new URL(customUrl.trim())
   if (!["http:", "https:"].includes(url.protocol) || url.search || url.hash || url.username || url.password) {
     throw new TypeError("Search Base URL must be HTTP(S), without credentials, query or fragment")
   }
-  const path = url.pathname.replace(/\/+$/, "")
-  url.pathname = path.endsWith("/search") ? path : path.endsWith("/v1") ? path + "/search" : path + "/v1/search"
   return url.href
 }
 

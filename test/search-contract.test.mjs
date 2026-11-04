@@ -1,21 +1,23 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { WebSearch } from "../index.mjs"
-import { searchEndpoint } from "../src/core.mjs"
+import { resolveEndpoint } from "../src/core.mjs"
 import { context, json, stubFetch } from "./harness.mjs"
-import { ANYSEARCH_CASE, KEENABLE_CASE, LINKUP_CASE, QUERIT_CASE, TINYFISH_CASE } from "./cases.mjs"
+import { ANYSEARCH_CASE, KEENABLE_CASE, LINKUP_CASE, PARALLEL_CASE, QUERIT_CASE, TINYFISH_CASE } from "./cases.mjs"
 
-const fixtures = { anysearch: ANYSEARCH_CASE, keenable: KEENABLE_CASE, linkup: LINKUP_CASE, querit: QUERIT_CASE, tinyfish: TINYFISH_CASE }
+const fixtures = { anysearch: ANYSEARCH_CASE, keenable: KEENABLE_CASE, linkup: LINKUP_CASE, parallel: PARALLEL_CASE, querit: QUERIT_CASE, tinyfish: TINYFISH_CASE }
 
-test("custom Base URL preserves prefixes and accepts an origin, /v1 or full endpoint", () => {
+test("custom Base URL uses the exact endpoint as given and validates HTTP(S)", () => {
   for (const [base, want] of [
-    ["https://custom.example", "https://custom.example/v1/search"],
-    ["https://custom.example/proxy/", "https://custom.example/proxy/v1/search"],
-    ["https://custom.example/proxy/v1/", "https://custom.example/proxy/v1/search"],
+    ["https://custom.example", "https://custom.example/"],
+    ["https://custom.example/proxy", "https://custom.example/proxy"],
+    ["https://custom.example/proxy/v1/", "https://custom.example/proxy/v1/"],
     ["http://127.0.0.1:8080/search", "http://127.0.0.1:8080/search"],
-  ]) assert.equal(searchEndpoint(base, "unused"), want)
+    [undefined, "https://default.example/search"],
+    ["", "https://default.example/search"],
+  ]) assert.equal(resolveEndpoint(base, "https://default.example/search"), want)
   for (const base of ["file:///tmp/search", "https://custom.example?token=x", "https://user@custom.example"]) {
-    assert.throws(() => searchEndpoint(base, "unused"), /Base URL/)
+    assert.throws(() => resolveEndpoint(base, "unused"), /Base URL/)
   }
 })
 
@@ -32,15 +34,15 @@ for (const [id, fixture] of Object.entries(fixtures)) {
       await search[id].execute({ ...args, count: 6 }, context())
       await search[id].execute({ ...args, url: "https://other.example/v1/search" }, context())
       assert.equal(fake.calls.length, 4)
+      const u0 = new URL(fake.calls[0].url)
+      const u3 = new URL(fake.calls[3].url)
+      assert.equal(u0.origin + u0.pathname, "https://custom.example/proxy/v1")
+      assert.equal(u3.origin + u3.pathname, "https://other.example/v1/search")
       if (id === "tinyfish") {
-        assert.equal(new URL(fake.calls[0].url).pathname, "/proxy/v1")
-        assert.equal(new URL(fake.calls[3].url).pathname, "/v1/search")
         assert.equal(fake.calls[2].init.method, "GET")
         assert.equal(fake.calls[2].body, undefined)
       } else {
-        assert.equal(fake.calls[0].url, "https://custom.example/proxy/v1/search")
-        assert.equal(fake.calls[3].url, "https://other.example/v1/search")
-        assert.equal(fake.calls[2].body.max_results ?? fake.calls[2].body.maxResults ?? fake.calls[2].body.count, 6)
+        assert.equal(fake.calls[2].body.advanced_settings?.max_results ?? fake.calls[2].body.max_results ?? fake.calls[2].body.maxResults ?? fake.calls[2].body.count, 6)
       }
     } finally { fake.restore() }
   })
@@ -117,11 +119,14 @@ test("invalid provider options fail loading and disabled providers are not initi
     { anysearch: { maxResults: "2" } }, { keenable: [] }, { linkup: { timeout: -1 } },
     { linkup: { timeout: 2_147_483_648 } },
     { tinyfish: { domainType: "invalid" } }, { tinyfish: { maxResults: 0 } },
+    { parallel: { mode: "invalid" } }, { parallel: { maxResults: 0 } }, { parallel: { maxResults: 21 } },
   ]) await assert.rejects(WebSearch({}, options), TypeError)
   const { search } = await WebSearch({}, { disable: ["linkup"], linkup: { depth: "invalid" } })
   assert.equal(search.linkup, undefined)
   const disabled = await WebSearch({}, { disable: ["tinyfish"], tinyfish: { domainType: "invalid" } })
   assert.equal(disabled.search.tinyfish, undefined)
+  const disabledParallel = await WebSearch({}, { disable: ["parallel"], parallel: { mode: "invalid" } })
+  assert.equal(disabledParallel.search.parallel, undefined)
 })
 
 test("timeouts and host cancellation abort the upstream request", async () => {
