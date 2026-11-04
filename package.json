@@ -1,6 +1,6 @@
 {
   "name": "@guotree/magpie-websearch",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Web search APIs for magpie: AnySearch, Keenable, Parallel and TinyFish with optional keys, plus Linkup, Metaso and Querit. Keys are managed by magpie.",
   "type": "module",
   "main": "./index.mjs",
