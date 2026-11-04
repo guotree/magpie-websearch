@@ -4,14 +4,14 @@
 
 为 [magpie](https://usemagpie.ai) 增加的第三方多源网页搜索 API 插件。安装后，这些搜索 API 会出现在 **设置 › 模型 › 网页搜索**（Settings › Models › Web search）中，由 Magpie 统一管理其密钥、启用开关与请求调度顺序。
 
-当前支持厂商：**AnySearch**、**Keenable**、**Linkup**、**Metaso**、**Parallel**、**Querit**、**TinyFish**。
-其中 AnySearch、Keenable、Parallel 和 TinyFish 支持免 Key 匿名搜索；Linkup、Metaso 和 Querit 需要配置 API Key。详见 [PROVIDERS.md](PROVIDERS.md)。
+当前支持厂商：**AnySearch**、**Keenable**、**Linkup**、**Metaso**、**Parallel**、**Querit**、**SerpApi**、**TinyFish**。
+其中 AnySearch、Keenable、Parallel 和 TinyFish 支持免 Key 匿名搜索；Linkup、Metaso、Querit 和 SerpApi 需要配置 API Key。详见 [PROVIDERS.md](PROVIDERS.md)。
 
 ## 隐私与安全 (Privacy & Security)
 
 - **直连官方端点**：所有搜索请求均严格直接发往各厂商官方 API 端点，或发送至用户显式配置的自定义 Base URL 代理。
 - **零对话泄露**：插件仅发送搜索关键词（Query）以及必要的分页/过滤参数。绝不读取、访问或转发任何对话记录、系统提示词、本地文件、工具输出或 Agent 上下文。
-- **凭证安全保护**：API Key 由 Magpie 统一管理并通过标准鉴权请求头（Authorization / X-API-Key）发送；上游报错（如 HTTP 402/429）时会自动拦截并隐藏响应体，防止响应中可能夹带的凭据信息泄露。
+- **凭证管理与错误保护**：API Key 由 Magpie 统一管理，按厂商规范通过请求头或鉴权参数发送。SerpApi 的插件错误使用固定说明，省略底层异常和上游正文；其他厂商沿用各自的诊断处理。插件无法控制官方服务或自建代理的访问日志。
 - **绝不静默降级**：对于配置了 Key 的搜索项，若 Key 无效或额度耗尽，插件会明确向 Magpie 报告失败，**绝不静默降级为匿名搜索**，确保私有请求不会意外流向公共端点。
 
 ## 安装
@@ -31,6 +31,7 @@ magpie-websearch:linkup
 magpie-websearch:metaso
 magpie-websearch:parallel
 magpie-websearch:querit
+magpie-websearch:serpapi
 magpie-websearch:tinyfish
 ```
 
@@ -40,9 +41,9 @@ magpie-websearch:tinyfish
 
 在 Magpie 桌面客户端中：前往 **设置 › 模型 › 网页搜索**（Settings › Models › Web search），添加你需要的搜索引擎，开启开关并调整优先级顺序。
 - 对于 AnySearch、Keenable、Parallel、TinyFish，留空 Key 即可使用匿名免 Key 搜索；填写 Key 则使用你的私人账户额度。
-- 对于 Linkup、Metaso、Querit，必须填写对应的 API Key。
+- 对于 Linkup、Metaso、Querit、SerpApi，必须填写对应的 API Key。
 
-无需强制配置插件选项。在未配置过滤选项时，默认注册全部 7 个搜索 API，由 Magpie 的网页搜索设置界面决定启用哪些和使用顺序。
+无需强制配置插件选项。在未配置过滤选项时，默认注册全部 8 个搜索 API，由 Magpie 的网页搜索设置界面决定启用哪些和使用顺序。
 
 ### 自定义 Base URL 说明
 
@@ -78,11 +79,16 @@ magpie search add magpie-websearch:metaso <key>
 # Querit：必须提供 key
 magpie search add magpie-websearch:querit <key>
 
+# SerpApi：必须提供 key
+magpie search add magpie-websearch:serpapi <key>
+
 # 使用自定义端点代理
 magpie search add magpie-websearch:linkup <key> url=https://search.example.com/proxy/v1/search
 ```
 
 为一个 API 配置多个 Key 时使用英文逗号分隔，Magpie 会依次轮询并在某个 Key 被拒绝时将其暂时休眠：
+
+休眠会将该 Key 排在同一 API 的健康 Key 之后，不会完全禁用它；只有一个 Key 或全部 Key 都休眠时，宿主仍可能尝试它们。
 
 ```sh
 magpie search add magpie-websearch:linkup key1,key2
@@ -145,6 +151,18 @@ magpie plugin options magpie-websearch '{"tinyfish":{"language":"zh","domainType
 
 匿名访问已于 **2026-11-04** 在官方 MCP 端点实测通过。配置了 Key 时始终严格走 REST，绝不静默降级为 MCP。自定义端点须匹配协议类型（例如匿名代理为 `/proxy/mcp`，REST 代理为 `/proxy/search`）。
 
+### SerpApi 搜索
+
+SerpApi 接入官方 Google Search 接口，支持通过 SerpApi 聚合获取全球 Google 自然搜索结果：
+
+- **请求方式**：GET `https://serpapi.com/search`，参数由 URL 编码，凭证通过 `api_key` 参数传递。
+- **凭证安全**：SerpApi 的网络、HTTP、解析和状态错误只返回固定说明及必要的状态码，不附带原始异常、响应体、请求 URL 或底层 `cause`。请求不自动跟随重定向。此保护针对插件生成的错误和诊断，不能控制服务端或自建代理的日志，也不会改写正常网页结果内容。
+- **结果解析**：仅读取 `organic_results` 自然搜索条目，丢弃无 URL 的条目，保留原始日期作为 `age`。由于 Google 官方已废弃 `num` 结果数参数，单页结果通过本地截取（`serpapi.maxResults`）。
+- **空结果与缓存**：接受无错误的空数组，或 `status: "Success"` 加 `organic_results_state: "Fully empty"` 的官方空结果（允许附带空结果错误字符串）。结果字段为 `null`、未知状态和无法解释的错误均抛错且不缓存。合法空结果最多缓存 30 秒，`cacheTTL: 0` 关闭插件缓存。Magpie 在没有其他可用结果时会显示 `found nothing`。
+- **自定义参数**：支持配置国家代码（`gl`）、界面语言代码（`hl`）、发起地点（`location`）、Google 域名（`googleDomain`）与安全搜索（`safe`）。
+
+`hl` 控制界面语言，`gl` 为国家偏好，两者不等于严格限制结果语言或来源国家。仅请求一页，不自动翻页；`maxResults` 的 1–10 是插件的本地上限，结果可能更少。关闭插件缓存不会关闭 SerpApi 的服务端缓存。按[官方计费说明](https://serpapi.com/pricing)，成功空结果也可能计费，减少本地条数不会减少单次搜索费用。
+
 ## 厂商特性概览
 
 | 显示名称 | Vendor ID | Key 需求 | 特性与说明 |
@@ -155,6 +173,7 @@ magpie plugin options magpie-websearch '{"tinyfish":{"language":"zh","domainType
 | Metaso (magpie-websearch) | `magpie-websearch:metaso` | 必填 | 秘塔 AI 搜索；支持细分搜索范围（网页、论文等）并保留日期 |
 | Parallel (magpie-websearch) | `magpie-websearch:parallel` | 可选（免Key/有Key） | 匿名 MCP（fast 模式）或鉴权 REST；本地摘录合并与条数截断 |
 | Querit (magpie-websearch) | `magpie-websearch:querit` | 必填 | 提供摘要或拼接匹配句；可通过 `querit.count` 调整上限 |
+| SerpApi (magpie-websearch) | `magpie-websearch:serpapi` | 必填 | Google 自然搜索；插件错误省略敏感请求信息；支持地区语言与安全搜索配置 |
 | TinyFish (magpie-websearch) | `magpie-websearch:tinyfish` | 可选（免Key/有Key） | 匿名 MCP 或鉴权 REST；支持新闻/网页/论文检索及地区语言过滤 |
 
 所有由本插件注入的搜索项在 Magpie 界面中均以 `<Provider> (magpie-websearch)` 结尾显示，以清晰标识其来源。内部 Vendor ID 始终保持为 `magpie-websearch:<id>`，保证已有配置及 Key 的持久兼容。
@@ -166,7 +185,7 @@ magpie plugin options magpie-websearch '{"tinyfish":{"language":"zh","domainType
 - `age` 保留厂商返回的原生时间字符串，插件不作猜测与改写。
 - 自动剔除不包含 URL 的无效结果。
 - 抛出带有数值型 `status`（401、402、403、429）的错误被 Magpie 识别为服务商拒绝；对于带 Key 请求，Magpie 会休眠该 Key 并尝试下一个。匿名 429 冷却由本插件自主管理；失败时会触发 Magpie 调度下一可用引擎。
-- 429 响应的 `Retry-After` 会透传保留。
+- 429 响应的 `Retry-After` 会保留；SerpApi 仅传递校验和规范化后的整数秒数或标准 HTTP 日期，无效值忽略。
 
 ## 详细配置参考
 
@@ -216,6 +235,14 @@ magpie plugin options magpie-websearch '{"linkup":{"depth":"deep","maxResults":4
 | querit | `cacheTTL` | `QUERIT_CACHE_TTL` | `600000` | 缓存时间（毫秒），≥ 0 |
 | querit | `count` | `QUERIT_COUNT` | `8` | 结果数上限，≥ 1 |
 | querit | `timeout` | `QUERIT_TIMEOUT` | `25000` | 超时时间（毫秒），≥ 0 |
+| serpapi | `cacheTTL` | `SERPAPI_CACHE_TTL` | `600000` | 缓存时间（毫秒），≥ 0 |
+| serpapi | `timeout` | `SERPAPI_TIMEOUT` | `25000` | 超时时间（毫秒），≥ 0 |
+| serpapi | `maxResults` | `SERPAPI_MAX_RESULTS` | `10` | 1–10；本地截取上限 |
+| serpapi | `location` | `SERPAPI_LOCATION` | 留空 | 发起地点，例如 `Austin, Texas, United States` |
+| serpapi | `gl` | `SERPAPI_GL` | 留空 | 国家代码，例如 `us` |
+| serpapi | `hl` | `SERPAPI_HL` | 留空 | 界面语言代码，例如 `zh-cn` |
+| serpapi | `googleDomain` | `SERPAPI_GOOGLE_DOMAIN` | 留空 | Google 域名，例如 `google.com` |
+| serpapi | `safe` | `SERPAPI_SAFE` | 留空 | 留空、`active`、`off` |
 | tinyfish | `cacheTTL` | `TINYFISH_CACHE_TTL` | `600000` | 缓存时间（毫秒），≥ 0 |
 | tinyfish | `timeout` | `TINYFISH_TIMEOUT` | `25000` | 超时时间（毫秒），≥ 0 |
 | tinyfish | `maxResults` | `TINYFISH_MAX_RESULTS` | `10` | 本地截取上限，≥ 1 |
@@ -231,12 +258,12 @@ magpie plugin options magpie-websearch '{"linkup":{"depth":"deep","maxResults":4
 
 | 过滤器设置 | 实际向 Magpie 注册的 API |
 |---|---|
-| 省略未设，或 `{}` | 全部 7 个 API 均注册 |
+| 省略未设，或 `{}` | 全部 8 个 API 均注册 |
 | `"enable": ["linkup", "querit"]` | 仅注册 Linkup 与 Querit |
-| `"disable": ["keenable"]` | 注册除 Keenable 外的其余 6 个 |
+| `"disable": ["keenable"]` | 注册除 Keenable 外的其余 7 个 |
 | `"enable": ["linkup", "querit"], "disable": ["querit"]` | 仅注册 Linkup（`disable` 优先级高于 `enable`） |
 | `"enable": []` | 一个都不注册 |
-| `"disable": []` | 全部 7 个均注册 |
+| `"disable": []` | 全部 8 个均注册 |
 
 示例：过滤掉 Keenable，同时指定 Linkup 深度搜索参数：
 

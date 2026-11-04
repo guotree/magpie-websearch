@@ -14,6 +14,7 @@ below.
 | Metaso (magpie-websearch) | `magpie-websearch:metaso` | [metaso.mjs](src/providers/metaso.mjs) | required |
 | Parallel (magpie-websearch) | `magpie-websearch:parallel` | [parallel.mjs](src/providers/parallel.mjs) | optional |
 | Querit (magpie-websearch) | `magpie-websearch:querit` | [querit.mjs](src/providers/querit.mjs) | required |
+| SerpApi (magpie-websearch) | `magpie-websearch:serpapi` | [serpapi.mjs](src/providers/serpapi.mjs) | required |
 | TinyFish (magpie-websearch) | `magpie-websearch:tinyfish` | [tinyfish.mjs](src/providers/tinyfish.mjs) | optional |
 
 Every search definition's `name` must follow `<Provider> (magpie-websearch)`.
@@ -21,7 +22,7 @@ This suffix identifies the plugin in magpie's GUI and CLI. Keep the short API ID
 and the namespaced vendor ID independent of the display name; suffix changes
 must not rename the IDs used by saved keys, switches, order or plugin options.
 
-All seven APIs are registered by default. `enable` and `disable` are optional
+All eight APIs are registered by default. `enable` and `disable` are optional
 plugin options that filter this list by short ID (`linkup`, for example).
 `disable` takes precedence over `enable`; `enable: []` registers none, while
 `disable: []` excludes none. Provider settings such as `linkup.depth` do not
@@ -96,6 +97,29 @@ and other endpoints are independent of that cooldown. See
 - Supports configurable search scope (`webpage`, `document`, `paper`, `image`, `video`, `podcast`).
 - Public search caps results at 50 (`sizeFor(count, maxResults, 50)`).
 
+### SerpApi protocol notes
+
+- The [Google Search Engine Results API](https://serpapi.com/search-api) documents
+  authenticated GET search at `https://serpapi.com/search`.
+- SerpApi requires an API key (`keyOptional: false`). The key is passed via the `api_key`
+  query parameter.
+- Only the first page of `organic_results` is mapped: `link` to `url`, `title` to `title`,
+  `snippet` to `text`, and string `date` to `age`. Other SERP blocks and hits lacking
+  a valid link are ignored; malformed optional snippets become empty text.
+- Google deprecated the `num` parameter in September 2025; results are retrieved as returned
+  by upstream and locally capped (`sizeFor(count, maxResults, 10)`).
+- An error-free empty array or `status: "Success"` with `organic_results_state:
+  "Fully empty"` returns `[]` and is cached for at most 30 seconds. The latter may
+  include SerpApi's empty-result error string. Unexplained errors, unknown statuses
+  and null result arrays fail without caching. magpie reports `found nothing` if
+  no provider supplies results.
+- SerpApi-generated errors omit original exceptions, upstream bodies and request
+  URLs. Refusals retain numeric status and validated, normalized `Retry-After` only;
+  body cancellation cannot delay the refusal. Redirects are rejected. This policy
+  does not control vendor/proxy logs or alter ordinary search result content.
+- Supports optional location, country (`gl`), language (`hl`), domain (`googleDomain`),
+  and safe-search (`safe`) options with environment variable fallbacks.
+
 ## Planned
 
 These candidates are not implemented. IDs are provisional; authentication,
@@ -107,14 +131,13 @@ endpoint details and available features must be verified before implementation.
 | Jina | `magpie-websearch:jina` |
 | Kagi | `magpie-websearch:kagi` |
 | Perplexity | `magpie-websearch:perplexity` |
-| SerpApi | `magpie-websearch:serpapi` |
 | Serper | `magpie-websearch:serper` |
 
 The candidate list was checked on **2026-11-04** against magpie commit
-[`f177c36a`](https://github.com/yetone/magpie/tree/f177c36a9bce287a735b01ef4c1a65fcbeaac559).
-Parallel was absent from that revision's
-[built-in search APIs](https://github.com/yetone/magpie/blob/f177c36a9bce287a735b01ef4c1a65fcbeaac559/internal/provider/search_api.go)
-and [provider presets](https://github.com/yetone/magpie/blob/f177c36a9bce287a735b01ef4c1a65fcbeaac559/internal/provider/presets.go).
+[`43849d51`](https://github.com/yetone/magpie/tree/43849d51c3273881839a8ef3e5aa7109bd2c8d36).
+SerpApi was absent from that revision's
+[built-in search APIs](https://github.com/yetone/magpie/blob/43849d51c3273881839a8ef3e5aa7109bd2c8d36/internal/provider/search_api.go)
+and [provider presets](https://github.com/yetone/magpie/blob/43849d51c3273881839a8ef3e5aa7109bd2c8d36/internal/provider/presets.go).
 
 A provider is excluded from the roadmap if it exists in either list, even when
 its official preset is for model access rather than a standalone search API.

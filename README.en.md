@@ -6,8 +6,8 @@ Additional web search APIs for [magpie](https://usemagpie.ai). Once installed,
 the APIs appear in **Settings › Models › Web search**, where magpie manages
 their keys, on/off switches and request order.
 
-Current providers: **AnySearch**, **Keenable**, **Linkup**, **Metaso**, **Parallel**, **Querit**, **TinyFish**.
-AnySearch, Keenable, Parallel and TinyFish work with or without a key; Linkup, Metaso and Querit
+Current providers: **AnySearch**, **Keenable**, **Linkup**, **Metaso**, **Parallel**, **Querit**, **SerpApi**, **TinyFish**.
+AnySearch, Keenable, Parallel and TinyFish work with or without a key; Linkup, Metaso, Querit and SerpApi
 require one. See
 [PROVIDERS.md](PROVIDERS.md) for supported and planned providers.
 
@@ -15,7 +15,7 @@ require one. See
 
 - **Direct Endpoints**: Requests are sent strictly to the official API endpoints of the chosen search vendors, or directly to your explicitly configured custom Base URL.
 - **No Conversation Leaks**: Only the search query itself and required search/filtering parameters are sent. Transcripts, system prompts, files, tool outputs, and other agent context are never accessed or forwarded.
-- **Credential Protection**: API keys are securely managed by magpie and transmitted strictly via standard authorization headers. Error responses (e.g. HTTP 402/429) suppress response bodies to prevent sensitive credential echoes.
+- **Credentials and Error Handling**: magpie manages API keys, which are sent through vendor-supported headers or query parameters. SerpApi errors use fixed descriptions and omit underlying exceptions and upstream bodies; other providers retain their own diagnostic handling. The plugin cannot control access logs at the vendor or a custom proxy.
 - **No Key Downgrade**: A configured API key that is invalid or exhausted reports an error directly; it never silently downgrades to anonymous mode.
 
 ## Install
@@ -35,6 +35,7 @@ magpie-websearch:linkup
 magpie-websearch:metaso
 magpie-websearch:parallel
 magpie-websearch:querit
+magpie-websearch:serpapi
 magpie-websearch:tinyfish
 ```
 
@@ -42,9 +43,9 @@ magpie-websearch:tinyfish
 
 In the app: **Settings › Models › Web search**, add each API you want, switch it
 on, and order it. Leave the key empty for anonymous AnySearch, Keenable, Parallel
-or TinyFish, or provide a key to use your account. Linkup, Metaso and Querit require a key.
+or TinyFish, or provide a key to use your account. Linkup, Metaso, Querit and SerpApi require a key.
 
-No plugin options are required. With no registration filters, all seven APIs are
+No plugin options are required. With no registration filters, all eight APIs are
 registered; magpie's Web search settings decide which are configured and used.
 
 The optional **Base URL** field routes requests to your own compatible service or proxy.
@@ -87,11 +88,17 @@ magpie search add magpie-websearch:metaso <key>
 # Querit: a key is required
 magpie search add magpie-websearch:querit <key>
 
+# SerpApi: a key is required
+magpie search add magpie-websearch:serpapi <key>
+
 # A compatible endpoint of your own
 magpie search add magpie-websearch:linkup <key> url=https://search.example.com/proxy/v1/search
 ```
 
 Several keys for one API are separated by commas; magpie takes them in turn and rests one the vendor refuses:
+
+A resting key is tried after healthy keys of the same API rather than disabled.
+The host can still try it when it is the only key or all keys are resting.
 
 ```sh
 magpie search add magpie-websearch:linkup key1,key2
@@ -223,6 +230,18 @@ for switching a saved keyed entry back to anonymous access. A custom endpoint
 must match the selected protocol, for example `/proxy/mcp` anonymously or
 `/proxy/search` with a key; neither address is rewritten.
 
+### SerpApi search
+
+SerpApi integrates with Google's search engine via SerpApi's Google Search API:
+
+- **Protocol**: GET requests to `https://serpapi.com/search` with URL-encoded query parameters and authentication via `api_key`.
+- **Sensitive Error Protection**: Network, HTTP, parsing and status errors use fixed descriptions and necessary status codes, without retaining original exceptions, response bodies, request URLs or an underlying `cause`. Requests do not follow redirects. This protects plugin-generated errors and diagnostics; it cannot control server or proxy logs and does not rewrite normal web result content.
+- **Organic Results & Local Capping**: Only `organic_results` items with valid links are retained. Because Google deprecated the `num` parameter in September 2025, results are retrieved per page and capped locally (`serpapi.maxResults`).
+- **Empty Result Handling**: An error-free empty array, or `status: "Success"` with `organic_results_state: "Fully empty"`, returns `[]`; the latter may contain SerpApi's empty-result error string. Null result fields, unknown statuses and unexplained errors fail without caching. Valid empty results are cached for at most 30 seconds; `cacheTTL: 0` disables plugin caching. When no other results are available, magpie reports `found nothing`.
+- **Optional Knobs**: Supports configuring country (`gl`), interface language (`hl`), location (`location`), Google domain (`googleDomain`), and safe search (`safe`) with environment variable fallbacks.
+
+`hl` controls interface language and `gl` is a country preference; neither strictly restricts result language or source country. The adapter fetches one page without automatic pagination. The 1–10 `maxResults` range is a local plugin cap, and fewer results may be returned. Disabling plugin caching does not disable SerpApi's server cache. Under the [official billing rules](https://serpapi.com/pricing), successful empty searches can count toward quota; reducing the local cap does not reduce the charge for a search.
+
 ## Providers
 
 | Display name | Vendor ID | Key | Notes |
@@ -233,6 +252,7 @@ must match the selected protocol, for example `/proxy/mcp` anonymously or
 | Metaso (magpie-websearch) | `magpie-websearch:metaso` | required | Chinese & international AI search; structured scope (`webpage`, `paper`, etc.) and date preservation |
 | Parallel (magpie-websearch) | `magpie-websearch:parallel` | optional | Anonymous MCP (`fast` mode) or keyed REST; excerpt joining and local caps; 20-result upstream cap |
 | Querit (magpie-websearch) | `magpie-websearch:querit` | required | Snippet, or joined sentence matches when a snippet is missing; `querit.count` caps results |
+| SerpApi (magpie-websearch) | `magpie-websearch:serpapi` | required | Google search via SerpApi; sensitive credential redaction; local result capping; location/language knobs |
 | TinyFish (magpie-websearch) | `magpie-websearch:tinyfish` | optional | Anonymous MCP or keyed REST; snippets and original date strings; local result cap; papers require a key |
 
 All search APIs supplied by this plugin use the display name
@@ -248,7 +268,7 @@ use short IDs such as `linkup`.
 - `age` is the vendor's own date string; this plugin does not parse or rewrite it.
 - A hit without a URL is dropped.
 - A thrown error with a numeric `status` (401, 402, 403, 429) is an API refusal. For keyed calls, magpie records the key's rest and tries the next key. Anonymous 429 cooldowns are managed by this plugin; failed APIs give way to the next configured API.
-- `retryAfter` on a 429 is passed through.
+- `retryAfter` on a 429 is preserved. SerpApi only forwards validated and normalized integer seconds or a standard HTTP date; invalid values are omitted.
 
 ## Configuration
 
@@ -257,7 +277,7 @@ the top-level `enable` and `disable` filters. Omitted provider fields fall back
 to the environment variable or the default listed below.
 
 Use **Plugins → Installed → Options**, or pass a JSON object on the command line.
-For example, change search parameters while keeping all seven APIs registered:
+For example, change search parameters while keeping all eight APIs registered:
 
 ```sh
 magpie plugin options magpie-websearch '{"linkup":{"depth":"deep","maxResults":4,"timeout":25000,"cacheTTL":600000},"anysearch":{"zone":"cn","language":"zh-CN"}}'
@@ -313,6 +333,14 @@ The table lists fields inside each provider's object (`linkup.depth`, for exampl
 | querit | `cacheTTL` | `QUERIT_CACHE_TTL` | `600000` | ≥ 0 |
 | querit | `count` | `QUERIT_COUNT` | `8` | ≥ 1; cap on magpie's count, Querit's own limit applies |
 | querit | `timeout` | `QUERIT_TIMEOUT` | `25000` | ≥ 0 |
+| serpapi | `cacheTTL` | `SERPAPI_CACHE_TTL` | `600000` | ≥ 0 |
+| serpapi | `timeout` | `SERPAPI_TIMEOUT` | `25000` | ≥ 0 |
+| serpapi | `maxResults` | `SERPAPI_MAX_RESULTS` | `10` | 1–10; local cap on magpie's requested count |
+| serpapi | `location` | `SERPAPI_LOCATION` | empty | Geographic origin, e.g. `Austin, Texas, United States` |
+| serpapi | `gl` | `SERPAPI_GL` | empty | Country code, e.g. `us` |
+| serpapi | `hl` | `SERPAPI_HL` | empty | Interface language code, e.g. `zh-cn` |
+| serpapi | `googleDomain` | `SERPAPI_GOOGLE_DOMAIN` | empty | Google domain, e.g. `google.com` |
+| serpapi | `safe` | `SERPAPI_SAFE` | empty | empty, `active`, `off` |
 | tinyfish | `cacheTTL` | `TINYFISH_CACHE_TTL` | `600000` | ≥ 0 |
 | tinyfish | `timeout` | `TINYFISH_TIMEOUT` | `25000` | ≥ 0; includes reading the MCP stream |
 | tinyfish | `maxResults` | `TINYFISH_MAX_RESULTS` | `10` | ≥ 1; local cap, not an upstream page-size guarantee |
@@ -331,16 +359,16 @@ for desktop use.
 
 The optional top-level `enable` and `disable` arrays control which APIs the
 plugin registers. Entries use short IDs: `anysearch`, `keenable`, `linkup`,
-`metaso`, `parallel`, `querit`, `tinyfish` (without the `magpie-websearch:` prefix).
+`metaso`, `parallel`, `querit`, `serpapi`, `tinyfish` (without the `magpie-websearch:` prefix).
 
 | Filters | APIs registered |
 |---|---|
-| Both omitted, or `{}` | All seven APIs |
+| Both omitted, or `{}` | All eight APIs |
 | `"enable": ["linkup", "querit"]` | Linkup and Querit only |
 | `"disable": ["keenable"]` | All except Keenable |
 | `"enable": ["linkup", "querit"], "disable": ["querit"]` | Linkup only; `disable` wins |
 | `"enable": []` | None |
-| `"disable": []` | All seven, unless `enable` also limits the set |
+| `"disable": []` | All eight, unless `enable` also limits the set |
 
 Combine filters with provider settings when needed:
 
@@ -363,7 +391,7 @@ To remove all saved plugin options, including provider overrides and filters:
 magpie plugin options magpie-websearch off
 ```
 
-All seven APIs are registered again. Provider settings use environment
+All eight APIs are registered again. Provider settings use environment
 values when present, otherwise their defaults. To remove only the filters,
 save a complete options object containing the provider settings you want to keep.
 
