@@ -1,0 +1,41 @@
+{
+  "name": "@guotree/tools-websearch",
+  "version": "0.1.0",
+  "description": "Web search APIs for magpie. Pilot: AnySearch, Keenable and Linkup; keys are managed by magpie.",
+  "type": "module",
+  "main": "./index.mjs",
+  "files": [
+    "index.mjs",
+    "src",
+    "README.md",
+    "PROVIDERS.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "magpie",
+    "magpie-plugin",
+    "opencode",
+    "opencode-plugin",
+    "websearch",
+    "search",
+    "anysearch",
+    "keenable",
+    "linkup"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/guotree/magpie-websearch.git"
+  },
+  "homepage": "https://github.com/guotree/magpie-websearch#readme",
+  "bugs": {
+    "url": "https://github.com/guotree/magpie-websearch/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\"",
+    "check": "node scripts/check.mjs && node --test \"test/*.test.mjs\""
+  }
+}
