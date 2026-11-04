@@ -109,3 +109,50 @@ export const LINKUP_CASE = {
     },
   ],
 }
+
+export const QUERIT_CASE = {
+  response: {
+    error_code: 200,
+    results: {
+      result: [
+        {
+          url: "https://example.com/querit",
+          title: "Querit hit",
+          snippet: "Querit snippet",
+          page_age: "2026-10-01",
+        },
+        {
+          url: "https://example.com/querit-sentences",
+          title: "Querit sentences",
+          sentence: ["first match", "second match"],
+        },
+        {
+          url: "https://example.com/querit-bare",
+          title: "Querit bare",
+        },
+        {
+          title: "No URL",
+          snippet: "dropped",
+        },
+      ],
+    },
+  },
+  expected: [
+    {
+      url: "https://example.com/querit",
+      title: "Querit hit",
+      text: "Querit snippet",
+      age: "2026-10-01",
+    },
+    {
+      url: "https://example.com/querit-sentences",
+      title: "Querit sentences",
+      text: "first match second match",
+    },
+    {
+      url: "https://example.com/querit-bare",
+      title: "Querit bare",
+      text: "",
+    },
+  ],
+}

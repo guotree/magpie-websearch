@@ -2,13 +2,14 @@
 
 Source of truth for the port from [guotree/opencode-search-plugin](https://github.com/guotree/opencode-search-plugin) (v4.6.1, `plugins/*-search.ts`).
 
-## Done (pilot)
+## Done
 
 | Provider | magpie ID | Source | Key | Overlap with magpie built-in |
 |---|---|---|---|---|
 | AnySearch | `magpie-websearch:anysearch` | `anysearch-search.ts` | required | none; anonymous tier not wired up |
 | Keenable | `magpie-websearch:keenable` | `keenable-search.ts` | required | none; keyless `/public` deliberately not wired up |
 | Linkup | `magpie-websearch:linkup` | `linkup-search.ts` | required | none |
+| Querit | `magpie-websearch:querit` | `querit-search.ts` | required | none |
 
 ## Planned
 
@@ -25,7 +26,6 @@ Source of truth for the port from [guotree/opencode-search-plugin](https://githu
 | Moonshot CN | `magpie-websearch:moonshot-cn` | `moonshot-cn-search.ts` | required | none |
 | Ollama | `magpie-websearch:ollama` | `ollama-search.ts` | required | none |
 | Perplexity | `magpie-websearch:perplexity` | `perplexity-search.ts` | required | none |
-| Querit | `magpie-websearch:querit` | `querit-search.ts` | required | none |
 | SerpApi | `magpie-websearch:serpapi` | `serpapi-search.ts` | required | none |
 | Serper | `magpie-websearch:serper` | `serper-search.ts` | required | none |
 | StepFun | `magpie-websearch:stepfun` | `stepfun-search.ts` | required | none |

@@ -1,18 +1,20 @@
 import { anysearch } from "./src/providers/anysearch.mjs"
 import { keenable } from "./src/providers/keenable.mjs"
 import { linkup } from "./src/providers/linkup.mjs"
+import { querit } from "./src/providers/querit.mjs"
 
-// The pilot. Each entry is the id magpie shows as `websearch:<id>` and the
+// Each entry is the id magpie shows as `magpie-websearch:<id>` and the
 // definition its search hook reads. Adding a provider means adding its module
 // and one line here.
 const PROVIDERS = [
   ["anysearch", anysearch],
   ["keenable", keenable],
   ["linkup", linkup],
+  ["querit", querit],
 ]
 
 const KNOWN = new Set(PROVIDERS.map(([id]) => id))
-const WARNING = "[websearch]"
+const WARNING = "[magpie-websearch]"
 
 // Reads the `enable` or `disable` plugin option: an array of provider IDs.
 // A wrong shape is ignored, and an ID naming no provider here is dropped with
