@@ -1,28 +1,8 @@
 import {
   cacheKey, configInt, configStr, makeAnonymousCooldown, makeCache, normalizeQuery,
-  page, requestJSON, sizeFor,
+  page, requestJSON, resolveEndpoint, sizeFor,
 } from "../core.mjs"
-import { callTinyfishTool } from "./tinyfish-mcp.mjs"
-
-function endpointFor(base, key) {
-  const url = new URL(base?.trim() || (key ? "https://api.search.tinyfish.ai/" : "https://agent.tinyfish.ai/mcp"))
-  if (!["http:", "https:"].includes(url.protocol) || url.search || url.hash || url.username || url.password) {
-    throw new TypeError("Search Base URL must be HTTP(S), without credentials, query or fragment")
-  }
-  // A custom URL is the complete endpoint for the current mode; append no path.
-  return url.href
-}
-
-function searchResult(result) {
-  if (Array.isArray(result?.structuredContent?.results)) return result.structuredContent
-  for (const part of Array.isArray(result?.content) ? result.content : []) {
-    if (part?.type !== "text" || typeof part.text !== "string") continue
-    let json
-    try { json = JSON.parse(part.text) } catch { continue }
-    if (Array.isArray(json?.results)) return json
-  }
-  throw new Error("Invalid TinyFish MCP search result: expected results array")
-}
+import { callMCPSearch } from "../mcp.mjs"
 
 export function createTinyfish(options = {}) {
   const ttl = configInt(options, "cacheTTL", "TINYFISH_CACHE_TTL", 600_000)
@@ -50,7 +30,7 @@ export function createTinyfish(options = {}) {
       if (!key && domainType === "research_paper") {
         throw new Error("TinyFish research_paper search needs a key: add one in magpie's Web search settings")
       }
-      const endpoint = endpointFor(url, key)
+      const endpoint = resolveEndpoint(url, key ? "https://api.search.tinyfish.ai/" : "https://agent.tinyfish.ai/mcp")
       const args = { query: normalizeQuery(query), ...params }
       if (!args.query || [...args.query].length > 2000) throw new Error("TinyFish query must contain 1–2000 characters")
       // TinyFish has no count parameter. Keep the local cap in cache identity.
@@ -59,9 +39,9 @@ export function createTinyfish(options = {}) {
       const cached = cache.read(identity)
       if (cached) return cached
       const json = await cooldown.run(endpoint, key, async () => {
-        if (!key) return searchResult(await callTinyfishTool(endpoint, "search", args, ctx, {
+        if (!key) return callMCPSearch(endpoint, "search", args, ctx, {
           label: "TinyFish", timeout, headers: { "X-TinyFish-Access-Mode": "keyless" },
-        }))
+        })
         const target = new URL(endpoint)
         target.search = new URLSearchParams(args).toString()
         return requestJSON(target.href, {
