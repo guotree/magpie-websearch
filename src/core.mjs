@@ -208,7 +208,9 @@ export function page(title, url, text, age) {
   return out
 }
 
-export async function requestJSON(input, init, ctx, options = {}) {
+// A custom reader shares the HTTP errors and the deadline, including while
+// consuming a streaming response. JSON providers keep the default text reader.
+export async function requestResponse(input, init, ctx, options = {}, read) {
   const { label = "search", timeout = 25_000, messages = {} } = options
   const signal = signalFor(ctx, timeout)
 
@@ -231,7 +233,7 @@ export async function requestJSON(input, init, ctx, options = {}) {
 
   let raw
   try {
-    raw = await response.text()
+    raw = await (response.ok && read ? read(response, signal) : response.text())
   } catch (error) {
     if (response.status === 429) {
       const retry = response.headers.get("Retry-After")
@@ -241,6 +243,7 @@ export async function requestJSON(input, init, ctx, options = {}) {
     if (timedOut(error, signal, ctx)) {
       throw new Error(`${label} search timed out after ${timeout}ms`)
     }
+    if (response.ok && read) throw error
     throw new Error(`${label} response body unavailable`)
   }
 
@@ -252,6 +255,12 @@ export async function requestJSON(input, init, ctx, options = {}) {
     throw apiError(response.status, message, retry)
   }
 
+  return raw
+}
+
+export async function requestJSON(input, init, ctx, options = {}) {
+  const raw = await requestResponse(input, init, ctx, options)
+  const { label = "search" } = options
   try {
     return JSON.parse(raw)
   } catch (error) {

@@ -3,7 +3,7 @@
 import * as entry from "../index.mjs"
 
 const ID = /^[a-z0-9][a-z0-9-]{0,31}$/
-const EXPECTED = ["anysearch", "keenable", "linkup", "querit"]
+const EXPECTED = ["anysearch", "keenable", "linkup", "querit", "tinyfish"]
 
 let failed = 0
 const fail = (message) => {

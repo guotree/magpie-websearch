@@ -1,4 +1,4 @@
-// Response fixtures sourced from guotree/opencode-search-plugin test/cases.ts
+// Original response fixtures sourced from guotree/opencode-search-plugin test/cases.ts
 // at v4.6.1, with expected results in magpie's { title, url, text, age? } shape.
 // Cases cover full content, snippet fallback, missing URLs and image filtering.
 
@@ -152,4 +152,30 @@ export const QUERIT_CASE = {
       text: "",
     },
   ],
+}
+
+// TinyFish Search reference and anonymous MCP tools/call observed 2026-11-04:
+// https://docs.tinyfish.ai/search-api/reference.md
+// https://agent.tinyfish.ai/mcp (X-TinyFish-Access-Mode: keyless)
+// Synthetic entries add missing fields to exercise the magpie mapping.
+export const TINYFISH_CASE = {
+  response: {
+    query: "TinyFish Search API", total_results: 4, page: 0,
+    results: [
+      { position: 1, site_name: "docs.tinyfish.ai", title: "Search API", snippet: "Structured search results", url: "https://docs.tinyfish.ai/search-api" },
+      { position: 2, title: "No URL", snippet: "dropped" },
+      { position: 3, title: "TinyFish news", snippet: "News excerpt", url: "https://example.com/news", date: "Nov 4, 2026" },
+      { position: 4, url: "https://example.com/bare", year: 2026, pdf_url: "https://example.com/paper.pdf" },
+    ],
+  },
+  expected: [
+    { title: "Search API", url: "https://docs.tinyfish.ai/search-api", text: "Structured search results" },
+    { title: "TinyFish news", url: "https://example.com/news", text: "News excerpt", age: "Nov 4, 2026" },
+    { title: "https://example.com/bare", url: "https://example.com/bare", text: "" },
+  ],
+}
+
+export const TINYFISH_MCP_RESPONSE = {
+  jsonrpc: "2.0", id: 1,
+  result: { content: [{ type: "text", text: JSON.stringify(TINYFISH_CASE.response) }] },
 }

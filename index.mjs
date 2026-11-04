@@ -2,6 +2,7 @@ import { createAnysearch } from "./src/providers/anysearch.mjs"
 import { createKeenable } from "./src/providers/keenable.mjs"
 import { createLinkup } from "./src/providers/linkup.mjs"
 import { createQuerit } from "./src/providers/querit.mjs"
+import { createTinyfish } from "./src/providers/tinyfish.mjs"
 import { optionGroup } from "./src/core.mjs"
 
 const PROVIDERS = [
@@ -9,6 +10,7 @@ const PROVIDERS = [
   ["keenable", createKeenable],
   ["linkup", createLinkup],
   ["querit", createQuerit],
+  ["tinyfish", createTinyfish],
 ]
 const KNOWN = new Set(PROVIDERS.map(([id]) => id))
 const WARNING = "[magpie-websearch]"

@@ -2,13 +2,18 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { createAnysearch } from "../src/providers/anysearch.mjs"
 import { createKeenable } from "../src/providers/keenable.mjs"
-import { ANYSEARCH_CASE, KEENABLE_CASE } from "./cases.mjs"
+import { createTinyfish } from "../src/providers/tinyfish.mjs"
+import { ANYSEARCH_CASE, KEENABLE_CASE, TINYFISH_CASE, TINYFISH_MCP_RESPONSE } from "./cases.mjs"
 import { context, json, stubFetch, text } from "./harness.mjs"
 
 const providers = [
   ["anysearch", createAnysearch, ANYSEARCH_CASE],
   ["keenable", createKeenable, KEENABLE_CASE],
+  ["tinyfish", createTinyfish, TINYFISH_CASE],
 ]
+
+const success = (id, fixture, call) => json(id === "tinyfish" && call.init.method === "POST"
+  ? TINYFISH_MCP_RESPONSE : fixture.response)
 
 for (const [id, create, fixture] of providers) {
   test(`${id}: anonymous cooldown respects seconds, isolates endpoints, and lets keyed requests through`, async () => {
@@ -16,8 +21,8 @@ for (const [id, create, fixture] of providers) {
     let now = Date.UTC(2026, 10, 4)
     Date.now = () => now
     const api = create({ cacheTTL: 0 })
-    const fake = stubFetch(() => fake.calls.length === 1
-      ? text("slow down", 429, { "Retry-After": "120" }) : json(fixture.response))
+    const fake = stubFetch((call) => fake.calls.length === 1
+      ? text("slow down", 429, { "Retry-After": "120" }) : success(id, fixture, call))
     const args = { query: "limited", count: 6, key: "", url: "https://custom.example/proxy/v1" }
     try {
       await assert.rejects(api.execute(args, context()), (e) => e.status === 429 && e.retryAfter === "120")
@@ -46,8 +51,8 @@ for (const [id, create, fixture] of providers) {
         now = start
         const api = create({ cacheTTL: 0 })
         const seconds = retry?.endsWith("GMT") ? 90 : 60
-        const fake = stubFetch(() => fake.calls.length === 1
-          ? text("limited", 429, retry ? { "Retry-After": retry } : {}) : json(fixture.response))
+        const fake = stubFetch((call) => fake.calls.length === 1
+          ? text("limited", 429, retry ? { "Retry-After": retry } : {}) : success(id, fixture, call))
         try {
           await assert.rejects(api.execute({ query: "first" }, context()), (e) => e.status === 429)
           await assert.rejects(api.execute({ query: "next" }, context()),
@@ -63,8 +68,8 @@ for (const [id, create, fixture] of providers) {
 
   test(`${id}: anonymous cached results remain usable during cooldown and never cross to a key`, async () => {
     const api = create()
-    const fake = stubFetch(({ body }) => (body.query ?? body.q) === "limited"
-      ? text("limited", 429, { "Retry-After": "120" }) : json(fixture.response))
+    const fake = stubFetch((call) => (call.body?.params?.arguments.query ?? call.body?.query ?? call.body?.q) === "limited"
+      ? text("limited", 429, { "Retry-After": "120" }) : success(id, fixture, call))
     try {
       const pages = await api.execute({ query: "cached" }, context())
       await assert.rejects(api.execute({ query: "limited" }, context()), (e) => e.status === 429)

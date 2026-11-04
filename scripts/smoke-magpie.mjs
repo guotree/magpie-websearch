@@ -31,17 +31,32 @@ const sockets = new Set()
 const upstream = createServer(async (req, res) => {
   let raw = ""
   for await (const chunk of req) raw += chunk
-  const body = JSON.parse(raw)
-  calls.push({ path: req.url, body, key: req.headers.authorization,
-    apiKey: req.headers["x-api-key"], title: req.headers["x-keenable-title"] })
-  const query = body.q ?? body.query
+  const target = new URL(req.url, "http://localhost")
+  const body = raw ? JSON.parse(raw) : undefined
+  calls.push({ path: req.url, method: req.method, body, key: req.headers.authorization,
+    apiKey: req.headers["x-api-key"], title: req.headers["x-keenable-title"],
+    accessMode: req.headers["x-tinyfish-access-mode"] })
+  const query = body?.params?.arguments?.query ?? body?.q ?? body?.query ?? target.searchParams.get("query")
   if (query === "rate limited") {
-    res.writeHead(429, { "Retry-After": body.q ? "30" : "120" }).end("slow down")
+    res.writeHead(429, { "Retry-After": body?.q ? "30" : "120" }).end("slow down")
     return
   }
   if (query === "timeout") return
   res.setHeader("Content-Type", "application/json")
-  if (req.url.startsWith("/anysearch/")) {
+  if (target.pathname.startsWith("/tinyfish/")) {
+    const result = { query, total_results: 2, page: 0, results: [
+      { title: "TinyFish smoke page", url: "https://example.com/tinyfish", snippet: "Local TinyFish result", date: "Nov 4, 2026" },
+      { title: "Over the local cap", url: "https://example.com/tinyfish-extra", snippet: "Must be capped" },
+    ] }
+    if (req.method === "GET") res.end(JSON.stringify(result))
+    else {
+      const rpc = { jsonrpc: "2.0", id: body.id, result: { content: [{ type: "text", text: JSON.stringify(result) }] } }
+      if (query === "tinyfish sse") {
+        res.setHeader("Content-Type", "text/event-stream")
+        res.end("data: " + JSON.stringify(rpc) + "\n\n")
+      } else res.end(JSON.stringify(rpc))
+    }
+  } else if (req.url.startsWith("/anysearch/")) {
     res.end(JSON.stringify({ code: 0, data: { results: [
       { title: "Anonymous AnySearch", url: "https://example.com/anysearch", snippet: "Anonymous smoke result" },
     ] } }))
@@ -85,13 +100,14 @@ try {
   console.log("Loading the plugin in an isolated magpie configuration…")
   await run("plugin", "add", root)
   const definitions = await loadedSearches()
-  assert.deepEqual(definitions.map((entry) => entry.id).sort(), ["anysearch", "keenable", "linkup", "querit"])
-  assert.deepEqual(definitions.filter((entry) => entry.keyOptional).map((entry) => entry.id).sort(), ["anysearch", "keenable"])
+  assert.deepEqual(definitions.map((entry) => entry.id).sort(), ["anysearch", "keenable", "linkup", "querit", "tinyfish"])
+  assert.deepEqual(definitions.filter((entry) => entry.keyOptional).map((entry) => entry.id).sort(), ["anysearch", "keenable", "tinyfish"])
   await run("plugin", "options", root, JSON.stringify({ enable: ["linkup", "querit"], disable: ["querit"] }))
   assert.deepEqual(await loadedIDs(), ["linkup"])
   await run("plugin", "options", root, JSON.stringify({
     linkup: { depth: "deep", maxResults: 2, cacheTTL: 0, timeout: 500 },
     anysearch: { cacheTTL: 0 }, keenable: { cacheTTL: 0 },
+    tinyfish: { maxResults: 1, language: "zh", cacheTTL: 0, timeout: 500 },
   }))
   await run("search", "add", "magpie-websearch:linkup", "smoke-dummy-key", `url=http://127.0.0.1:${upstream.address().port}/proxy/v1`)
   gateway = spawn(binary, ["serve"], { cwd: root, env, stdio: ["ignore", "pipe", "pipe"] })
@@ -154,7 +170,53 @@ try {
     await run("search", "off", "magpie-websearch:linkup")
     await run("search", "off", "magpie-websearch:" + id)
   }
-  console.log("✓ magpie loads four APIs, filters registrations, applies options/custom URLs, handles timeout/429, and runs anonymous search with cooldown and fallback")
+  console.log("Checking TinyFish anonymous MCP (JSON/SSE), REST, local caps and fallback…")
+  const tinyfishURL = `http://127.0.0.1:${upstream.address().port}/tinyfish`
+  await run("search", "add", "magpie-websearch:tinyfish", `url=${tinyfishURL}/mcp`)
+  await run("search", "move", "magpie-websearch:tinyfish", "1")
+  for (const query of ["tinyfish anonymous", "tinyfish sse"]) {
+    const result = await search(query)
+    assert.match(result, /example\.com\/tinyfish/)
+    assert.doesNotMatch(result, /tinyfish-extra/)
+    const call = calls.at(-1)
+    assert.equal(call.path, "/tinyfish/mcp")
+    assert.equal(call.method, "POST")
+    assert.equal(call.body.method, "tools/call")
+    assert.equal(call.body.params.name, "search")
+    assert.equal(call.body.params.arguments.language, "zh")
+    assert.equal(call.accessMode, "keyless")
+    assert.equal(call.apiKey, undefined)
+    assert.equal(call.key, undefined)
+  }
+  assert.match(await failure("timeout"), /timed out|no answer|failed|error/i)
+  assert.match(await failure("rate limited"), /429|slow down|error/i)
+  const before = calls.length
+  assert.match(await failure("tinyfish cooldown"), /cooling down/)
+  assert.equal(calls.length, before)
+  await run("search", "on", "magpie-websearch:linkup")
+  assert.match(await search("tinyfish fallback"), /example\.com\/smoke/)
+  assert.equal(calls.length, before + 1)
+  await run("search", "off", "magpie-websearch:linkup")
+  // Re-add to switch modes, just as users do to clear a saved key.
+  await run("search", "rm", "magpie-websearch:tinyfish")
+  await run("search", "add", "magpie-websearch:tinyfish", "tinyfish-dummy-key", `url=${tinyfishURL}/search`)
+  const keyed = await search("tinyfish keyed & 中文")
+  assert.match(keyed, /example\.com\/tinyfish/)
+  assert.doesNotMatch(keyed, /tinyfish-extra/)
+  const keyedCall = calls.at(-1)
+  const keyedTarget = new URL(keyedCall.path, "http://localhost")
+  assert.equal(keyedTarget.pathname, "/tinyfish/search")
+  assert.equal(keyedTarget.searchParams.get("query"), "tinyfish keyed & 中文")
+  assert.equal(keyedTarget.searchParams.get("language"), "zh")
+  assert.equal(keyedCall.method, "GET")
+  assert.equal(keyedCall.body, undefined)
+  assert.equal(keyedCall.apiKey, "tinyfish-dummy-key")
+  assert.equal(keyedCall.accessMode, undefined)
+  assert.equal(keyedCall.key, undefined)
+  const beforeRefusal = calls.length
+  assert.match(await failure("rate limited"), /429|slow down|error/i)
+  assert.equal(calls.length, beforeRefusal + 1, "a refused REST key never falls back to MCP")
+  console.log("✓ magpie loads five APIs, filters registrations, applies options/custom URLs, handles timeout/429, and runs anonymous search with cooldown and fallback; TinyFish supports MCP JSON/SSE and keyed REST")
 } catch (error) {
   console.error(gatewayLog)
   throw error

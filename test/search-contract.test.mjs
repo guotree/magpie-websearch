@@ -3,9 +3,9 @@ import assert from "node:assert/strict"
 import { WebSearch } from "../index.mjs"
 import { searchEndpoint } from "../src/core.mjs"
 import { context, json, stubFetch } from "./harness.mjs"
-import { ANYSEARCH_CASE, KEENABLE_CASE, LINKUP_CASE, QUERIT_CASE } from "./cases.mjs"
+import { ANYSEARCH_CASE, KEENABLE_CASE, LINKUP_CASE, QUERIT_CASE, TINYFISH_CASE } from "./cases.mjs"
 
-const fixtures = { anysearch: ANYSEARCH_CASE, keenable: KEENABLE_CASE, linkup: LINKUP_CASE, querit: QUERIT_CASE }
+const fixtures = { anysearch: ANYSEARCH_CASE, keenable: KEENABLE_CASE, linkup: LINKUP_CASE, querit: QUERIT_CASE, tinyfish: TINYFISH_CASE }
 
 test("custom Base URL preserves prefixes and accepts an origin, /v1 or full endpoint", () => {
   for (const [base, want] of [
@@ -32,9 +32,16 @@ for (const [id, fixture] of Object.entries(fixtures)) {
       await search[id].execute({ ...args, count: 6 }, context())
       await search[id].execute({ ...args, url: "https://other.example/v1/search" }, context())
       assert.equal(fake.calls.length, 4)
-      assert.equal(fake.calls[0].url, "https://custom.example/proxy/v1/search")
-      assert.equal(fake.calls[3].url, "https://other.example/v1/search")
-      assert.equal(fake.calls[2].body.max_results ?? fake.calls[2].body.maxResults ?? fake.calls[2].body.count, 6)
+      if (id === "tinyfish") {
+        assert.equal(new URL(fake.calls[0].url).pathname, "/proxy/v1")
+        assert.equal(new URL(fake.calls[3].url).pathname, "/v1/search")
+        assert.equal(fake.calls[2].init.method, "GET")
+        assert.equal(fake.calls[2].body, undefined)
+      } else {
+        assert.equal(fake.calls[0].url, "https://custom.example/proxy/v1/search")
+        assert.equal(fake.calls[3].url, "https://other.example/v1/search")
+        assert.equal(fake.calls[2].body.max_results ?? fake.calls[2].body.maxResults ?? fake.calls[2].body.count, 6)
+      }
     } finally { fake.restore() }
   })
 
@@ -109,9 +116,12 @@ test("invalid provider options fail loading and disabled providers are not initi
     { linkup: { depth: "invalid" } }, { querit: { count: 0 } },
     { anysearch: { maxResults: "2" } }, { keenable: [] }, { linkup: { timeout: -1 } },
     { linkup: { timeout: 2_147_483_648 } },
+    { tinyfish: { domainType: "invalid" } }, { tinyfish: { maxResults: 0 } },
   ]) await assert.rejects(WebSearch({}, options), TypeError)
   const { search } = await WebSearch({}, { disable: ["linkup"], linkup: { depth: "invalid" } })
   assert.equal(search.linkup, undefined)
+  const disabled = await WebSearch({}, { disable: ["tinyfish"], tinyfish: { domainType: "invalid" } })
+  assert.equal(disabled.search.tinyfish, undefined)
 })
 
 test("timeouts and host cancellation abort the upstream request", async () => {
