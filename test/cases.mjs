@@ -179,3 +179,61 @@ export const TINYFISH_MCP_RESPONSE = {
   jsonrpc: "2.0", id: 1,
   result: { content: [{ type: "text", text: JSON.stringify(TINYFISH_CASE.response) }] },
 }
+
+// Parallel Search API (GA /v1/search) and MCP web_search observed 2026-11-04:
+// https://docs.parallel.ai/api-reference/search/search.md
+// https://mcp.parallel.ai/mcp
+export const PARALLEL_CASE = {
+  response: {
+    search_id: "search_123",
+    results: [
+      {
+        url: "https://example.com/parallel",
+        title: "Parallel hit",
+        publish_date: "2026-11-04",
+        excerpts: ["Parallel excerpt 1", "Parallel excerpt 2"],
+      },
+      {
+        url: "https://example.com/no-date",
+        title: "No date hit",
+        excerpts: ["Solo excerpt"],
+      },
+      {
+        url: "https://example.com/bare",
+        title: "",
+        excerpts: [],
+      },
+      {
+        title: "No URL",
+        excerpts: ["dropped"],
+      },
+    ],
+    session_id: "session_123",
+  },
+  expected: [
+    {
+      url: "https://example.com/parallel",
+      title: "Parallel hit",
+      text: "Parallel excerpt 1\n\nParallel excerpt 2",
+      age: "2026-11-04",
+    },
+    {
+      url: "https://example.com/no-date",
+      title: "No date hit",
+      text: "Solo excerpt",
+    },
+    {
+      url: "https://example.com/bare",
+      title: "https://example.com/bare",
+      text: "",
+    },
+  ],
+}
+
+export const PARALLEL_MCP_RESPONSE = {
+  jsonrpc: "2.0",
+  id: 1,
+  result: {
+    structuredContent: PARALLEL_CASE.response,
+  },
+}

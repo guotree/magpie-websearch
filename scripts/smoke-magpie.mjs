@@ -36,7 +36,7 @@ const upstream = createServer(async (req, res) => {
   calls.push({ path: req.url, method: req.method, body, key: req.headers.authorization,
     apiKey: req.headers["x-api-key"], title: req.headers["x-keenable-title"],
     accessMode: req.headers["x-tinyfish-access-mode"] })
-  const query = body?.params?.arguments?.query ?? body?.q ?? body?.query ?? target.searchParams.get("query")
+  const query = body?.params?.arguments?.query ?? body?.params?.arguments?.search_queries?.[0] ?? body?.search_queries?.[0] ?? body?.q ?? body?.query ?? target.searchParams.get("query")
   if (query === "rate limited") {
     res.writeHead(429, { "Retry-After": body?.q ? "30" : "120" }).end("slow down")
     return
@@ -52,6 +52,19 @@ const upstream = createServer(async (req, res) => {
     else {
       const rpc = { jsonrpc: "2.0", id: body.id, result: { content: [{ type: "text", text: JSON.stringify(result) }] } }
       if (query === "tinyfish sse") {
+        res.setHeader("Content-Type", "text/event-stream")
+        res.end("data: " + JSON.stringify(rpc) + "\n\n")
+      } else res.end(JSON.stringify(rpc))
+    }
+  } else if (target.pathname.startsWith("/parallel/")) {
+    const result = { search_id: "parallel_smoke", results: [
+      { title: "Parallel smoke page", url: "https://example.com/parallel", excerpts: ["Local Parallel result"], publish_date: "2026-11-04" },
+      { title: "Over the local cap", url: "https://example.com/parallel-extra", excerpts: ["Must be capped"] },
+    ], session_id: "parallel_sess" }
+    if (req.method === "POST" && req.headers["x-api-key"]) res.end(JSON.stringify(result))
+    else {
+      const rpc = { jsonrpc: "2.0", id: body.id, result: { structuredContent: result } }
+      if (query === "parallel sse") {
         res.setHeader("Content-Type", "text/event-stream")
         res.end("data: " + JSON.stringify(rpc) + "\n\n")
       } else res.end(JSON.stringify(rpc))
@@ -100,16 +113,17 @@ try {
   console.log("Loading the plugin in an isolated magpie configuration…")
   await run("plugin", "add", root)
   const definitions = await loadedSearches()
-  assert.deepEqual(definitions.map((entry) => entry.id).sort(), ["anysearch", "keenable", "linkup", "querit", "tinyfish"])
-  assert.deepEqual(definitions.filter((entry) => entry.keyOptional).map((entry) => entry.id).sort(), ["anysearch", "keenable", "tinyfish"])
+  assert.deepEqual(definitions.map((entry) => entry.id).sort(), ["anysearch", "keenable", "linkup", "parallel", "querit", "tinyfish"])
+  assert.deepEqual(definitions.filter((entry) => entry.keyOptional).map((entry) => entry.id).sort(), ["anysearch", "keenable", "parallel", "tinyfish"])
   await run("plugin", "options", root, JSON.stringify({ enable: ["linkup", "querit"], disable: ["querit"] }))
   assert.deepEqual(await loadedIDs(), ["linkup"])
   await run("plugin", "options", root, JSON.stringify({
     linkup: { depth: "deep", maxResults: 2, cacheTTL: 0, timeout: 500 },
     anysearch: { cacheTTL: 0 }, keenable: { cacheTTL: 0 },
+    parallel: { maxResults: 1, mode: "fast", cacheTTL: 0, timeout: 500 },
     tinyfish: { maxResults: 1, language: "zh", cacheTTL: 0, timeout: 500 },
   }))
-  await run("search", "add", "magpie-websearch:linkup", "smoke-dummy-key", `url=http://127.0.0.1:${upstream.address().port}/proxy/v1`)
+  await run("search", "add", "magpie-websearch:linkup", "smoke-dummy-key", `url=http://127.0.0.1:${upstream.address().port}/proxy/v1/search`)
   gateway = spawn(binary, ["serve"], { cwd: root, env, stdio: ["ignore", "pipe", "pipe"] })
   gateway.on("error", (error) => { gatewayLog += String(error) })
   for (const stream of [gateway.stdout, gateway.stderr]) {
@@ -143,7 +157,7 @@ try {
   console.log("Checking keyless registration, anonymous requests, cooldown and fallback…")
   await run("search", "off", "magpie-websearch:linkup")
   for (const id of ["anysearch", "keenable"]) {
-    await run("search", "add", "magpie-websearch:" + id, `url=http://127.0.0.1:${upstream.address().port}/${id}/v1`)
+    await run("search", "add", "magpie-websearch:" + id, `url=http://127.0.0.1:${upstream.address().port}/${id}/search`)
     await run("search", "off", "magpie-websearch:" + id)
   }
   const listing = await run("search")
@@ -154,7 +168,7 @@ try {
     const result = await search("anonymous " + id)
     assert.ok(result.includes("https://example.com/" + id), result)
     const call = calls.at(-1)
-    assert.equal(call.path, `/${id}/v1/search` + (id === "keenable" ? "/public" : ""))
+    assert.equal(call.path, `/${id}/search`)
     assert.equal(call.key, undefined)
     assert.equal(call.apiKey, undefined)
     if (id === "keenable") assert.equal(call.title, "magpie-websearch")
@@ -216,7 +230,53 @@ try {
   const beforeRefusal = calls.length
   assert.match(await failure("rate limited"), /429|slow down|error/i)
   assert.equal(calls.length, beforeRefusal + 1, "a refused REST key never falls back to MCP")
-  console.log("✓ magpie loads five APIs, filters registrations, applies options/custom URLs, handles timeout/429, and runs anonymous search with cooldown and fallback; TinyFish supports MCP JSON/SSE and keyed REST")
+  await run("search", "rm", "magpie-websearch:tinyfish")
+  console.log("Checking Parallel anonymous MCP (JSON/SSE), REST, local caps and fallback…")
+  const parallelURL = `http://127.0.0.1:${upstream.address().port}/parallel`
+  await run("search", "add", "magpie-websearch:parallel", `url=${parallelURL}/mcp`)
+  await run("search", "move", "magpie-websearch:parallel", "1")
+  for (const query of ["parallel anonymous", "parallel sse"]) {
+    const result = await search(query)
+    assert.match(result, /example\.com\/parallel/)
+    assert.doesNotMatch(result, /parallel-extra/)
+    const call = calls.at(-1)
+    assert.equal(call.path, "/parallel/mcp")
+    assert.equal(call.method, "POST")
+    assert.equal(call.body.method, "tools/call")
+    assert.equal(call.body.params.name, "web_search")
+    assert.equal(call.body.params.arguments.objective, query)
+    assert.deepEqual(call.body.params.arguments.search_queries, [query])
+    assert.equal(call.apiKey, undefined)
+    assert.equal(call.key, undefined)
+  }
+  assert.match(await failure("timeout"), /timed out|no answer|failed|error/i)
+  assert.match(await failure("rate limited"), /429|slow down|error/i)
+  const beforeParallel = calls.length
+  assert.match(await failure("parallel cooldown"), /cooling down/)
+  assert.equal(calls.length, beforeParallel)
+  await run("search", "on", "magpie-websearch:linkup")
+  assert.match(await search("parallel fallback"), /example\.com\/smoke/)
+  assert.equal(calls.length, beforeParallel + 1)
+  await run("search", "off", "magpie-websearch:linkup")
+  // Re-add to switch modes, just as users do to clear a saved key.
+  await run("search", "rm", "magpie-websearch:parallel")
+  await run("search", "add", "magpie-websearch:parallel", "parallel-dummy-key", `url=${parallelURL}/search`)
+  const keyedParallel = await search("parallel keyed")
+  assert.match(keyedParallel, /example\.com\/parallel/)
+  assert.doesNotMatch(keyedParallel, /parallel-extra/)
+  const keyedParallelCall = calls.at(-1)
+  assert.equal(keyedParallelCall.path, "/parallel/search")
+  assert.equal(keyedParallelCall.method, "POST")
+  assert.equal(keyedParallelCall.apiKey, "parallel-dummy-key")
+  assert.equal(keyedParallelCall.body.mode, "fast")
+  assert.equal(keyedParallelCall.body.objective, "parallel keyed")
+  assert.deepEqual(keyedParallelCall.body.search_queries, ["parallel keyed"])
+  assert.equal(keyedParallelCall.body.advanced_settings.max_results, 1)
+  assert.equal(keyedParallelCall.key, undefined)
+  const beforeParallelRefusal = calls.length
+  assert.match(await failure("rate limited"), /429|slow down|error/i)
+  assert.equal(calls.length, beforeParallelRefusal + 1, "a refused REST key never falls back to MCP")
+  console.log("✓ magpie loads six APIs, filters registrations, applies options/custom URLs, handles timeout/429, and runs anonymous search with cooldown and fallback; Parallel and TinyFish support MCP JSON/SSE and keyed REST")
 } catch (error) {
   console.error(gatewayLog)
   throw error
