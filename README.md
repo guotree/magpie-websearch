@@ -4,8 +4,8 @@ Additional web search APIs for [magpie](https://usemagpie.ai). Once installed,
 the APIs appear in **Settings › Models › Web search**, where magpie manages
 their keys, on/off switches and request order.
 
-Current providers: **AnySearch**, **Keenable**, **Linkup**, **Querit**, **TinyFish**.
-AnySearch, Keenable and TinyFish work with or without a key; Linkup and Querit
+Current providers: **AnySearch**, **Keenable**, **Linkup**, **Parallel**, **Querit**, **TinyFish**.
+AnySearch, Keenable, Parallel and TinyFish work with or without a key; Linkup and Querit
 require one. See
 [PROVIDERS.md](PROVIDERS.md) for supported and planned providers.
 
@@ -23,6 +23,7 @@ The package's short name is `magpie-websearch`, so the vendor IDs are:
 magpie-websearch:anysearch
 magpie-websearch:keenable
 magpie-websearch:linkup
+magpie-websearch:parallel
 magpie-websearch:querit
 magpie-websearch:tinyfish
 ```
@@ -30,41 +31,41 @@ magpie-websearch:tinyfish
 ## Configure
 
 In the app: **Settings › Models › Web search**, add each API you want, switch it
-on, and order it. Leave the key empty for anonymous AnySearch, Keenable or
-TinyFish, or provide a key to use your account. Linkup and Querit require a key.
+on, and order it. Leave the key empty for anonymous AnySearch, Keenable, Parallel
+or TinyFish, or provide a key to use your account. Linkup and Querit require a key.
 
-No plugin options are required. With no registration filters, all five APIs are
+No plugin options are required. With no registration filters, all six APIs are
 registered; magpie's Web search settings decide which are configured and used.
 
-The optional **Base URL** field routes requests to your own compatible service.
-Leave it empty for the official API. For AnySearch, Keenable, Linkup and Querit,
-an origin (`https://search.example.com`)
-uses `/v1/search`; a prefix (`https://search.example.com/proxy`) uses
-`/proxy/v1/search`. A base ending in `/v1` gets `/search` appended, and a full
-endpoint ending in `/search` is used as is. Trailing slashes are accepted.
-Keenable appends `/public` in anonymous mode; a full `/search/public` address
-is also accepted and switches to `/search` when a key is supplied.
-HTTP and HTTPS are supported; credentials, query strings and fragments in the
-address are rejected. Keep the API key in magpie's key field.
+The optional **Base URL** field routes requests to your own compatible service or proxy.
+Leave it empty for the official vendor API. **When provided, the plugin treats the custom
+URL as the exact endpoint destination and sends requests directly to that address, without
+heuristically appending paths.** For example, if your proxy serves Linkup search at
+`https://search.example.com/proxy/v1/search`, enter that complete address. If an endpoint
+serves requests at its root, enter `https://proxy.example.com/`.
 
-**TinyFish uses the given address as the complete endpoint, without appending a
-path.** With no key it must accept MCP `tools/call` over POST; with a key it must
-accept TinyFish Search over GET. An origin addresses `/`. If you change between
-anonymous and keyed access, update your custom address to match the protocol;
-leave it empty to select the appropriate official endpoint automatically. See
-[TinyFish search](#tinyfish-search) for the wire formats and capability limits.
+HTTP and HTTPS are supported; credentials, query strings and fragments in the address are
+rejected. Keep the API key in magpie's key field.
+
+For dual-mode providers (Parallel and TinyFish), if you switch between anonymous (MCP)
+and keyed access, ensure your custom address matches the selected protocol
+(for example, `/mcp` anonymously or a search endpoint with a key); leave it empty to
+select the appropriate official endpoint automatically. See [Parallel search](#parallel-search)
+and [TinyFish search](#tinyfish-search) for wire formats and capability details.
 
 In a terminal:
 
 ```sh
-# AnySearch, Keenable and TinyFish: no key needed for anonymous search
+# AnySearch, Keenable, Parallel and TinyFish: no key needed for anonymous search
 magpie search add magpie-websearch:anysearch
 magpie search add magpie-websearch:keenable
+magpie search add magpie-websearch:parallel
 magpie search add magpie-websearch:tinyfish
 
 # Or supply a key to use your account
 magpie search add magpie-websearch:anysearch <key>
 magpie search add magpie-websearch:keenable <key>
+magpie search add magpie-websearch:parallel <key>
 magpie search add magpie-websearch:tinyfish <key>
 
 # Linkup: a key is required
@@ -74,7 +75,7 @@ magpie search add magpie-websearch:linkup <key>
 magpie search add magpie-websearch:querit <key>
 
 # A compatible endpoint of your own
-magpie search add magpie-websearch:linkup <key> url=https://search.example.com/proxy/v1
+magpie search add magpie-websearch:linkup <key> url=https://search.example.com/proxy/v1/search
 ```
 
 Several keys for one API are separated by commas; magpie takes them in turn and rests one the vendor refuses:
@@ -98,8 +99,9 @@ magpie search rm magpie-websearch:linkup
 
 AnySearch uses the same search endpoint without an Authorization header.
 Keenable uses `/v1/search/public` without an API key, with the application title
-configured by `keenable.title`. TinyFish calls its hosted MCP search with
-`X-TinyFish-Access-Mode: keyless` and no API key or OAuth credentials. All three
+configured by `keenable.title`. Parallel calls its hosted MCP search with no API
+key or OAuth credentials. TinyFish calls its hosted MCP search with
+`X-TinyFish-Access-Mode: keyless` and no API key or OAuth credentials. All four
 support leaving the key empty in the GUI because the plugin declares
 `keyOptional: true`.
 
@@ -110,8 +112,8 @@ entry and add it again without a key; reapply any custom address, order and
 on/off setting as needed.
 
 AnySearch and Keenable anonymous quotas are shared by clients using the same
-public IP. TinyFish's anonymous quota scope and exact limits have not been
-verified. For all three APIs, on an HTTP 429 the plugin pauses new anonymous
+public IP. Parallel and TinyFish anonymous quota scopes and exact limits have
+not been verified. For all four APIs, on an HTTP 429 the plugin pauses new anonymous
 requests to that API's final endpoint for the
 `Retry-After` duration (seconds or an HTTP date), or 60 seconds if the header is
 missing, invalid or already expired. During the pause it returns a 429 without
@@ -119,6 +121,39 @@ fetching, allowing magpie to try the next configured API. Cached results remain
 usable, and supplying a key bypasses the anonymous pause. Cooldowns are kept in
 memory per plugin instance, reset when the host reloads, and remain active even
 when `cacheTTL` is zero.
+
+### Parallel search
+
+Parallel has two access paths, selected by the key magpie supplies:
+
+| Access | Default endpoint | Request |
+|---|---|---|
+| Anonymous (empty key) | `https://mcp.parallel.ai/mcp` | POST JSON-RPC `tools/call`, tool `web_search` |
+| With a key | `https://api.parallel.ai/v1/search` | POST with `x-api-key` and nested `advanced_settings` |
+
+Anonymous requests directly call `web_search` without a session handshake.
+The plugin reads JSON or SSE responses, checks JSON-RPC and tool errors,
+then extracts search results from structured content or text content parts.
+Keyed requests use the GA `/v1/search` endpoint with `x-api-key`. Both paths accept
+a normalized query of 1–200 characters (Parallel's keyword query limit).
+
+Parallel's MCP server defaults to `fast` mode. If `parallel.mode` is configured to
+another mode (`turbo`, `basic` or `advanced`), anonymous requests fail before
+fetching with an error reminding you to add a key. With a key, all four modes
+are supported on REST.
+
+Parallel's public search caps results at 20. The plugin requests at most 20
+results on REST and caps valid results locally to magpie's count and
+`parallel.maxResults`. `text` joins `excerpts` with `\n\n` and trims to
+`parallel.contentChars` (default 4000 code points, `0` keeps all returned text).
+`publish_date` preserves the original date string as `age`.
+
+Anonymous access was verified on **2026-11-04** against the official MCP endpoint:
+keyless `tools/call` returned HTTP 200 with search results for English and
+Chinese queries. A configured key always selects REST, including when it is
+invalid or exhausted; there is no automatic downgrade to MCP. A custom endpoint
+is used as the exact destination for either protocol (for example, `/mcp`
+anonymously or your proxy's search endpoint with a key).
 
 ### TinyFish search
 
@@ -182,6 +217,7 @@ must match the selected protocol, for example `/proxy/mcp` anonymously or
 | AnySearch (magpie-websearch) | `magpie-websearch:anysearch` | optional | Anonymous or authenticated search; intent routing, `cn`/`intl` zones, markdown or JSON content |
 | Keenable (magpie-websearch) | `magpie-websearch:keenable` | optional | Anonymous `/public` endpoint or authenticated search; `pro` and `realtime` search modes |
 | Linkup (magpie-websearch) | `magpie-websearch:linkup` | required | `content` is a query-relevant excerpt, not the page; depth buys recall, not text |
+| Parallel (magpie-websearch) | `magpie-websearch:parallel` | optional | Anonymous MCP (`fast` mode) or keyed REST; excerpt joining and local caps; 20-result upstream cap |
 | Querit (magpie-websearch) | `magpie-websearch:querit` | required | Snippet, or joined sentence matches when a snippet is missing; `querit.count` caps results |
 | TinyFish (magpie-websearch) | `magpie-websearch:tinyfish` | optional | Anonymous MCP or keyed REST; snippets and original date strings; local result cap; papers require a key |
 
@@ -193,7 +229,7 @@ use short IDs such as `linkup`.
 
 ## What magpie does with a result
 
-- `count` is 6: adapters request at most 6 results when supported; TinyFish caps its one-page response locally. magpie keeps at most 6.
+- `count` is 6: adapters request at most 6 results when supported; responses with unconfigurable result counts (such as anonymous MCP) are capped locally. magpie keeps at most 6.
 - `text` is stripped of tags, unescaped, whitespace-collapsed, and cut to 1500 bytes.
 - `age` is the vendor's own date string; this plugin does not parse or rewrite it.
 - A hit without a URL is dropped.
@@ -207,7 +243,7 @@ the top-level `enable` and `disable` filters. Omitted provider fields fall back
 to the environment variable or the default listed below.
 
 Use **Plugins → Installed → Options**, or pass a JSON object on the command line.
-For example, change search parameters while keeping all five APIs registered:
+For example, change search parameters while keeping all six APIs registered:
 
 ```sh
 magpie plugin options magpie-websearch '{"linkup":{"depth":"deep","maxResults":4,"timeout":25000,"cacheTTL":600000},"anysearch":{"zone":"cn","language":"zh-CN"}}'
@@ -250,6 +286,11 @@ The table lists fields inside each provider's object (`linkup.depth`, for exampl
 | linkup | `maxResults` | `LINKUP_MAX_RESULTS` | `10` | 1–100; upstream limits also apply |
 | linkup | `contentChars` | `LINKUP_CONTENT_CHARS` | `4000` | Code points per excerpt (`0` keeps all) |
 | linkup | `timeout` | `LINKUP_TIMEOUT` | `25000` | ≥ 0 |
+| parallel | `cacheTTL` | `PARALLEL_CACHE_TTL` | `600000` | ≥ 0 |
+| parallel | `timeout` | `PARALLEL_TIMEOUT` | `25000` | ≥ 0; includes reading the MCP stream |
+| parallel | `maxResults` | `PARALLEL_MAX_RESULTS` | `10` | 1–20; cap on magpie's requested count |
+| parallel | `contentChars` | `PARALLEL_CONTENT_CHARS` | `4000` | Code points per joined excerpt (`0` keeps all) |
+| parallel | `mode` | `PARALLEL_MODE` | `fast` | `fast`, `turbo`, `basic`, `advanced`; non-fast modes require a key |
 | querit | `cacheTTL` | `QUERIT_CACHE_TTL` | `600000` | ≥ 0 |
 | querit | `count` | `QUERIT_COUNT` | `8` | ≥ 1; cap on magpie's count, Querit's own limit applies |
 | querit | `timeout` | `QUERIT_TIMEOUT` | `25000` | ≥ 0 |
@@ -271,16 +312,16 @@ for desktop use.
 
 The optional top-level `enable` and `disable` arrays control which APIs the
 plugin registers. Entries use short IDs: `anysearch`, `keenable`, `linkup`,
-`querit`, `tinyfish` (without the `magpie-websearch:` prefix).
+`parallel`, `querit`, `tinyfish` (without the `magpie-websearch:` prefix).
 
 | Filters | APIs registered |
 |---|---|
-| Both omitted, or `{}` | All five APIs |
+| Both omitted, or `{}` | All six APIs |
 | `"enable": ["linkup", "querit"]` | Linkup and Querit only |
 | `"disable": ["keenable"]` | All except Keenable |
 | `"enable": ["linkup", "querit"], "disable": ["querit"]` | Linkup only; `disable` wins |
 | `"enable": []` | None |
-| `"disable": []` | All five, unless `enable` also limits the set |
+| `"disable": []` | All six, unless `enable` also limits the set |
 
 Combine filters with provider settings when needed:
 
@@ -303,7 +344,7 @@ To remove all saved plugin options, including provider overrides and filters:
 magpie plugin options magpie-websearch off
 ```
 
-All five APIs are registered again. Provider settings use environment
+All six APIs are registered again. Provider settings use environment
 values when present, otherwise their defaults. To remove only the filters,
 save a complete options object containing the provider settings you want to keep.
 
@@ -325,7 +366,7 @@ The smoke script requires `magpie` on PATH (`MAGPIE_BIN` can name its executable
 It creates a temporary HOME/config/cache, disables account discovery, starts a
 gateway on a free loopback port, and tests registration, options, custom URL,
 timeout, anonymous search, 429 cooldown and fallback against a local fake API,
-including TinyFish MCP JSON/SSE and keyed REST GET with local result caps.
+including Parallel and TinyFish MCP JSON/SSE and keyed REST with local result caps.
 It removes its sandbox when finished and does not use real service keys.
 `MAGPIE_PLUGIN_DIR` can point to an
 unpacked npm package (keep its folder named `magpie-websearch` for stable vendor
