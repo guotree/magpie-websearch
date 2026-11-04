@@ -207,10 +207,26 @@ export function page(title, url, text, age) {
   return out
 }
 
+export function cleanRetryAfter(raw) {
+  const value = String(raw ?? "").trim()
+  if (!value) return undefined
+  if (/^\d+$/.test(value)) return value.replace(/^0+(?=\d)/, "")
+  if (/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4} \d{2}:\d{2}:\d{2} GMT$/i.test(value)) {
+    const parsed = Date.parse(value)
+    // Date.parse accepts rolled-over dates and ignores the weekday. A round
+    // trip checks both and emits only the canonical HTTP date.
+    if (Number.isFinite(parsed)) {
+      const canonical = new Date(parsed).toUTCString()
+      if (canonical.toLowerCase() === value.toLowerCase()) return canonical
+    }
+  }
+  return undefined
+}
+
 // A custom reader shares the HTTP errors and the deadline, including while
 // consuming a streaming response. JSON providers keep the default text reader.
 export async function requestResponse(input, init, ctx, options = {}, read) {
-  const { label = "search", timeout = 25_000, messages = {} } = options
+  const { label = "search", timeout = 25_000, messages = {}, sensitive = false } = options
   const signal = signalFor(ctx, timeout)
 
   let response
@@ -221,7 +237,26 @@ export async function requestResponse(input, init, ctx, options = {}, read) {
     if (timedOut(error, signal, ctx)) {
       throw new Error(`${label} search timed out after ${timeout}ms`)
     }
+    if (sensitive) throw new Error(`${label} request failed`)
     throw new Error(`${label} request failed: ${String(error)}`)
+  }
+
+  if (!response.ok && sensitive) {
+    // Cleanup must not delay a known refusal, even if a transport's cancel
+    // promise never settles. Handle rejection without retaining its details.
+    try { response.body?.cancel().catch(() => {}) } catch {}
+    const retry = cleanRetryAfter(response.headers.get("Retry-After"))
+    const custom = messages[response.status]
+    const defaultMsg = response.status === 400 ? "bad request"
+      : response.status === 401 ? "invalid API key"
+      : response.status === 403 ? "access denied"
+      : response.status === 429 ? "rate limit or search quota exceeded"
+      : response.status === 500 ? "server error"
+      : response.status === 503 ? "service unavailable"
+      : `HTTP ${response.status}`
+    let message = custom ?? `${label} API error ${response.status}: ${defaultMsg}`
+    if (response.status === 429) message += retryHint(retry)
+    throw apiError(response.status, message, retry)
   }
 
   // A 402 body can carry freshly generated credentials (AnySearch does), so a
@@ -242,7 +277,7 @@ export async function requestResponse(input, init, ctx, options = {}, read) {
     if (timedOut(error, signal, ctx)) {
       throw new Error(`${label} search timed out after ${timeout}ms`)
     }
-    if (response.ok && read) throw error
+    if (response.ok && read && !sensitive) throw error
     throw new Error(`${label} response body unavailable`)
   }
 
@@ -259,10 +294,11 @@ export async function requestResponse(input, init, ctx, options = {}, read) {
 
 export async function requestJSON(input, init, ctx, options = {}) {
   const raw = await requestResponse(input, init, ctx, options)
-  const { label = "search" } = options
+  const { label = "search", sensitive = false } = options
   try {
     return JSON.parse(raw)
   } catch (error) {
+    if (sensitive) throw new Error(`Invalid ${label} response: malformed JSON`)
     throw new Error(`Invalid ${label} response: ${String(error)}`)
   }
 }
