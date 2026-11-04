@@ -20,7 +20,8 @@
     "search",
     "anysearch",
     "keenable",
-    "linkup"
+    "linkup",
+    "querit"
   ],
   "license": "MIT",
   "publishConfig": {

@@ -38,7 +38,7 @@ if (!search || typeof search !== "object" || Array.isArray(search)) {
     }
   }
   for (const id of EXPECTED) {
-    if (!search[id]) fail(`missing pilot provider ${id}`)
+    if (!search[id]) fail(`missing provider ${id}`)
   }
 }
 

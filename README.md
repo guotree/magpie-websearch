@@ -2,7 +2,7 @@
 
 Web search APIs for [magpie](https://usemagpie.ai). This is a **magpie plugin**, not an MCP tool: once installed, the APIs appear in **Settings › Models › Web search**, and magpie uses them for its `web_search` tool when no provider can search.
 
-Pilot: **AnySearch**, **Keenable**, **Linkup**, plus **Querit**. All require a key; magpie owns the keys. The remaining providers from [guotree/opencode-search-plugin](https://github.com/guotree/opencode-search-plugin) will be ported in batches; see [PROVIDERS.md](PROVIDERS.md).
+Current providers: **AnySearch**, **Keenable**, **Linkup**, **Querit**. All require a key; magpie owns the keys. The remaining providers from [guotree/opencode-search-plugin](https://github.com/guotree/opencode-search-plugin) will be ported in batches; see [PROVIDERS.md](PROVIDERS.md).
 
 ## Install
 
@@ -66,11 +66,11 @@ magpie search rm magpie-websearch:linkup
 | Linkup | `magpie-websearch:linkup` | required | `content` is a query-relevant excerpt, not the page; depth buys recall, not text |
 | Querit | `magpie-websearch:querit` | required | Snippet, or joined sentence matches when a snippet is missing; `QUERIT_COUNT` caps results |
 
-### Why the pilot requires keys
+### Why these providers require keys
 
 Keenable's keyless `/public` pool is shared per egress IP (1,000 requests an hour and 10 a second), and magpie does not rest an empty key after a 429. Every search would therefore hit the shared pool again with no cooldown, and a proxy, NAT or cloud runner can make that pool unpredictable. This package requires a key; the keyed account gets 100,000 free requests a month.
 
-AnySearch's anonymous tier is also not wired up: the pilot keeps one predictable quota per key instead of a second shared pool. Linkup and Querit already required a key.
+AnySearch's anonymous tier is also not wired up: the package keeps one predictable quota per key instead of a second shared pool. Linkup and Querit already required a key.
 
 ## What magpie does with a result
 
