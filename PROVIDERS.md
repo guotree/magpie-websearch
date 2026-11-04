@@ -11,6 +11,7 @@ below.
 | AnySearch (magpie-websearch) | `magpie-websearch:anysearch` | [anysearch.mjs](src/providers/anysearch.mjs) | optional |
 | Keenable (magpie-websearch) | `magpie-websearch:keenable` | [keenable.mjs](src/providers/keenable.mjs) | optional |
 | Linkup (magpie-websearch) | `magpie-websearch:linkup` | [linkup.mjs](src/providers/linkup.mjs) | required |
+| Metaso (magpie-websearch) | `magpie-websearch:metaso` | [metaso.mjs](src/providers/metaso.mjs) | required |
 | Parallel (magpie-websearch) | `magpie-websearch:parallel` | [parallel.mjs](src/providers/parallel.mjs) | optional |
 | Querit (magpie-websearch) | `magpie-websearch:querit` | [querit.mjs](src/providers/querit.mjs) | required |
 | TinyFish (magpie-websearch) | `magpie-websearch:tinyfish` | [tinyfish.mjs](src/providers/tinyfish.mjs) | optional |
@@ -20,7 +21,7 @@ This suffix identifies the plugin in magpie's GUI and CLI. Keep the short API ID
 and the namespaced vendor ID independent of the display name; suffix changes
 must not rename the IDs used by saved keys, switches, order or plugin options.
 
-All six APIs are registered by default. `enable` and `disable` are optional
+All seven APIs are registered by default. `enable` and `disable` are optional
 plugin options that filter this list by short ID (`linkup`, for example).
 `disable` takes precedence over `enable`; `enable: []` registers none, while
 `disable: []` excludes none. Provider settings such as `linkup.depth` do not
@@ -85,6 +86,16 @@ and other endpoints are independent of that cooldown. See
   filters. Purpose, pagination, date/year filters and inline fetch are deferred.
   See [README](README.md#tinyfish-search) for configuration and switching modes.
 
+### Metaso protocol notes
+
+- The [Metaso Search API playground](https://metaso.cn/search-api/playground) documents
+  authenticated POST search at `/api/v1/search`.
+- Metaso requires an API key (Bearer token). Anonymous access returns HTTP 401.
+- Results are read from `webpages` (or fallback `results`), mapping `link` to `url`,
+  `snippet` to `text`, and `date` to `age`.
+- Supports configurable search scope (`webpage`, `document`, `paper`, `image`, `video`, `podcast`).
+- Public search caps results at 50 (`sizeFor(count, maxResults, 50)`).
+
 ## Planned
 
 These candidates are not implemented. IDs are provisional; authentication,
@@ -95,7 +106,6 @@ endpoint details and available features must be verified before implementation.
 | Bocha | `magpie-websearch:bocha` |
 | Jina | `magpie-websearch:jina` |
 | Kagi | `magpie-websearch:kagi` |
-| Metaso | `magpie-websearch:metaso` |
 | Perplexity | `magpie-websearch:perplexity` |
 | SerpApi | `magpie-websearch:serpapi` |
 | Serper | `magpie-websearch:serper` |

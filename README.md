@@ -4,8 +4,8 @@ Additional web search APIs for [magpie](https://usemagpie.ai). Once installed,
 the APIs appear in **Settings › Models › Web search**, where magpie manages
 their keys, on/off switches and request order.
 
-Current providers: **AnySearch**, **Keenable**, **Linkup**, **Parallel**, **Querit**, **TinyFish**.
-AnySearch, Keenable, Parallel and TinyFish work with or without a key; Linkup and Querit
+Current providers: **AnySearch**, **Keenable**, **Linkup**, **Metaso**, **Parallel**, **Querit**, **TinyFish**.
+AnySearch, Keenable, Parallel and TinyFish work with or without a key; Linkup, Metaso and Querit
 require one. See
 [PROVIDERS.md](PROVIDERS.md) for supported and planned providers.
 
@@ -23,6 +23,7 @@ The package's short name is `magpie-websearch`, so the vendor IDs are:
 magpie-websearch:anysearch
 magpie-websearch:keenable
 magpie-websearch:linkup
+magpie-websearch:metaso
 magpie-websearch:parallel
 magpie-websearch:querit
 magpie-websearch:tinyfish
@@ -32,9 +33,9 @@ magpie-websearch:tinyfish
 
 In the app: **Settings › Models › Web search**, add each API you want, switch it
 on, and order it. Leave the key empty for anonymous AnySearch, Keenable, Parallel
-or TinyFish, or provide a key to use your account. Linkup and Querit require a key.
+or TinyFish, or provide a key to use your account. Linkup, Metaso and Querit require a key.
 
-No plugin options are required. With no registration filters, all six APIs are
+No plugin options are required. With no registration filters, all seven APIs are
 registered; magpie's Web search settings decide which are configured and used.
 
 The optional **Base URL** field routes requests to your own compatible service or proxy.
@@ -243,7 +244,7 @@ the top-level `enable` and `disable` filters. Omitted provider fields fall back
 to the environment variable or the default listed below.
 
 Use **Plugins → Installed → Options**, or pass a JSON object on the command line.
-For example, change search parameters while keeping all six APIs registered:
+For example, change search parameters while keeping all seven APIs registered:
 
 ```sh
 magpie plugin options magpie-websearch '{"linkup":{"depth":"deep","maxResults":4,"timeout":25000,"cacheTTL":600000},"anysearch":{"zone":"cn","language":"zh-CN"}}'
@@ -286,6 +287,11 @@ The table lists fields inside each provider's object (`linkup.depth`, for exampl
 | linkup | `maxResults` | `LINKUP_MAX_RESULTS` | `10` | 1–100; upstream limits also apply |
 | linkup | `contentChars` | `LINKUP_CONTENT_CHARS` | `4000` | Code points per excerpt (`0` keeps all) |
 | linkup | `timeout` | `LINKUP_TIMEOUT` | `25000` | ≥ 0 |
+| metaso | `cacheTTL` | `METASO_CACHE_TTL` | `600000` | ≥ 0 |
+| metaso | `scope` | `METASO_SCOPE` | `webpage` | `webpage`, `document`, `paper`, `image`, `video`, `podcast` |
+| metaso | `maxResults` | `METASO_MAX_RESULTS` | `10` | 1–50; cap on magpie's requested count |
+| metaso | `contentChars` | `METASO_CONTENT_CHARS` | `4000` | Code points per excerpt (`0` keeps all) |
+| metaso | `timeout` | `METASO_TIMEOUT` | `25000` | ≥ 0 |
 | parallel | `cacheTTL` | `PARALLEL_CACHE_TTL` | `600000` | ≥ 0 |
 | parallel | `timeout` | `PARALLEL_TIMEOUT` | `25000` | ≥ 0; includes reading the MCP stream |
 | parallel | `maxResults` | `PARALLEL_MAX_RESULTS` | `10` | 1–20; cap on magpie's requested count |
@@ -312,16 +318,16 @@ for desktop use.
 
 The optional top-level `enable` and `disable` arrays control which APIs the
 plugin registers. Entries use short IDs: `anysearch`, `keenable`, `linkup`,
-`parallel`, `querit`, `tinyfish` (without the `magpie-websearch:` prefix).
+`metaso`, `parallel`, `querit`, `tinyfish` (without the `magpie-websearch:` prefix).
 
 | Filters | APIs registered |
 |---|---|
-| Both omitted, or `{}` | All six APIs |
+| Both omitted, or `{}` | All seven APIs |
 | `"enable": ["linkup", "querit"]` | Linkup and Querit only |
 | `"disable": ["keenable"]` | All except Keenable |
 | `"enable": ["linkup", "querit"], "disable": ["querit"]` | Linkup only; `disable` wins |
 | `"enable": []` | None |
-| `"disable": []` | All six, unless `enable` also limits the set |
+| `"disable": []` | All seven, unless `enable` also limits the set |
 
 Combine filters with provider settings when needed:
 
@@ -344,7 +350,7 @@ To remove all saved plugin options, including provider overrides and filters:
 magpie plugin options magpie-websearch off
 ```
 
-All six APIs are registered again. Provider settings use environment
+All seven APIs are registered again. Provider settings use environment
 values when present, otherwise their defaults. To remove only the filters,
 save a complete options object containing the provider settings you want to keep.
 

@@ -3,9 +3,9 @@ import assert from "node:assert/strict"
 import { WebSearch } from "../index.mjs"
 import { resolveEndpoint } from "../src/core.mjs"
 import { context, json, stubFetch } from "./harness.mjs"
-import { ANYSEARCH_CASE, KEENABLE_CASE, LINKUP_CASE, PARALLEL_CASE, QUERIT_CASE, TINYFISH_CASE } from "./cases.mjs"
+import { ANYSEARCH_CASE, KEENABLE_CASE, LINKUP_CASE, METASO_CASE, PARALLEL_CASE, QUERIT_CASE, TINYFISH_CASE } from "./cases.mjs"
 
-const fixtures = { anysearch: ANYSEARCH_CASE, keenable: KEENABLE_CASE, linkup: LINKUP_CASE, parallel: PARALLEL_CASE, querit: QUERIT_CASE, tinyfish: TINYFISH_CASE }
+const fixtures = { anysearch: ANYSEARCH_CASE, keenable: KEENABLE_CASE, linkup: LINKUP_CASE, metaso: METASO_CASE, parallel: PARALLEL_CASE, querit: QUERIT_CASE, tinyfish: TINYFISH_CASE }
 
 test("custom Base URL uses the exact endpoint as given and validates HTTP(S)", () => {
   for (const [base, want] of [
@@ -42,7 +42,7 @@ for (const [id, fixture] of Object.entries(fixtures)) {
         assert.equal(fake.calls[2].init.method, "GET")
         assert.equal(fake.calls[2].body, undefined)
       } else {
-        assert.equal(fake.calls[2].body.advanced_settings?.max_results ?? fake.calls[2].body.max_results ?? fake.calls[2].body.maxResults ?? fake.calls[2].body.count, 6)
+        assert.equal(fake.calls[2].body.advanced_settings?.max_results ?? fake.calls[2].body.max_results ?? fake.calls[2].body.maxResults ?? fake.calls[2].body.count ?? fake.calls[2].body.size, 6)
       }
     } finally { fake.restore() }
   })
@@ -79,16 +79,18 @@ test("provider options reach requests and keep settings and caches separate per 
   }
 })
 
-test("AnySearch, Keenable and Querit options reach their request fields", async () => {
+test("AnySearch, Keenable, Metaso and Querit options reach their request fields", async () => {
   const { search } = await WebSearch({}, {
     anysearch: { tag: "code.snippet", zone: "cn", language: "zh-CN", format: "json", maxResults: 2 },
     keenable: { mode: "realtime", title: "Example", maxResults: 3 },
+    metaso: { scope: "paper", maxResults: 5 },
     querit: { count: 4 },
   })
   const fake = stubFetch((call) => json(call.url.includes("anysearch") ? ANYSEARCH_CASE.response
-    : call.url.includes("keenable") ? KEENABLE_CASE.response : QUERIT_CASE.response))
+    : call.url.includes("keenable") ? KEENABLE_CASE.response
+    : call.url.includes("metaso") ? METASO_CASE.response : QUERIT_CASE.response))
   try {
-    for (const id of ["anysearch", "keenable", "querit"]) {
+    for (const id of ["anysearch", "keenable", "metaso", "querit"]) {
       await search[id].execute({ query: "options", key: "k", count: 6 }, context())
     }
     assert.deepEqual(fake.calls[0].body, {
@@ -97,7 +99,9 @@ test("AnySearch, Keenable and Querit options reach their request fields", async 
     assert.equal(fake.calls[1].body.mode, "realtime")
     assert.equal(fake.calls[1].body.max_results, 3)
     assert.equal(fake.calls[1].init.headers["X-Keenable-Title"], "Example")
-    assert.equal(fake.calls[2].body.count, 4)
+    assert.equal(fake.calls[2].body.scope, "paper")
+    assert.equal(fake.calls[2].body.size, 5)
+    assert.equal(fake.calls[3].body.count, 4)
   } finally { fake.restore() }
 })
 
