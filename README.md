@@ -30,8 +30,8 @@ In a terminal:
 # AnySearch: the key is optional; anonymous access uses the free per-IP tier
 magpie search add websearch:anysearch
 
-# Keenable: the key is optional; without one it uses the /public pool
-magpie search add websearch:keenable
+# Keenable: a key is required
+magpie search add websearch:keenable <key>
 
 # Linkup: a key is required
 magpie search add websearch:linkup <key>
@@ -59,8 +59,14 @@ magpie search rm websearch:linkup
 | API | Vendor ID | Key | Notes |
 |---|---|---|---|
 | AnySearch | `websearch:anysearch` | optional | Free per-IP tier; intent routing, `cn`/`intl` zones, markdown or JSON content |
-| Keenable | `websearch:keenable` | optional | Keyed: 100,000 free requests/month; keyless: `/public`, 1,000/hour and 10/second per IP |
+| Keenable | `websearch:keenable` | required | 100,000 free requests/month. The keyless `/public` pool is deliberately not wired up; see below |
 | Linkup | `websearch:linkup` | required | `content` is a query-relevant excerpt, not the page; depth buys recall, not text |
+
+### Why Keenable needs a key
+
+Keenable's keyless `/public` pool is shared per egress IP (1,000 requests an hour and 10 a second), and magpie does not rest an empty key after a 429. Every search would therefore hit the shared pool again with no cooldown, and a proxy, NAT or cloud runner can make that pool unpredictable. This package requires a key; the keyed account gets 100,000 free requests a month.
+
+AnySearch remains the only keyless pilot: its anonymous tier is a separate free pool, and its key is optional.
 
 ## What magpie does with a result
 
@@ -91,7 +97,7 @@ Knobs are read from the environment when the plugin loads. Restart magpie (or tu
 | `KEENABLE_CACHE_TTL` | `600000` | same |
 | `KEENABLE_MAX_RESULTS` | `10` | cap (1–50) |
 | `KEENABLE_MODE` | — | `pro` or `realtime` |
-| `KEENABLE_TITLE` | `magpie-websearch` | `X-Keenable-Title`; the keyless endpoint requires it |
+| `KEENABLE_TITLE` | `magpie-websearch` | `X-Keenable-Title`; names the calling application |
 | `KEENABLE_TIMEOUT` | `25000` | same |
 | `LINKUP_CACHE_TTL` | `600000` | same |
 | `LINKUP_DEPTH` | `fast` | `flash`, `fast`, `standard`, `deep` |

@@ -7,7 +7,7 @@ Source of truth for the port from [guotree/opencode-search-plugin](https://githu
 | Provider | magpie ID | Source | Key | Overlap with magpie built-in |
 |---|---|---|---|---|
 | AnySearch | `websearch:anysearch` | `anysearch-search.ts` | optional | none |
-| Keenable | `websearch:keenable` | `keenable-search.ts` | optional | none |
+| Keenable | `websearch:keenable` | `keenable-search.ts` | required | none; keyless `/public` deliberately not wired up |
 | Linkup | `websearch:linkup` | `linkup-search.ts` | required | none |
 
 ## Planned

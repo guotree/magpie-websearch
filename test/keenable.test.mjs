@@ -5,17 +5,17 @@ import { keenable } from "../src/providers/keenable.mjs"
 import { KEENABLE_CASE } from "./cases.mjs"
 import { context, json, stubFetch, text } from "./harness.mjs"
 
-test("keenable: keyless call uses /public and maps results", async () => {
+test("keenable: maps results with a key", async () => {
   const fake = stubFetch(() => json(KEENABLE_CASE.response))
   try {
     const pages = await keenable.execute(
-      { query: "keenable keyless", count: 6, key: "" },
+      { query: "keenable mapping", count: 6, key: "k" },
       context(),
     )
     assert.deepEqual(pages, KEENABLE_CASE.expected)
     assert.equal(fake.calls.length, 1)
-    assert.equal(fake.calls[0].url, "https://api.keenable.ai/v1/search/public")
-    assert.equal(fake.calls[0].init.headers["X-API-Key"], undefined)
+    assert.equal(fake.calls[0].url, "https://api.keenable.ai/v1/search")
+    assert.equal(fake.calls[0].init.headers["X-API-Key"], "k")
     assert.equal(fake.calls[0].init.headers["X-Keenable-Title"], "magpie-websearch")
     assert.equal(fake.calls[0].body.max_results, 6)
   } finally {
@@ -23,18 +23,20 @@ test("keenable: keyless call uses /public and maps results", async () => {
   }
 })
 
-test("keenable: a key moves the call to /v1/search", async () => {
+test("keenable: needs a key before it calls the API", async () => {
   const fake = stubFetch(() => json({ results: [] }))
   try {
-    await keenable.execute({ query: "keenable keyed", count: 6, key: "k" }, context())
-    assert.equal(fake.calls[0].url, "https://api.keenable.ai/v1/search")
-    assert.equal(fake.calls[0].init.headers["X-API-Key"], "k")
+    await assert.rejects(
+      keenable.execute({ query: "keenable no key", count: 6, key: "" }, context()),
+      /needs a key/,
+    )
+    assert.equal(fake.calls.length, 0)
   } finally {
     fake.restore()
   }
 })
 
-test("keenable: a keyed 402 is credits exhausted", async () => {
+test("keenable: a 402 is credits exhausted", async () => {
   const fake = stubFetch(() => text("no credits", 402))
   try {
     await assert.rejects(
@@ -50,15 +52,14 @@ test("keenable: a keyed 402 is credits exhausted", async () => {
   }
 })
 
-test("keenable: a keyless 429 explains the public pool", async () => {
+test("keenable: keeps the 429 status and Retry-After", async () => {
   const fake = stubFetch(() => text("slow down", 429, { "Retry-After": "30" }))
   try {
     await assert.rejects(
-      keenable.execute({ query: "keenable rate", count: 6, key: "" }, context()),
+      keenable.execute({ query: "keenable rate", count: 6, key: "k" }, context()),
       (error) => {
         assert.equal(error.status, 429)
         assert.equal(error.retryAfter, "30")
-        assert.match(error.message, /keyless pool/)
         assert.match(error.message, /retry after 30s/)
         return true
       },
