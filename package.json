@@ -41,7 +41,7 @@
     "name": "Web Search"
   },
   "scripts": {
-    "test": "node --test \"test/*.test.mjs\"",
-    "check": "node scripts/check.mjs && node --test \"test/*.test.mjs\""
+    "test": "node --test test/anysearch.test.mjs test/keenable.test.mjs test/linkup.test.mjs test/index.test.mjs",
+    "check": "node scripts/check.mjs && node --test test/anysearch.test.mjs test/keenable.test.mjs test/linkup.test.mjs test/index.test.mjs"
   }
 }

@@ -7,7 +7,6 @@ on:
   push:
     tags:
       - "v*"
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -16,7 +15,9 @@ permissions:
 
 jobs:
   publish:
+    name: Publish to npm
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v6
 
@@ -24,20 +25,24 @@ jobs:
         with:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
+          # Never serve a cached install in a release build.
           package-manager-cache: false
 
-      - name: Check the tag matches package.json
-        if: startsWith(github.ref, 'refs/tags/')
+      # Trusted publishing (OIDC) needs npm 11.5.1 or newer, which the
+      # runner's bundled npm may predate.
+      - name: Upgrade npm
+        run: npm install -g npm@latest
+
+      # A tag pushed without a matching version bump must fail here rather
+      # than republish an existing version or publish the wrong one.
+      - name: Check tag matches package.json
         run: |
-          node -e '
-            const pkg = require("./package.json");
-            const tag = process.env.GITHUB_REF_NAME.replace(/^v/, "");
-            if (pkg.version !== tag) {
-              console.error(`tag ${process.env.GITHUB_REF_NAME} does not match package.json ${pkg.version}`);
-              process.exit(1);
-            }
-            console.log(`publishing ${pkg.name}@${pkg.version}`);
-          '
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$version" ]; then
+            echo "Tag v$tag does not match package.json version $version" >&2
+            exit 1
+          fi
 
       - name: Check the plugin shape and run the tests
         run: npm run check
@@ -48,4 +53,4 @@ jobs:
       - name: Publish
         # Trusted publishing authenticates with the OIDC token from
         # `id-token: write`; provenance is generated automatically.
-        run: npm publish --access public
+        run: npm publish --provenance --access public
