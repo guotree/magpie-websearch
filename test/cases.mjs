@@ -485,3 +485,22 @@ export const MOONSHOT_CN_CASE = {
     },
   ],
 }
+
+// Perplexity Search API reference read 2026-11-05; synthetic nullable/missing fields.
+// https://docs.perplexity.ai/api-reference/search-post
+export const PERPLEXITY_CASE = {
+  response: {
+    id: "perplexity-fixture", server_time: null,
+    results: [
+      { title: "Missing URL", snippet: "dropped" },
+      { title: "Perplexity hit", url: "https://example.com/perplexity", snippet: "Perplexity snippet", date: "2026-10-01", last_updated: "2026-10-15" },
+      { title: "", url: "https://example.com/perplexity-pdf", snippet: "", date: null, last_updated: "2026-10-18" },
+      { url: "https://example.com/perplexity-bare", snippet: null },
+    ],
+  },
+  expected: [
+    { title: "Perplexity hit", url: "https://example.com/perplexity", text: "Perplexity snippet", age: "2026-10-01" },
+    { title: "https://example.com/perplexity-pdf", url: "https://example.com/perplexity-pdf", text: "", age: "2026-10-18" },
+    { title: "https://example.com/perplexity-bare", url: "https://example.com/perplexity-bare", text: "" },
+  ],
+}

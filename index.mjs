@@ -5,6 +5,7 @@ import { createMetaso } from "./src/providers/metaso.mjs"
 import { createMoonshot } from "./src/providers/moonshot.mjs"
 import { createMoonshotCN } from "./src/providers/moonshot-cn.mjs"
 import { createParallel } from "./src/providers/parallel.mjs"
+import { createPerplexity } from "./src/providers/perplexity.mjs"
 import { createQuerit } from "./src/providers/querit.mjs"
 import { createSerpapi } from "./src/providers/serpapi.mjs"
 import { createStepfun } from "./src/providers/stepfun.mjs"
@@ -21,6 +22,7 @@ const PROVIDERS = [
   ["moonshot", createMoonshot],
   ["moonshot-cn", createMoonshotCN],
   ["parallel", createParallel],
+  ["perplexity", createPerplexity],
   ["querit", createQuerit],
   ["serpapi", createSerpapi],
   ["stepfun", createStepfun],

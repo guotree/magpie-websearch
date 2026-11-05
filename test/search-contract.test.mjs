@@ -3,9 +3,9 @@ import assert from "node:assert/strict"
 import { WebSearch } from "../index.mjs"
 import { resolveEndpoint } from "../src/core.mjs"
 import { context, json, stubFetch } from "./harness.mjs"
-import { ANYSEARCH_CASE, KEENABLE_CASE, LINKUP_CASE, METASO_CASE, MOONSHOT_CASE, MOONSHOT_CN_CASE, PARALLEL_CASE, QUERIT_CASE, SERPAPI_CASE, STEPFUN_CASE, TINYFISH_CASE, ZAI_CASE, ZHIPU_CASE } from "./cases.mjs"
+import { ANYSEARCH_CASE, KEENABLE_CASE, LINKUP_CASE, METASO_CASE, MOONSHOT_CASE, MOONSHOT_CN_CASE, PARALLEL_CASE, PERPLEXITY_CASE, QUERIT_CASE, SERPAPI_CASE, STEPFUN_CASE, TINYFISH_CASE, ZAI_CASE, ZHIPU_CASE } from "./cases.mjs"
 
-const fixtures = { anysearch: ANYSEARCH_CASE, keenable: KEENABLE_CASE, linkup: LINKUP_CASE, metaso: METASO_CASE, moonshot: MOONSHOT_CASE, "moonshot-cn": MOONSHOT_CN_CASE, parallel: PARALLEL_CASE, querit: QUERIT_CASE, serpapi: SERPAPI_CASE, stepfun: STEPFUN_CASE, tinyfish: TINYFISH_CASE, zai: ZAI_CASE, zhipu: ZHIPU_CASE }
+const fixtures = { anysearch: ANYSEARCH_CASE, keenable: KEENABLE_CASE, linkup: LINKUP_CASE, metaso: METASO_CASE, moonshot: MOONSHOT_CASE, "moonshot-cn": MOONSHOT_CN_CASE, parallel: PARALLEL_CASE, perplexity: PERPLEXITY_CASE, querit: QUERIT_CASE, serpapi: SERPAPI_CASE, stepfun: STEPFUN_CASE, tinyfish: TINYFISH_CASE, zai: ZAI_CASE, zhipu: ZHIPU_CASE }
 
 test("custom Base URL uses the exact endpoint as given and validates HTTP(S)", () => {
   for (const [base, want] of [
@@ -123,6 +123,9 @@ test("invalid provider options fail loading and disabled providers are not initi
     { "moonshot-cn": { maxResults: 0 } }, { "moonshot-cn": { maxResults: 21 } }, { "moonshot-cn": { content: "invalid" } },
     { stepfun: { maxResults: 0 } }, { stepfun: { maxResults: 21 } },
     { stepfun: { content: "invalid" } }, { stepfun: { category: "news" } },
+    { perplexity: { searchType: "people" } }, { perplexity: { recency: "decade" } },
+    { perplexity: { country: "USA" } }, { perplexity: { language: "en-US" } },
+    { perplexity: { maxResults: 0 } }, { perplexity: { maxResults: 21 } },
   ]) await assert.rejects(WebSearch({}, options), TypeError)
   const { search } = await WebSearch({}, { disable: ["linkup"], linkup: { depth: "invalid" } })
   assert.equal(search.linkup, undefined)
@@ -138,6 +141,8 @@ test("invalid provider options fail loading and disabled providers are not initi
   assert.equal(disabledMoonshotCN.search["moonshot-cn"], undefined)
   const disabledStepfun = await WebSearch({}, { disable: ["stepfun"], stepfun: { category: "news" } })
   assert.equal(disabledStepfun.search.stepfun, undefined)
+  const disabledPerplexity = await WebSearch({}, { disable: ["perplexity"], perplexity: { searchType: "people" } })
+  assert.equal(disabledPerplexity.search.perplexity, undefined)
 })
 
 test("timeouts and host cancellation abort the upstream request", async () => {
