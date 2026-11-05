@@ -14,6 +14,7 @@ standalone search API.
 | Linkup (magpie-websearch) | `magpie-websearch:linkup` | [linkup.mjs](src/providers/linkup.mjs) | required |
 | Metaso (magpie-websearch) | `magpie-websearch:metaso` | [metaso.mjs](src/providers/metaso.mjs) | required |
 | Parallel (magpie-websearch) | `magpie-websearch:parallel` | [parallel.mjs](src/providers/parallel.mjs) | optional |
+| Perplexity (magpie-websearch) | `magpie-websearch:perplexity` | [perplexity.mjs](src/providers/perplexity.mjs) | required |
 | Querit (magpie-websearch) | `magpie-websearch:querit` | [querit.mjs](src/providers/querit.mjs) | required |
 | SerpApi (magpie-websearch) | `magpie-websearch:serpapi` | [serpapi.mjs](src/providers/serpapi.mjs) | required |
 | StepFun (magpie-websearch) | `magpie-websearch:stepfun` | [stepfun.mjs](src/providers/stepfun.mjs) | required |
@@ -28,7 +29,7 @@ This suffix identifies the plugin in magpie's GUI and CLI. Keep the short API ID
 and the namespaced vendor ID independent of the display name; suffix changes
 must not rename the IDs used by saved keys, switches, order or plugin options.
 
-All thirteen APIs are registered by default. `enable` and `disable` are optional
+All fourteen APIs are registered by default. `enable` and `disable` are optional
 plugin options that filter this list by short ID (`linkup`, for example).
 `disable` takes precedence over `enable`; `enable: []` registers none, while
 `disable: []` excludes none. Provider settings such as `linkup.depth` do not
@@ -229,6 +230,26 @@ and other endpoints are independent of that cooldown. See
   successful searches, billing, latency and quality remain unverified. See the
   [technical reference](docs/technical-reference.en.md#stepfun-search).
 
+### Perplexity protocol notes
+
+- The [Search API reference](https://docs.perplexity.ai/api-reference/search-post)
+  describes POST `https://api.perplexity.ai/search`, with JSON body and `Authorization: Bearer <key>`.
+- `search_type` supports `web` and `fast`. Defaults to `web`; `fast` provides lower
+  latency and lower pricing ($1/1k requests vs. $5/1k requests). `people` search is
+  excluded from this initial rollout.
+- Pricing is billed per 1k successful requests; empty responses still incur charges,
+  without extra token fees. The API uses prepaid billing without requiring a Pro subscription;
+  introductory credits ($10 for 60 days on select new accounts) do not constitute a permanent free tier.
+- Upstream supports `search_recency_filter` (`hour/day/week/month/year`), `country`
+  (2-letter ISO code) and `search_language_filter` (up to 20 2-letter ISO 639-1 codes).
+- Results map `title`, `url`, `snippet`, `date`, and `last_updated`. If `date` is empty or missing,
+  `last_updated` is used as fallback for `age`. Empty snippets preserve URLs.
+- On 2026-11-05, unauthenticated POST `/search` returned HTTP 401 without `Retry-After`.
+- Dummy-key tests and Magpie host checks cover requests, fast/web modes, filters,
+  count caps, empty/malformed results, timeout, 429 Retry-After, key rotation, and fallback.
+  Real-key successful searches, billing, latency, and quality remain unverified. See the
+  [technical reference](docs/technical-reference.en.md#perplexity-search).
+
 ## Planned
 
 These candidates are not implemented. IDs are provisional; authentication,
@@ -240,7 +261,6 @@ endpoint details and available features must be verified before implementation.
 | Jina | `magpie-websearch:jina` |
 | Kagi | `magpie-websearch:kagi` |
 | Ollama | `magpie-websearch:ollama` |
-| Perplexity | `magpie-websearch:perplexity` |
 | Serper | `magpie-websearch:serper` |
 
 The candidate list was checked on **2026-11-05** against magpie commit

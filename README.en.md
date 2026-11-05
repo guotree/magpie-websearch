@@ -4,7 +4,7 @@
 
 Additional web search APIs for [magpie](https://usemagpie.ai). Once installed, the APIs appear in **Settings › Models › Web search**, where Magpie manages keys, on/off switches and request order.
 
-Current providers: **AnySearch, Keenable, Linkup, Metaso, Moonshot, Moonshot CN, Parallel, Querit, SerpApi, StepFun, TinyFish, Z.ai and Zhipu**. AnySearch, Keenable, Parallel and TinyFish support keyless anonymous access; the other nine require an API key.
+Current providers: **AnySearch, Keenable, Linkup, Metaso, Moonshot, Moonshot CN, Parallel, Perplexity, Querit, SerpApi, StepFun, TinyFish, Z.ai and Zhipu**. AnySearch, Keenable, Parallel and TinyFish support keyless anonymous access; the other ten require an API key.
 
 ## Install
 
@@ -31,7 +31,7 @@ magpie search add magpie-websearch:linkup <key>
 magpie search
 ```
 
-All thirteen APIs are registered by default without plugin options. Magpie's Web search settings determine which APIs are used.
+All fourteen APIs are registered by default without plugin options. Magpie's Web search settings determine which APIs are used.
 
 Leave **Base URL** empty for official services. A custom address must be the complete endpoint; the plugin does not append paths. See [Custom Base URL](docs/technical-reference.en.md#custom-base-url).
 
@@ -54,6 +54,7 @@ Each command replaces the complete saved options object, so include every option
 | Moonshot | `magpie-websearch:moonshot` | required | Basic search on international site, snippet default with optional full text |
 | Moonshot CN | `magpie-websearch:moonshot-cn` | required | Basic search on domestic site, snippet default with optional full text |
 | Parallel | `magpie-websearch:parallel` | optional | Anonymous MCP (`fast`) or keyed REST; up to 20 results |
+| Perplexity | `magpie-websearch:perplexity` | required | Standalone Search API, `web`/`fast` modes, recency and country/language filters |
 | Querit | `magpie-websearch:querit` | required | Snippets or sentence-level matches |
 | SerpApi | `magpie-websearch:serpapi` | required | Google organic search with geography, language and safe-search settings |
 | StepFun | `magpie-websearch:stepfun` | required | Standalone China REST search with scenario preferences and snippet/full text selection |
@@ -79,7 +80,7 @@ Leaving the key empty while editing an existing keyed entry keeps its saved key.
 | [Custom Base URL](docs/technical-reference.en.md#custom-base-url) | Exact endpoints, URL validation and MCP/REST switching |
 | [CLI management](docs/technical-reference.en.md#cli) | Adding APIs, multiple keys, ordering, switches and removal |
 | [Anonymous search and rate limits](docs/technical-reference.en.md#anonymous-search) | Anonymous endpoints, access-mode switching, 429 cooldowns and fallback |
-| [Provider protocols](docs/technical-reference.en.md#parallel-search) | Endpoints, capability limits and verification records for Parallel, [TinyFish](docs/technical-reference.en.md#tinyfish-search), [SerpApi](docs/technical-reference.en.md#serpapi-search), [Moonshot](docs/technical-reference.en.md#moonshot-search), [StepFun](docs/technical-reference.en.md#stepfun-search), and [Zhipu and Z.ai](docs/technical-reference.en.md#zhipu-search) |
+| [Provider protocols](docs/technical-reference.en.md#parallel-search) | Endpoints, capability limits and verification records for Parallel, [TinyFish](docs/technical-reference.en.md#tinyfish-search), [SerpApi](docs/technical-reference.en.md#serpapi-search), [Moonshot](docs/technical-reference.en.md#moonshot-search), [StepFun](docs/technical-reference.en.md#stepfun-search), [Perplexity](docs/technical-reference.en.md#perplexity-search), and [Zhipu and Z.ai](docs/technical-reference.en.md#zhipu-search) |
 | [Result processing](docs/technical-reference.en.md#result-processing) | Result counts, text cleanup, dates and error statuses |
 | [Full configuration reference](docs/technical-reference.en.md#configuration) | Options, environment variables, precedence, caching and timeouts |
 | [Registration filters](docs/technical-reference.en.md#registration-filters) | `enable`/`disable` rules and examples |
