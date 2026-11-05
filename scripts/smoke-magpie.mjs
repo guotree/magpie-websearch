@@ -43,7 +43,31 @@ const upstream = createServer(async (req, res) => {
   }
   if (query === "timeout") return
   res.setHeader("Content-Type", "application/json")
-  if (target.pathname.startsWith("/stepfun/")) {
+  if (target.pathname.startsWith("/perplexity/")) {
+    if (query === "perplexity refusal" || req.headers.authorization === "Bearer perplexity-resting-dummy-key") {
+      res.writeHead(429, { "Retry-After": "0007" })
+      res.end(JSON.stringify({ error: { message: "Search rate limit reached. ".repeat(20), type: "rate_limit_exceeded" } }))
+    } else if (req.headers.authorization === "Bearer perplexity-interrupted-dummy-key") {
+      res.writeHead(401)
+      res.flushHeaders()
+      res.write('{"error":')
+      setTimeout(() => res.destroy(), 30)
+    } else if (query === "perplexity empty") {
+      res.end(JSON.stringify({ results: [] }))
+    } else if (query === "perplexity malformed") {
+      res.end(JSON.stringify({ results: null }))
+    } else {
+      res.end(JSON.stringify({
+        id: "smoke-perplexity",
+        server_time: "2026-11-05T00:00:00Z",
+        results: [
+          { title: "Missing URL", snippet: "Drop before applying cap" },
+          { title: "Perplexity smoke page", url: "https://example.com/perplexity", snippet: "Perplexity snippet result", date: "2026-10-01", last_updated: "2026-10-15" },
+          { url: "https://example.com/perplexity-extra", snippet: "Must be capped" },
+        ],
+      }))
+    }
+  } else if (target.pathname.startsWith("/stepfun/")) {
     if (query === "stepfun refusal" || req.headers.authorization === "Bearer stepfun-resting-dummy-key") {
       res.writeHead(429, { "Retry-After": "0007" })
       res.end(JSON.stringify({ error: { message: "Project Credit limit reached. ".repeat(20), type: "project_credit_limit_exceeded" } }))
@@ -213,7 +237,7 @@ try {
   console.log("Loading the plugin in an isolated magpie configuration…")
   await run("plugin", "add", root)
   const definitions = await loadedSearches()
-  assert.deepEqual(definitions.map((entry) => entry.id).sort(), ["anysearch", "keenable", "linkup", "metaso", "moonshot", "moonshot-cn", "parallel", "querit", "serpapi", "stepfun", "tinyfish", "zai", "zhipu"])
+  assert.deepEqual(definitions.map((entry) => entry.id).sort(), ["anysearch", "keenable", "linkup", "metaso", "moonshot", "moonshot-cn", "parallel", "perplexity", "querit", "serpapi", "stepfun", "tinyfish", "zai", "zhipu"])
   assert.deepEqual(definitions.filter((entry) => entry.keyOptional).map((entry) => entry.id).sort(), ["anysearch", "keenable", "parallel", "tinyfish"])
   await run("plugin", "options", root, JSON.stringify({ enable: ["moonshot", "moonshot-cn"], disable: ["moonshot-cn"] }))
   assert.deepEqual(await loadedIDs(), ["moonshot"])
@@ -225,6 +249,10 @@ try {
   assert.deepEqual(await loadedIDs(), ["stepfun"])
   await run("plugin", "options", root, JSON.stringify({ disable: ["stepfun"], stepfun: { category: "invalid" } }))
   assert.ok(!(await loadedIDs()).includes("stepfun"), "disabled StepFun options are not initialized")
+  await run("plugin", "options", root, JSON.stringify({ enable: ["perplexity"], perplexity: { searchType: "fast" } }))
+  assert.deepEqual(await loadedIDs(), ["perplexity"])
+  await run("plugin", "options", root, JSON.stringify({ disable: ["perplexity"], perplexity: { searchType: "people" } }))
+  assert.ok(!(await loadedIDs()).includes("perplexity"), "disabled Perplexity options are not initialized")
   await run("plugin", "options", root, JSON.stringify({ enable: ["linkup", "querit"], disable: ["querit"] }))
   assert.deepEqual(await loadedIDs(), ["linkup"])
   await run("plugin", "options", root, JSON.stringify({
@@ -234,6 +262,7 @@ try {
     moonshot: { maxResults: 1, content: "snippet", cacheTTL: 0, timeout: 500 },
     "moonshot-cn": { maxResults: 1, content: "full", contentChars: 2000, cacheTTL: 0, timeout: 500 },
     parallel: { maxResults: 1, mode: "fast", cacheTTL: 0, timeout: 500 },
+    perplexity: { searchType: "fast", recency: "week", country: "US", language: "en,zh", maxResults: 1, contentChars: 2000, cacheTTL: 0, timeout: 500 },
     serpapi: { maxResults: 1, hl: "en", gl: "us", cacheTTL: 0, timeout: 500 },
     stepfun: { maxResults: 1, category: "research", content: "full", contentChars: 2000, cacheTTL: 0, timeout: 500 },
     tinyfish: { maxResults: 1, language: "zh", cacheTTL: 0, timeout: 500 },
@@ -673,7 +702,56 @@ try {
     assert.equal(calls.at(-1).key, "Bearer stepfun-good-dummy-key")
     await run("search", "rm", "magpie-websearch:stepfun")
   }
-  console.log("✓ magpie loads thirteen APIs; registration, options, custom URLs, timeouts, errors, anonymous cooldown, keyed rotation and fallback pass; StepFun domestic REST and Zhipu/Z.ai protocols pass")
+  console.log("Checking Perplexity REST, fast mode, filters, rotation and fallback…")
+  const perplexityURL = `http://127.0.0.1:${upstream.address().port}/perplexity/proxy/search`
+  await run("search", "add", "magpie-websearch:perplexity", "perplexity-dummy-key", `url=${perplexityURL}`)
+  await run("search", "move", "magpie-websearch:perplexity", "1")
+  const perplexityResult = await search("perplexity smoke 中文")
+  assert.match(perplexityResult, /example\.com\/perplexity/)
+  assert.doesNotMatch(perplexityResult, /perplexity-extra/)
+  assert.match(perplexityResult, /Perplexity snippet result/)
+  const perplexityCall = calls.at(-1)
+  assert.equal(perplexityCall.path, "/perplexity/proxy/search")
+  assert.equal(perplexityCall.method, "POST")
+  assert.equal(perplexityCall.key, "Bearer perplexity-dummy-key")
+  assert.deepEqual(perplexityCall.body, {
+    query: "perplexity smoke 中文",
+    max_results: 1,
+    search_type: "fast",
+    search_recency_filter: "week",
+    country: "US",
+    search_language_filter: ["en", "zh"],
+  })
+  assert.match(await failure("perplexity empty"), /found nothing/)
+  assert.match(await failure("perplexity malformed"), /results must be an array/)
+  assert.match(await failure("timeout"), /Perplexity search timed out after 500ms/)
+  const perplexityRefused = await failure("perplexity refusal")
+  assert.match(perplexityRefused, /429/)
+  assert.match(perplexityRefused, /retry after 7s/)
+  await run("search", "on", "magpie-websearch:linkup")
+  const beforePerplexityFallback = calls.length
+  assert.match(await search("perplexity refusal"), /example\.com\/smoke/)
+  assert.equal(calls.length, beforePerplexityFallback + 2)
+  assert.equal(calls.at(-2).path, "/perplexity/proxy/search")
+  assert.equal(calls.at(-1).path, "/proxy/v1/search")
+  await run("search", "off", "magpie-websearch:linkup")
+  await run("search", "rm", "magpie-websearch:perplexity")
+  for (const refusedKey of ["perplexity-resting-dummy-key", "perplexity-interrupted-dummy-key"]) {
+    await run("search", "add", "magpie-websearch:perplexity",
+      `${refusedKey},perplexity-good-dummy-key`, `url=${perplexityURL}`, "pick=order")
+    await run("search", "move", "magpie-websearch:perplexity", "1")
+    const beforePerplexityRotation = calls.length
+    assert.match(await search("perplexity rotation " + refusedKey), /example\.com\/perplexity/)
+    assert.equal(calls.length, beforePerplexityRotation + 2)
+    assert.equal(calls.at(-2).key, "Bearer " + refusedKey)
+    assert.equal(calls.at(-1).key, "Bearer perplexity-good-dummy-key")
+    const beforePerplexityRest = calls.length
+    await search("perplexity healthy preference " + refusedKey)
+    assert.equal(calls.length, beforePerplexityRest + 1)
+    assert.equal(calls.at(-1).key, "Bearer perplexity-good-dummy-key")
+    await run("search", "rm", "magpie-websearch:perplexity")
+  }
+  console.log("✓ magpie loads fourteen APIs; registration, options, custom URLs, timeouts, errors, anonymous cooldown, keyed rotation and fallback pass; Perplexity, StepFun domestic REST and Zhipu/Z.ai protocols pass")
 } catch (error) {
   console.error(gatewayLog)
   throw error
