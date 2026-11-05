@@ -64,12 +64,19 @@ Before bumping the version:
   excessive-reset omission, key rotation and explicit fallback. Keep both entry
   modules and the shared factory in the package. Report local dummy-key verification
   separately from any successful live search with real account keys.
-- Run `npm pack --dry-run` and check that the entry, `src/`, `docs/` and `assets/icon.png`
-  are included. Keep runtime files committed so GitHub installs work without a build.
-- If `assets/icon.png` changes, change the `magpie.icon` URL's `v` parameter in
-  `package.json` too. magpie caches a successful icon URL; new bytes at the same
-  URL may keep showing the old picture. Push the image to `main` before publishing
-  a package whose metadata points to it.
+- For Zhipu and Z.ai, check independent registration and credentials, domestic
+  engine/count tiers and the 70-code-point query limit, international fixed-engine
+  warnings, Quark environment-filter fallback and explicit configuration errors,
+  response/business-error validation, key rotation and explicit cross-site fallback.
+  Keep both entry modules and the shared factory in the package. Distinguish local
+  dummy-key checks from real-key verification of result counts, filters and billing.
+- Run `npm pack --dry-run` and check that the entry, `src/`, `docs/` and
+  `assets/icon-128.png` are included. Keep runtime files committed so GitHub installs
+  work without a build.
+- If `assets/icon-128.png` changes, add or update the `magpie.icon` URL's `v` query
+  parameter in `package.json` too. magpie caches a successful icon URL; new bytes at
+  the same URL may keep showing the old picture. Push the image to `main` before
+  publishing a package whose metadata points to it.
 
 ```sh
 npm version patch   # or minor / major
