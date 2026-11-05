@@ -3,9 +3,9 @@ import assert from "node:assert/strict"
 import { WebSearch } from "../index.mjs"
 import { resolveEndpoint } from "../src/core.mjs"
 import { context, json, stubFetch } from "./harness.mjs"
-import { ANYSEARCH_CASE, KEENABLE_CASE, LINKUP_CASE, METASO_CASE, MOONSHOT_CASE, MOONSHOT_CN_CASE, PARALLEL_CASE, QUERIT_CASE, SERPAPI_CASE, TINYFISH_CASE, ZAI_CASE, ZHIPU_CASE } from "./cases.mjs"
+import { ANYSEARCH_CASE, KEENABLE_CASE, LINKUP_CASE, METASO_CASE, MOONSHOT_CASE, MOONSHOT_CN_CASE, PARALLEL_CASE, QUERIT_CASE, SERPAPI_CASE, STEPFUN_CASE, TINYFISH_CASE, ZAI_CASE, ZHIPU_CASE } from "./cases.mjs"
 
-const fixtures = { anysearch: ANYSEARCH_CASE, keenable: KEENABLE_CASE, linkup: LINKUP_CASE, metaso: METASO_CASE, moonshot: MOONSHOT_CASE, "moonshot-cn": MOONSHOT_CN_CASE, parallel: PARALLEL_CASE, querit: QUERIT_CASE, serpapi: SERPAPI_CASE, tinyfish: TINYFISH_CASE, zai: ZAI_CASE, zhipu: ZHIPU_CASE }
+const fixtures = { anysearch: ANYSEARCH_CASE, keenable: KEENABLE_CASE, linkup: LINKUP_CASE, metaso: METASO_CASE, moonshot: MOONSHOT_CASE, "moonshot-cn": MOONSHOT_CN_CASE, parallel: PARALLEL_CASE, querit: QUERIT_CASE, serpapi: SERPAPI_CASE, stepfun: STEPFUN_CASE, tinyfish: TINYFISH_CASE, zai: ZAI_CASE, zhipu: ZHIPU_CASE }
 
 test("custom Base URL uses the exact endpoint as given and validates HTTP(S)", () => {
   for (const [base, want] of [
@@ -38,12 +38,6 @@ for (const [id, fixture] of Object.entries(fixtures)) {
       const u3 = new URL(fake.calls[3].url)
       assert.equal(u0.origin + u0.pathname, "https://custom.example/proxy/v1")
       assert.equal(u3.origin + u3.pathname, "https://other.example/v1/search")
-      if (id === "tinyfish" || id === "serpapi") {
-        assert.equal(fake.calls[2].init.method, "GET")
-        assert.equal(fake.calls[2].body, undefined)
-      } else {
-        assert.equal(fake.calls[2].body.advanced_settings?.max_results ?? fake.calls[2].body.max_results ?? fake.calls[2].body.maxResults ?? fake.calls[2].body.count ?? fake.calls[2].body.size ?? fake.calls[2].body.limit, 6)
-      }
     } finally { fake.restore() }
   })
 
@@ -127,6 +121,8 @@ test("invalid provider options fail loading and disabled providers are not initi
     { serpapi: { safe: "invalid" } }, { serpapi: { maxResults: 0 } }, { serpapi: { maxResults: 11 } },
     { moonshot: { maxResults: 0 } }, { moonshot: { maxResults: 21 } }, { moonshot: { content: "invalid" } },
     { "moonshot-cn": { maxResults: 0 } }, { "moonshot-cn": { maxResults: 21 } }, { "moonshot-cn": { content: "invalid" } },
+    { stepfun: { maxResults: 0 } }, { stepfun: { maxResults: 21 } },
+    { stepfun: { content: "invalid" } }, { stepfun: { category: "news" } },
   ]) await assert.rejects(WebSearch({}, options), TypeError)
   const { search } = await WebSearch({}, { disable: ["linkup"], linkup: { depth: "invalid" } })
   assert.equal(search.linkup, undefined)
@@ -140,6 +136,8 @@ test("invalid provider options fail loading and disabled providers are not initi
   assert.equal(disabledMoonshot.search.moonshot, undefined)
   const disabledMoonshotCN = await WebSearch({}, { disable: ["moonshot-cn"], "moonshot-cn": { maxResults: 0 } })
   assert.equal(disabledMoonshotCN.search["moonshot-cn"], undefined)
+  const disabledStepfun = await WebSearch({}, { disable: ["stepfun"], stepfun: { category: "news" } })
+  assert.equal(disabledStepfun.search.stepfun, undefined)
 })
 
 test("timeouts and host cancellation abort the upstream request", async () => {

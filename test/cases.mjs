@@ -36,6 +36,23 @@ export const ZAI_CASE = {
   ],
 }
 
+// StepFun REST reference read 2026-11-05; synthetic nullable/missing fields.
+// https://platform.stepfun.com/docs/zh/api-reference/search/search.md
+export const STEPFUN_CASE = {
+  response: {
+    query: "q", category: "",
+    results: [
+      { title: "Missing URL", snippet: "dropped" },
+      { url: "https://example.com/stepfun", position: 1, title: "StepFun hit", time: "2026-03-20T00:00:00", snippet: "StepFun snippet", content: "StepFun full body" },
+      { url: "https://example.com/stepfun-body", title: null, time: null, snippet: " ", content: "Body fallback" },
+    ],
+  },
+  expected: [
+    { title: "StepFun hit", url: "https://example.com/stepfun", text: "StepFun snippet", age: "2026-03-20T00:00:00" },
+    { title: "https://example.com/stepfun-body", url: "https://example.com/stepfun-body", text: "Body fallback" },
+  ],
+}
+
 export const ANYSEARCH_CASE = {
   response: {
     code: 0,

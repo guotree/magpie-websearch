@@ -43,7 +43,31 @@ const upstream = createServer(async (req, res) => {
   }
   if (query === "timeout") return
   res.setHeader("Content-Type", "application/json")
-  if (target.pathname.startsWith("/zhipu/") || target.pathname.startsWith("/zai/")) {
+  if (target.pathname.startsWith("/stepfun/")) {
+    if (query === "stepfun refusal" || req.headers.authorization === "Bearer stepfun-resting-dummy-key") {
+      res.writeHead(429, { "Retry-After": "0007" })
+      res.end(JSON.stringify({ error: { message: "Project Credit limit reached. ".repeat(20), type: "project_credit_limit_exceeded" } }))
+    } else if (req.headers.authorization === "Bearer stepfun-interrupted-dummy-key") {
+      // Deliver the refusal headers, then interrupt its body. Rotation must
+      // still see HTTP 401 instead of a generic response-read error.
+      res.writeHead(401)
+      res.flushHeaders()
+      res.write('{"error":')
+      setTimeout(() => res.destroy(), 30)
+    } else if (query === "stepfun moderation") {
+      res.writeHead(451).end(JSON.stringify({ error: { message: "Content review refused" } }))
+    } else if (query === "stepfun empty") {
+      res.end(JSON.stringify({ results: [] }))
+    } else if (query === "stepfun malformed") {
+      res.end(JSON.stringify({ results: null }))
+    } else {
+      res.end(JSON.stringify({ query, category: body.category ?? "", results: [
+        { title: "Missing URL", snippet: "Drop before applying cap" },
+        { title: "StepFun smoke page", url: "https://example.com/stepfun", snippet: "StepFun snippet result", content: "Detailed StepFun full text", time: "2026-03-20T00:00:00" },
+        { url: "https://example.com/stepfun-extra", snippet: "Must be capped" },
+      ] }))
+    }
+  } else if (target.pathname.startsWith("/zhipu/") || target.pathname.startsWith("/zai/")) {
     const id = target.pathname.startsWith("/zhipu/") ? "zhipu" : "zai"
     if (query === `${id} refusal` || req.headers.authorization === `Bearer ${id}-resting-dummy-key`) {
       res.writeHead(429, { "Retry-After": "0007" })
@@ -189,7 +213,7 @@ try {
   console.log("Loading the plugin in an isolated magpie configuration…")
   await run("plugin", "add", root)
   const definitions = await loadedSearches()
-  assert.deepEqual(definitions.map((entry) => entry.id).sort(), ["anysearch", "keenable", "linkup", "metaso", "moonshot", "moonshot-cn", "parallel", "querit", "serpapi", "tinyfish", "zai", "zhipu"])
+  assert.deepEqual(definitions.map((entry) => entry.id).sort(), ["anysearch", "keenable", "linkup", "metaso", "moonshot", "moonshot-cn", "parallel", "querit", "serpapi", "stepfun", "tinyfish", "zai", "zhipu"])
   assert.deepEqual(definitions.filter((entry) => entry.keyOptional).map((entry) => entry.id).sort(), ["anysearch", "keenable", "parallel", "tinyfish"])
   await run("plugin", "options", root, JSON.stringify({ enable: ["moonshot", "moonshot-cn"], disable: ["moonshot-cn"] }))
   assert.deepEqual(await loadedIDs(), ["moonshot"])
@@ -197,6 +221,10 @@ try {
   assert.deepEqual(await loadedIDs(), ["zhipu"])
   await run("plugin", "options", root, JSON.stringify({ enable: ["zai"] }))
   assert.deepEqual(await loadedIDs(), ["zai"])
+  await run("plugin", "options", root, JSON.stringify({ enable: ["stepfun"], stepfun: { category: "research" } }))
+  assert.deepEqual(await loadedIDs(), ["stepfun"])
+  await run("plugin", "options", root, JSON.stringify({ disable: ["stepfun"], stepfun: { category: "invalid" } }))
+  assert.ok(!(await loadedIDs()).includes("stepfun"), "disabled StepFun options are not initialized")
   await run("plugin", "options", root, JSON.stringify({ enable: ["linkup", "querit"], disable: ["querit"] }))
   assert.deepEqual(await loadedIDs(), ["linkup"])
   await run("plugin", "options", root, JSON.stringify({
@@ -207,6 +235,7 @@ try {
     "moonshot-cn": { maxResults: 1, content: "full", contentChars: 2000, cacheTTL: 0, timeout: 500 },
     parallel: { maxResults: 1, mode: "fast", cacheTTL: 0, timeout: 500 },
     serpapi: { maxResults: 1, hl: "en", gl: "us", cacheTTL: 0, timeout: 500 },
+    stepfun: { maxResults: 1, category: "research", content: "full", contentChars: 2000, cacheTTL: 0, timeout: 500 },
     tinyfish: { maxResults: 1, language: "zh", cacheTTL: 0, timeout: 500 },
     zhipu: { engine: "search_pro_sogou", contentSize: "high", recency: "oneWeek", maxResults: 1, cacheTTL: 0, timeout: 500 },
     zai: { maxResults: 1, cacheTTL: 0, timeout: 500 },
@@ -600,7 +629,51 @@ try {
   assert.equal(calls.at(-1).key, "Bearer intl-only-dummy-key")
   await run("search", "rm", "magpie-websearch:zhipu")
   await run("search", "rm", "magpie-websearch:zai")
-  console.log("✓ magpie loads twelve APIs; registration, options, custom URLs, timeouts, errors, anonymous cooldown, keyed rotation and fallback pass; Zhipu/Z.ai use separate REST credentials and engine parameters")
+  console.log("Checking StepFun domestic REST, category, full text, moderation, Credit refusal and rotation…")
+  const stepfunURL = `http://127.0.0.1:${upstream.address().port}/stepfun/proxy/search`
+  await run("search", "add", "magpie-websearch:stepfun", "stepfun-dummy-key", `url=${stepfunURL}`)
+  await run("search", "move", "magpie-websearch:stepfun", "1")
+  const stepfunResult = await search("stepfun smoke 中文")
+  assert.match(stepfunResult, /example\.com\/stepfun/)
+  assert.doesNotMatch(stepfunResult, /stepfun-extra/)
+  assert.match(stepfunResult, /Detailed StepFun full text/)
+  const stepfunCall = calls.at(-1)
+  assert.equal(stepfunCall.path, "/stepfun/proxy/search")
+  assert.equal(stepfunCall.method, "POST")
+  assert.equal(stepfunCall.key, "Bearer stepfun-dummy-key")
+  assert.deepEqual(stepfunCall.body, { query: "stepfun smoke 中文", n: 1, category: "research" })
+  assert.match(await failure("stepfun empty"), /found nothing/)
+  assert.match(await failure("stepfun malformed"), /results must be an array/)
+  assert.match(await failure("stepfun moderation"), /451.*|failed moderation/)
+  assert.match(await failure("timeout"), /StepFun search timed out after 500ms/)
+  const stepfunRefused = await failure("stepfun refusal")
+  assert.match(stepfunRefused, /429/)
+  assert.match(stepfunRefused, /project_credit_limit_exceeded/)
+  assert.match(stepfunRefused, /retry after 7s/)
+  await run("search", "on", "magpie-websearch:linkup")
+  const beforeStepfunFallback = calls.length
+  assert.match(await search("stepfun refusal"), /example\.com\/smoke/)
+  assert.equal(calls.length, beforeStepfunFallback + 2)
+  assert.equal(calls.at(-2).path, "/stepfun/proxy/search")
+  assert.equal(calls.at(-1).path, "/proxy/v1/search")
+  await run("search", "off", "magpie-websearch:linkup")
+  await run("search", "rm", "magpie-websearch:stepfun")
+  for (const refusedKey of ["stepfun-resting-dummy-key", "stepfun-interrupted-dummy-key"]) {
+    await run("search", "add", "magpie-websearch:stepfun",
+      `${refusedKey},stepfun-good-dummy-key`, `url=${stepfunURL}`, "pick=order")
+    await run("search", "move", "magpie-websearch:stepfun", "1")
+    const beforeStepfunRotation = calls.length
+    assert.match(await search("stepfun rotation " + refusedKey), /example\.com\/stepfun/)
+    assert.equal(calls.length, beforeStepfunRotation + 2)
+    assert.equal(calls.at(-2).key, "Bearer " + refusedKey)
+    assert.equal(calls.at(-1).key, "Bearer stepfun-good-dummy-key")
+    const beforeStepfunRest = calls.length
+    await search("stepfun healthy preference " + refusedKey)
+    assert.equal(calls.length, beforeStepfunRest + 1)
+    assert.equal(calls.at(-1).key, "Bearer stepfun-good-dummy-key")
+    await run("search", "rm", "magpie-websearch:stepfun")
+  }
+  console.log("✓ magpie loads thirteen APIs; registration, options, custom URLs, timeouts, errors, anonymous cooldown, keyed rotation and fallback pass; StepFun domestic REST and Zhipu/Z.ai protocols pass")
 } catch (error) {
   console.error(gatewayLog)
   throw error

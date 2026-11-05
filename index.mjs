@@ -7,6 +7,7 @@ import { createMoonshotCN } from "./src/providers/moonshot-cn.mjs"
 import { createParallel } from "./src/providers/parallel.mjs"
 import { createQuerit } from "./src/providers/querit.mjs"
 import { createSerpapi } from "./src/providers/serpapi.mjs"
+import { createStepfun } from "./src/providers/stepfun.mjs"
 import { createTinyfish } from "./src/providers/tinyfish.mjs"
 import { createZai } from "./src/providers/zai.mjs"
 import { createZhipu } from "./src/providers/zhipu.mjs"
@@ -22,6 +23,7 @@ const PROVIDERS = [
   ["parallel", createParallel],
   ["querit", createQuerit],
   ["serpapi", createSerpapi],
+  ["stepfun", createStepfun],
   ["tinyfish", createTinyfish],
   ["zai", createZai],
   ["zhipu", createZhipu],
