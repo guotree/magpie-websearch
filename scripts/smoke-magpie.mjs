@@ -43,7 +43,34 @@ const upstream = createServer(async (req, res) => {
   }
   if (query === "timeout") return
   res.setHeader("Content-Type", "application/json")
-  if (target.pathname.startsWith("/perplexity/")) {
+  if (target.pathname.startsWith("/bocha/") || target.pathname.startsWith("/ollama/")) {
+    const id = target.pathname.startsWith("/bocha/") ? "bocha" : "ollama"
+    if (query === `${id} refusal` || req.headers.authorization === `Bearer ${id}-resting-dummy-key`) {
+      res.writeHead(429, { "Retry-After": "0007" })
+      res.end(JSON.stringify({ code: 429, msg: "Search quota refused", log_id: `${id}-trace` }))
+    } else if (req.headers.authorization === `Bearer ${id}-interrupted-dummy-key`) {
+      res.writeHead(401)
+      res.flushHeaders()
+      res.write('{"error":')
+      setTimeout(() => res.destroy(), 30)
+    } else if (id === "bocha" && query === "bocha business error") {
+      res.end(JSON.stringify({ code: "403", msg: "balance", log_id: "bocha-business-trace" }))
+    } else if (query === `${id} empty`) {
+      res.end(JSON.stringify(id === "bocha" ? { code: 200, data: { webPages: { value: [] } } } : { results: [] }))
+    } else if (query === `${id} malformed`) {
+      res.end(JSON.stringify(id === "bocha" ? { code: 200, data: { webPages: { value: null } } } : { results: null }))
+    } else {
+      res.end(JSON.stringify(id === "bocha" ? { code: 200, data: { webPages: { value: [
+        { name: "Missing URL", snippet: "Drop before applying cap" },
+        { name: "Bocha smoke page", url: "https://example.com/bocha", snippet: "Bocha snippet result", summary: "Bocha generated summary", datePublished: "2025-02-23T08:18:30+08:00", dateLastCrawled: "2020-01-01T00:00:00Z" },
+        { url: "https://example.com/bocha-extra", snippet: "Must be capped" },
+      ] } } } : { results: [
+        { title: "Missing URL", content: "Drop before applying cap" },
+        { title: "Ollama smoke page", url: "https://example.com/ollama", content: "ABCDEFGHIJK" },
+        { url: "https://example.com/ollama-extra", content: "Must be capped" },
+      ] }))
+    }
+  } else if (target.pathname.startsWith("/perplexity/")) {
     if (query === "perplexity refusal" || req.headers.authorization === "Bearer perplexity-resting-dummy-key") {
       res.writeHead(429, { "Retry-After": "0007" })
       res.end(JSON.stringify({ error: { message: "Search rate limit reached. ".repeat(20), type: "rate_limit_exceeded" } }))
@@ -237,7 +264,7 @@ try {
   console.log("Loading the plugin in an isolated magpie configuration…")
   await run("plugin", "add", root)
   const definitions = await loadedSearches()
-  assert.deepEqual(definitions.map((entry) => entry.id).sort(), ["anysearch", "keenable", "linkup", "metaso", "moonshot", "moonshot-cn", "parallel", "perplexity", "querit", "serpapi", "stepfun", "tinyfish", "zai", "zhipu"])
+  assert.deepEqual(definitions.map((entry) => entry.id).sort(), ["anysearch", "bocha", "keenable", "linkup", "metaso", "moonshot", "moonshot-cn", "ollama", "parallel", "perplexity", "querit", "serpapi", "stepfun", "tinyfish", "zai", "zhipu"])
   assert.deepEqual(definitions.filter((entry) => entry.keyOptional).map((entry) => entry.id).sort(), ["anysearch", "keenable", "parallel", "tinyfish"])
   await run("plugin", "options", root, JSON.stringify({ enable: ["moonshot", "moonshot-cn"], disable: ["moonshot-cn"] }))
   assert.deepEqual(await loadedIDs(), ["moonshot"])
@@ -253,14 +280,22 @@ try {
   assert.deepEqual(await loadedIDs(), ["perplexity"])
   await run("plugin", "options", root, JSON.stringify({ disable: ["perplexity"], perplexity: { searchType: "people" } }))
   assert.ok(!(await loadedIDs()).includes("perplexity"), "disabled Perplexity options are not initialized")
+  for (const [id, invalid] of [["bocha", { summary: "true" }], ["ollama", { contentChars: -1 }]]) {
+    await run("plugin", "options", root, JSON.stringify({ enable: [id] }))
+    assert.deepEqual(await loadedIDs(), [id])
+    await run("plugin", "options", root, JSON.stringify({ disable: [id], [id]: invalid }))
+    assert.ok(!(await loadedIDs()).includes(id), `disabled ${id} options are not initialized`)
+  }
   await run("plugin", "options", root, JSON.stringify({ enable: ["linkup", "querit"], disable: ["querit"] }))
   assert.deepEqual(await loadedIDs(), ["linkup"])
-  await run("plugin", "options", root, JSON.stringify({
+  const options = {
     linkup: { depth: "deep", maxResults: 2, cacheTTL: 0, timeout: 500 },
     anysearch: { cacheTTL: 0 }, keenable: { cacheTTL: 0 },
+    bocha: { maxResults: 1, cacheTTL: 0, timeout: 500 },
     metaso: { maxResults: 2, cacheTTL: 0, timeout: 500 },
     moonshot: { maxResults: 1, content: "snippet", cacheTTL: 0, timeout: 500 },
     "moonshot-cn": { maxResults: 1, content: "full", contentChars: 2000, cacheTTL: 0, timeout: 500 },
+    ollama: { maxResults: 1, contentChars: 8, cacheTTL: 0, timeout: 500 },
     parallel: { maxResults: 1, mode: "fast", cacheTTL: 0, timeout: 500 },
     perplexity: { searchType: "fast", recency: "week", country: "US", language: "en,zh", maxResults: 1, contentChars: 2000, cacheTTL: 0, timeout: 500 },
     serpapi: { maxResults: 1, hl: "en", gl: "us", cacheTTL: 0, timeout: 500 },
@@ -268,7 +303,8 @@ try {
     tinyfish: { maxResults: 1, language: "zh", cacheTTL: 0, timeout: 500 },
     zhipu: { engine: "search_pro_sogou", contentSize: "high", recency: "oneWeek", maxResults: 1, cacheTTL: 0, timeout: 500 },
     zai: { maxResults: 1, cacheTTL: 0, timeout: 500 },
-  }))
+  }
+  await run("plugin", "options", root, JSON.stringify(options))
   await run("search", "add", "magpie-websearch:linkup", "smoke-dummy-key", `url=http://127.0.0.1:${upstream.address().port}/proxy/v1/search`)
   gateway = spawn(binary, ["serve"], { cwd: root, env, stdio: ["ignore", "pipe", "pipe"] })
   gateway.on("error", (error) => { gatewayLog += String(error) })
@@ -751,7 +787,83 @@ try {
     assert.equal(calls.at(-1).key, "Bearer perplexity-good-dummy-key")
     await run("search", "rm", "magpie-websearch:perplexity")
   }
-  console.log("✓ magpie loads fourteen APIs; registration, options, custom URLs, timeouts, errors, anonymous cooldown, keyed rotation and fallback pass; Perplexity, StepFun domestic REST and Zhipu/Z.ai protocols pass")
+  console.log("Checking Bocha/Ollama exact endpoints, text selection, refusals, fallback and key rotation…")
+  for (const id of ["bocha", "ollama"]) {
+    const label = id === "bocha" ? "Bocha" : "Ollama"
+    const searchURL = `http://127.0.0.1:${upstream.address().port}/${id}/proxy/search`
+    await run("search", "add", `magpie-websearch:${id}`, `${id}-dummy-key`, `url=${searchURL}`)
+    await run("search", "move", `magpie-websearch:${id}`, "1")
+    const before = calls.length
+    const result = await search(`${id} smoke 中文`)
+    assert.ok(result.includes(`https://example.com/${id}`), result)
+    assert.ok(!result.includes(`${id}-extra`), result)
+    assert.ok(result.includes(id === "bocha" ? "Bocha snippet result" : "ABCDEFGH…"), result)
+    if (id === "bocha") {
+      assert.doesNotMatch(result, /Bocha generated summary/)
+    }
+    assert.equal(calls.length, before + 1)
+    const call = calls.at(-1)
+    assert.equal(call.path, `/${id}/proxy/search`)
+    assert.equal(call.method, "POST")
+    assert.equal(call.key, `Bearer ${id}-dummy-key`)
+    assert.deepEqual(call.body, id === "bocha"
+      ? { query: `${id} smoke 中文`, count: 1, summary: false }
+      : { query: `${id} smoke 中文`, max_results: 1 })
+    assert.match(await failure(`${id} empty`), /found nothing/)
+    const malformed = await failure(`${id} malformed`)
+    assert.ok(malformed.includes(`Invalid ${label} response: ${id === "bocha" ? "webPages.value" : "results"} must be an array`), malformed)
+    assert.ok((await failure("timeout")).includes(`${label} search timed out after 500ms`))
+    if (id === "bocha") {
+      const business = await failure("bocha business error")
+      assert.match(business, /code 403/)
+      assert.match(business, /log_id bocha-business-trace/)
+      assert.match(business, /balance/)
+      assert.doesNotMatch(business, /found nothing/)
+    }
+    const refusal = await failure(`${id} refusal`)
+    assert.match(refusal, /429/)
+    assert.match(refusal, /retry after 7s/)
+    await run("search", "on", "magpie-websearch:linkup")
+    const beforeFallback = calls.length
+    assert.match(await search(`${id} refusal`), /example\.com\/smoke/)
+    assert.equal(calls.length, beforeFallback + 2)
+    assert.equal(calls.at(-2).path, `/${id}/proxy/search`)
+    assert.equal(calls.at(-2).key, `Bearer ${id}-dummy-key`)
+    assert.equal(calls.at(-1).path, "/proxy/v1/search")
+    assert.equal(calls.at(-1).key, "Bearer smoke-dummy-key")
+    await run("search", "off", "magpie-websearch:linkup")
+    await run("search", "rm", `magpie-websearch:${id}`)
+    for (const refusedKey of [`${id}-resting-dummy-key`, `${id}-interrupted-dummy-key`]) {
+      await run("search", "add", `magpie-websearch:${id}`, `${refusedKey},${id}-good-dummy-key`, `url=${searchURL}`, "pick=order")
+      await run("search", "move", `magpie-websearch:${id}`, "1")
+      const beforeRotation = calls.length
+      assert.ok((await search(`${id} rotation ${refusedKey}`)).includes(`https://example.com/${id}`))
+      assert.equal(calls.length, beforeRotation + 2)
+      assert.equal(calls.at(-2).path, `/${id}/proxy/search`)
+      assert.equal(calls.at(-1).path, `/${id}/proxy/search`)
+      assert.equal(calls.at(-2).key, "Bearer " + refusedKey)
+      assert.equal(calls.at(-1).key, `Bearer ${id}-good-dummy-key`)
+      const beforeRest = calls.length
+      await search(`${id} healthy preference ${refusedKey}`)
+      assert.equal(calls.length, beforeRest + 1)
+      assert.equal(calls.at(-1).key, `Bearer ${id}-good-dummy-key`)
+      await run("search", "rm", `magpie-websearch:${id}`)
+    }
+  }
+  console.log("Checking explicit Bocha generated summary and freshness after complete options reload…")
+  await run("plugin", "options", root, JSON.stringify({ ...options, bocha: { ...options.bocha, summary: true, freshness: "oneWeek" } }))
+  assert.deepEqual(await loadedIDs(), definitions.map((entry) => entry.id).sort())
+  await run("search", "add", "magpie-websearch:bocha", "bocha-summary-dummy-key", `url=http://127.0.0.1:${upstream.address().port}/bocha/proxy/search`)
+  await run("search", "move", "magpie-websearch:bocha", "1")
+  const beforeSummary = calls.length
+  const summaryResult = await search("bocha explicit generated summary smoke")
+  assert.match(summaryResult, /Bocha generated summary/)
+  assert.doesNotMatch(summaryResult, /Bocha snippet result/)
+  assert.equal(calls.length, beforeSummary + 1)
+  assert.deepEqual(calls.at(-1).body, { query: "bocha explicit generated summary smoke", count: 1, summary: true, freshness: "oneWeek" })
+  assert.equal(calls.at(-1).key, "Bearer bocha-summary-dummy-key")
+  await run("search", "rm", "magpie-websearch:bocha")
+  console.log("✓ magpie loads sixteen APIs; registration, options, custom URLs, timeouts, errors, anonymous cooldown, keyed rotation and fallback pass; Bocha summary/freshness and Ollama content limits pass")
 } catch (error) {
   console.error(gatewayLog)
   throw error
