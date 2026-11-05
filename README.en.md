@@ -4,7 +4,7 @@
 
 Additional web search APIs for [magpie](https://usemagpie.ai). Once installed, the APIs appear in **Settings › Models › Web search**, where Magpie manages keys, on/off switches and request order.
 
-Current providers: **AnySearch, Keenable, Linkup, Metaso, Moonshot, Moonshot CN, Parallel, Perplexity, Querit, SerpApi, StepFun, TinyFish, Z.ai and Zhipu**. AnySearch, Keenable, Parallel and TinyFish support keyless anonymous access; the other ten require an API key.
+Current providers: **AnySearch, Bocha, Keenable, Linkup, Metaso, Moonshot, Moonshot CN, Ollama, Parallel, Perplexity, Querit, SerpApi, StepFun, TinyFish, Z.ai and Zhipu**. AnySearch, Keenable, Parallel and TinyFish support keyless anonymous access; the other twelve require an API key.
 
 ## Install
 
@@ -31,7 +31,7 @@ magpie search add magpie-websearch:linkup <key>
 magpie search
 ```
 
-All fourteen APIs are registered by default without plugin options. Magpie's Web search settings determine which APIs are used.
+All sixteen APIs are registered by default without plugin options. Magpie's Web search settings determine which APIs are used.
 
 Leave **Base URL** empty for official services. A custom address must be the complete endpoint; the plugin does not append paths. See [Custom Base URL](docs/technical-reference.en.md#custom-base-url).
 
@@ -48,11 +48,13 @@ Each command replaces the complete saved options object, so include every option
 | Provider | Vendor ID | Key | Main capabilities |
 |---|---|---|---|
 | AnySearch | `magpie-websearch:anysearch` | optional | Intent routing, `cn`/`intl` zones, Markdown/JSON output |
+| Bocha | `magpie-websearch:bocha` | required | Standalone China REST search, snippet default with optional generated summary, freshness filters |
 | Keenable | `magpie-websearch:keenable` | optional | Anonymous or keyed search, `pro`/`realtime` modes |
 | Linkup | `magpie-websearch:linkup` | required | Query-relevant excerpts with four search depths |
 | Metaso | `magpie-websearch:metaso` | required | Metaso search with scopes such as webpages and papers |
 | Moonshot | `magpie-websearch:moonshot` | required | Basic search on international site, snippet default with optional full text |
 | Moonshot CN | `magpie-websearch:moonshot-cn` | required | Basic search on domestic site, snippet default with optional full text |
+| Ollama | `magpie-websearch:ollama` | required | Cloud Web Search API using an Ollama account key, configurable content length |
 | Parallel | `magpie-websearch:parallel` | optional | Anonymous MCP (`fast`) or keyed REST; up to 20 results |
 | Perplexity | `magpie-websearch:perplexity` | required | Standalone Search API, `web`/`fast` modes, recency and country/language filters |
 | Querit | `magpie-websearch:querit` | required | Snippets or sentence-level matches |
@@ -80,7 +82,7 @@ Leaving the key empty while editing an existing keyed entry keeps its saved key.
 | [Custom Base URL](docs/technical-reference.en.md#custom-base-url) | Exact endpoints, URL validation and MCP/REST switching |
 | [CLI management](docs/technical-reference.en.md#cli) | Adding APIs, multiple keys, ordering, switches and removal |
 | [Anonymous search and rate limits](docs/technical-reference.en.md#anonymous-search) | Anonymous endpoints, access-mode switching, 429 cooldowns and fallback |
-| [Provider protocols](docs/technical-reference.en.md#parallel-search) | Endpoints, capability limits and verification records for Parallel, [TinyFish](docs/technical-reference.en.md#tinyfish-search), [SerpApi](docs/technical-reference.en.md#serpapi-search), [Moonshot](docs/technical-reference.en.md#moonshot-search), [StepFun](docs/technical-reference.en.md#stepfun-search), [Perplexity](docs/technical-reference.en.md#perplexity-search), and [Zhipu and Z.ai](docs/technical-reference.en.md#zhipu-search) |
+| [Provider protocols](docs/technical-reference.en.md#parallel-search) | Endpoints, capability limits and verification records for Parallel, [TinyFish](docs/technical-reference.en.md#tinyfish-search), [SerpApi](docs/technical-reference.en.md#serpapi-search), [Moonshot](docs/technical-reference.en.md#moonshot-search), [StepFun](docs/technical-reference.en.md#stepfun-search), [Perplexity](docs/technical-reference.en.md#perplexity-search), [Zhipu and Z.ai](docs/technical-reference.en.md#zhipu-search), [Bocha](docs/technical-reference.en.md#bocha-search), and [Ollama](docs/technical-reference.en.md#ollama-search) |
 | [Result processing](docs/technical-reference.en.md#result-processing) | Result counts, text cleanup, dates and error statuses |
 | [Full configuration reference](docs/technical-reference.en.md#configuration) | Options, environment variables, precedence, caching and timeouts |
 | [Registration filters](docs/technical-reference.en.md#registration-filters) | `enable`/`disable` rules and examples |

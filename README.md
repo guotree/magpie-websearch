@@ -4,7 +4,7 @@
 
 为 [magpie](https://usemagpie.ai) 增加的第三方多源网页搜索 API 插件。安装后，这些 API 会出现在 **设置 › 模型 › 网页搜索** 中，由 Magpie 统一管理密钥、启用开关与请求顺序。
 
-当前支持 **AnySearch、Keenable、Linkup、Metaso、Moonshot、Moonshot CN、Parallel、Perplexity、Querit、SerpApi、StepFun、TinyFish、Z.ai、Zhipu**。其中 AnySearch、Keenable、Parallel 和 TinyFish 支持免 Key 匿名访问；其余十家需要 API Key。
+当前支持 **AnySearch、Bocha、Keenable、Linkup、Metaso、Moonshot、Moonshot CN、Ollama、Parallel、Perplexity、Querit、SerpApi、StepFun、TinyFish、Z.ai、Zhipu**。其中 AnySearch、Keenable、Parallel 和 TinyFish 支持免 Key 匿名访问；其余十二家需要 API Key。
 
 ## 安装
 
@@ -31,7 +31,7 @@ magpie search add magpie-websearch:linkup <key>
 magpie search
 ```
 
-默认注册全部 14 个 API，无需设置插件选项。Magpie 的网页搜索设置决定实际使用哪些 API。
+默认注册全部 16 个 API，无需设置插件选项。Magpie 的网页搜索设置决定实际使用哪些 API。
 
 使用官方服务时，将 **Base URL** 留空；自定义地址应填写完整端点，插件不会追加路径。详见[自定义 Base URL](docs/technical-reference.md#custom-base-url)。
 
@@ -48,11 +48,13 @@ magpie plugin options magpie-websearch '{"linkup":{"depth":"deep","maxResults":4
 | 供应商 | Vendor ID | Key 需求 | 主要能力 |
 |---|---|---|---|
 | AnySearch | `magpie-websearch:anysearch` | 可选 | 意图路由、`cn`／`intl` 分区、Markdown／JSON 输出 |
+| Bocha | `magpie-websearch:bocha` | 必填 | 博查中文搜索，默认普通摘要、可选生成摘要与时效筛选 |
 | Keenable | `magpie-websearch:keenable` | 可选 | 匿名或带 Key 搜索，支持 `pro`／`realtime` 模式 |
 | Linkup | `magpie-websearch:linkup` | 必填 | 查询相关摘录，支持四档检索深度 |
 | Metaso | `magpie-websearch:metaso` | 必填 | 秘塔搜索，支持网页、论文等搜索范围 |
 | Moonshot | `magpie-websearch:moonshot` | 必填 | 国际站 Basic 网页搜索，默认摘要、可选页面正文 |
 | Moonshot CN | `magpie-websearch:moonshot-cn` | 必填 | 国内站 Basic 网页搜索，默认摘要、可选页面正文 |
+| Ollama | `magpie-websearch:ollama` | 必填 | Ollama 官方云端网页搜索，需账户 API Key，支持本地正文截断 |
 | Parallel | `magpie-websearch:parallel` | 可选 | 匿名 MCP（`fast`）或带 Key REST；最多 20 条 |
 | Perplexity | `magpie-websearch:perplexity` | 必填 | 官方独立 Search API，支持 `web`／`fast` 模式、时效与国家／语言筛选 |
 | Querit | `magpie-websearch:querit` | 必填 | 摘要或句子级匹配内容 |
@@ -80,7 +82,7 @@ magpie plugin options magpie-websearch '{"linkup":{"depth":"deep","maxResults":4
 | [自定义 Base URL](docs/technical-reference.md#custom-base-url) | 精确端点规则、URL 校验、MCP／REST 切换 |
 | [命令行管理](docs/technical-reference.md#cli) | 添加 API、多个 Key、排序、启停与移除 |
 | [匿名搜索与限流](docs/technical-reference.md#anonymous-search) | 匿名端点、切换访问模式、429 冷却与回退 |
-| [供应商协议](docs/technical-reference.md#parallel-search) | Parallel、[TinyFish](docs/technical-reference.md#tinyfish-search)、[SerpApi](docs/technical-reference.md#serpapi-search)、[Moonshot](docs/technical-reference.md#moonshot-search)、[StepFun](docs/technical-reference.md#stepfun-search)、[Perplexity](docs/technical-reference.md#perplexity-search)、[Zhipu 与 Z.ai](docs/technical-reference.md#zhipu-search) 的端点、能力限制与验证记录 |
+| [供应商协议](docs/technical-reference.md#parallel-search) | Parallel、[TinyFish](docs/technical-reference.md#tinyfish-search)、[SerpApi](docs/technical-reference.md#serpapi-search)、[Moonshot](docs/technical-reference.md#moonshot-search)、[StepFun](docs/technical-reference.md#stepfun-search)、[Perplexity](docs/technical-reference.md#perplexity-search)、[Bocha](docs/technical-reference.md#bocha-search)、[Ollama](docs/technical-reference.md#ollama-search)、[Zhipu 与 Z.ai](docs/technical-reference.md#zhipu-search) 的端点、能力限制与验证记录 |
 | [结果处理](docs/technical-reference.md#result-processing) | 结果数、文本清理、日期与错误状态 |
 | [完整配置参考](docs/technical-reference.md#configuration) | 参数表、环境变量、优先级、缓存与超时 |
 | [注册过滤](docs/technical-reference.md#registration-filters) | `enable`／`disable` 的规则与示例 |

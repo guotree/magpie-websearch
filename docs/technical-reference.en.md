@@ -10,7 +10,7 @@ checks. See the [README](../README.en.md) for installation and quick start, and
 - [Custom Base URL](#custom-base-url)
 - [CLI management](#cli)
 - [Anonymous search and rate limits](#anonymous-search)
-- [Parallel](#parallel-search), [TinyFish](#tinyfish-search), [SerpApi](#serpapi-search), [Moonshot and Moonshot CN](#moonshot-search), [StepFun](#stepfun-search), [Perplexity](#perplexity-search), and [Zhipu and Z.ai](#zhipu-search) protocols
+- [Parallel](#parallel-search), [TinyFish](#tinyfish-search), [SerpApi](#serpapi-search), [Moonshot and Moonshot CN](#moonshot-search), [StepFun](#stepfun-search), [Perplexity](#perplexity-search), [Zhipu and Z.ai](#zhipu-search), [Bocha](#bocha-search), and [Ollama](#ollama-search) protocols
 - [Magpie result processing](#result-processing)
 - [Full configuration reference](#configuration)
 - [Registration filters](#registration-filters)
@@ -24,9 +24,9 @@ checks. See the [README](../README.en.md) for installation and quick start, and
 
 In the app: **Settings › Models › Web search**, add each API you want, switch it
 on, and order it. Leave the key empty for anonymous AnySearch, Keenable, Parallel
-or TinyFish, or provide a key to use your account. Linkup, Metaso, Moonshot, Moonshot CN, Perplexity, Querit, SerpApi, StepFun, Z.ai and Zhipu require a key.
+or TinyFish, or provide a key to use your account. Bocha, Linkup, Metaso, Moonshot, Moonshot CN, Ollama, Perplexity, Querit, SerpApi, StepFun, Z.ai and Zhipu require a key.
 
-No plugin options are required. With no registration filters, all fourteen APIs are
+No plugin options are required. With no registration filters, all sixteen APIs are
 registered; magpie's Web search settings decide which are configured and used.
 
 <a id="custom-base-url"></a>
@@ -94,7 +94,14 @@ magpie search add magpie-websearch:perplexity <key>
 magpie search add magpie-websearch:zhipu <china-key>
 magpie search add magpie-websearch:zai <international-key>
 
+# Bocha: API key from the open platform is required
+magpie search add magpie-websearch:bocha <key>
+
+# Ollama: cloud account API key required
+magpie search add magpie-websearch:ollama <key>
+
 # A compatible endpoint of your own
+
 magpie search add magpie-websearch:linkup <key> url=https://search.example.com/proxy/v1/search
 ```
 
@@ -511,10 +518,116 @@ form a permanent free tier.
 magpie plugin options magpie-websearch '{"perplexity":{"searchType":"fast","recency":"week","country":"US","language":"en,zh","maxResults":10}}'
 ```
 
-Synthetic fixtures, Node/Bun unit tests (234 tests), and real Magpie 0.1.3035 sandbox tests verify
-request formatting, search modes, filters, malformed/empty results, timeouts, 429 Retry-After,
-key rotation, and Linkup fallback. Successful searches, latency, billing, and quality with real
-account keys remain unverified (explicitly recorded as "real Key unverified").
+<a id="bocha-search"></a>
+
+## Bocha China search
+
+Uses the [standalone REST search API](https://open.bochaai.com/):
+POST `https://api.bochaai.com/v1/web-search`, JSON with `Authorization: Bearer <key>`,
+without a model call. Magpie manages the required API key from
+<https://open.bochaai.com/api-keys>. The adapter registers by default as
+`magpie-websearch:bocha`, displayed as `Bocha (magpie-websearch)`.
+
+Queries are whitespace-normalized and must be nonempty, without an invented
+length ceiling or silent truncation. Requests send `query`, `count` sized via
+`sizeFor(count, maxResults, 50)` (1–50, default 10), and `summary: boolean`.
+`freshness` is an optional trimmed string filter passed through without local calendar
+or range validation (e.g. `noLimit`, `oneDay`, `oneWeek`, `oneMonth`, `oneYear`, `YYYY-MM-DD`,
+or `YYYY-MM-DD..YYYY-MM-DD`); unsupported expressions are rejected upstream by the API.
+An explicit empty string clears any inherited environment freshness; when unset or empty,
+the parameter is omitted.
+
+By default, `summary: false` extracts the standard `snippet` and avoids generated
+summaries. Enabling generated summaries requires explicit opt-in (`summary: true`),
+which selects the nonblank generated `summary` if available and falls back to `snippet`
+when `summary` is blank, null, or not a string. Original whitespace is preserved in the
+selected text. Explicit `options.bocha.summary` must be a JSON boolean; any other type
+throws `TypeError`. For environment configuration, `BOCHA_SUMMARY` accepts only exact
+trimmed `true` or `false`; empty or blank values default to `false`, and invalid strings
+emit a warning (`[magpie-websearch] BOCHA_SUMMARY is invalid; using false`) and fall back
+to `false`. Local text selection controls the mapped and cached text; magpie independently
+applies its own 1500-byte cap to final result text, so it does not promise the model
+will receive full text. Enabling summary does not make an additional model call.
+
+Responses require a top-level object with a `data` object. If `data.webPages` is missing or
+null, it is treated as a valid empty result (`[]`). When present, `webPages.value` must be an
+array. Results without a valid nonblank string `url` are filtered out before capping;
+nonempty arrays with no usable URLs fail. `name` maps to `title` (falling back to the URL
+when blank or missing). `age` prioritizes trimmed `datePublished`, falling back to
+`dateLastCrawled`, and is omitted if neither is a nonblank string. Dates are preserved as
+original vendor strings without calendar parsing or time zone conversion.
+
+HTTP 200 responses with a defined `code` that is neither numeric 200 nor string `"200"`
+(missing `code` is allowed), or with a truthy `error`, throw a business API error
+without inventing an HTTP status or caching the failure. Structured error
+diagnostics prioritize bounded `code` and `log_id` (each capped at 80 code points) followed by
+the vendor message. HTTP refusals retain numeric `status`; 401 appends a key check hint
+pointing to `https://open.bochaai.com/api-keys`, and 403 appends an account access/balance hint
+pointing to `https://open.bochaai.com/overview`. Valid standard `Retry-After` headers (integer
+seconds or HTTP date, including 0) are cleaned and forwarded. Empty results are cached for at most
+30 seconds; successful results cache per instance with endpoint, key, query, count, freshness,
+and summary mode hashed together.
+
+The [Bocha console overview](https://open.bochaai.com/overview) advertises a 1,000-call trial resource
+pack; eligibility, expiration and generated-summary coverage depend on the account and current terms.
+Generated summaries may incur additional charges. During research the linked
+[pricing document](https://aq6ky2b8nql.feishu.cn/wiki/JYSbwzdPIiFnz4kDYPXcHSDrnZb)
+required Feishu login, so fixed prices, QPS and empty-result billing remain unverified.
+Custom URLs are exact endpoints; the adapter never automatically falls back to older domains.
+
+```sh
+magpie plugin options magpie-websearch '{"bocha":{"summary":false,"freshness":"oneWeek","maxResults":10},"ollama":{"maxResults":5,"contentChars":2000}}'
+```
+
+This replaces the complete options object; include any other settings you want to keep.
+Set `summary` explicitly to `true` for generated summaries after checking account charges.
+
+<a id="ollama-search"></a>
+
+## Ollama cloud search
+
+Uses the [official cloud Web Search API](https://docs.ollama.com/capabilities/web-search.md):
+POST `https://ollama.com/api/web_search`, JSON with `Authorization: Bearer <key>`.
+Magpie manages the required API key from <https://ollama.com/settings/keys>.
+The adapter registers by default as `magpie-websearch:ollama`, displayed as
+`Ollama (magpie-websearch)`. This is a cloud search API requiring an Ollama account key;
+it does not connect to a local Ollama daemon (e.g. localhost:11434), call models, or run web_fetch.
+
+Requests send `query` and `max_results` sized via `sizeFor(count, maxResults, 10)` (1–10, default 5).
+Queries are whitespace-normalized and must be nonempty. The response contains a `results` array of
+items with `title`, `url`, and `content`. Items without a valid nonblank string `url` are dropped
+before capping; nonempty arrays with no usable URLs fail. `title` falls back to the URL when
+missing or blank. Results have no date metadata; `age` is omitted.
+
+`content` contains extracted page text and is bounded locally by `contentChars` (default 2000 code
+points; 0 keeps full text). Truncation iterates code points up to the limit and appends `…` without
+expanding full arrays. This local character budget bounds the adapter's mapped and cached payload;
+magpie independently truncates each result's `text` to 1500 bytes before feeding it to the model,
+so configuring large or unlimited `contentChars` does not promise full text delivery to the model.
+Empty result arrays (`results: []`) return successfully and cache for at most 30 seconds.
+Non-object responses, missing `results` arrays, or nonempty arrays with no usable URLs fail and
+are not cached. HTTP 200 responses with a truthy `error` throw an API error without inventing an HTTP
+status. HTTP refusals retain numeric `status` and bounded upstream diagnostics; valid standard
+`Retry-After` headers (integer seconds or HTTP date, including 0) are cleaned and forwarded.
+Successful results cache per instance with endpoint, key, query, count, and `contentChars` hashed together.
+
+Non-string content becomes an empty string. Extra undocumented date fields or dates in content
+do not produce `age`. Both providers consume only the supplied execution key; environment API
+keys, OSP credentials, model credentials and local Ollama configuration are not read.
+
+[Ollama's web search announcement](https://ollama.com/blog/web-search) describes a personal free tier,
+but fixed quotas, per-search pricing, and QPS are unverified. Cloud model subscription plans do not
+constitute a search allowance.
+
+```sh
+magpie plugin options magpie-websearch '{"ollama":{"maxResults":5,"contentChars":2000}}'
+```
+
+Synthetic fixtures, Node/Bun unit tests and real Magpie 0.1.3041 sandbox tests cover both providers:
+Bocha ordinary/generated summaries, freshness and business diagnostics; Ollama content truncation;
+and exact endpoints, malformed/empty results, timeout, 429 Retry-After, Linkup fallback, ordered key
+rotation after 429 and interrupted 401 bodies, and healthy-key preference. Successful live searches,
+billing, quality and rate limits remain explicitly recorded as "real Key unverified".
 
 <a id="result-processing"></a>
 
@@ -525,7 +638,7 @@ account keys remain unverified (explicitly recorded as "real Key unverified").
 - `age` preserves the vendor's date-string format after trimming surrounding whitespace. Blank or non-string values are omitted, without guessing dates or converting time zones. StepFun supplies index time.
 - A hit without a URL is dropped.
 - A thrown error with a numeric `status` (401, 402, 403, 429) is an API refusal. For keyed calls, magpie records the key's rest and tries the next key. Anonymous 429 cooldowns are managed by this plugin; failed APIs give way to the next configured API.
-- `retryAfter` on a 429 follows the adapter's policy. Perplexity, SerpApi, StepFun, Zhipu and Z.ai forward only validated and normalized integer seconds or a standard HTTP date. Moonshot's two adapters prefer a valid standard header, falling back to the [reset-header rules](#moonshot-search) when it is missing or invalid. Other adapters use the shared header passthrough behavior.
+- `retryAfter` on a 429 follows the adapter's policy. Bocha, Ollama, Perplexity, SerpApi, StepFun, Zhipu and Z.ai forward only validated and normalized integer seconds or a standard HTTP date. Moonshot's two adapters prefer a valid standard header, falling back to the [reset-header rules](#moonshot-search) when it is missing or invalid. Other adapters use the shared header passthrough behavior.
 - If reading a failed HTTP response body is interrupted or times out, the shared HTTP layer retains the known `status` and retry metadata extracted by the adapter. Explicit host cancellation during a request takes precedence. Network failures and business errors in HTTP 200 responses do not acquire invented HTTP statuses.
 
 <a id="configuration"></a>
@@ -537,7 +650,7 @@ the top-level `enable` and `disable` filters. Omitted provider fields fall back
 to the environment variable or the default listed below.
 
 Use **Plugins → Installed → Options**, or pass a JSON object on the command line.
-For example, change search parameters while keeping all fourteen APIs registered:
+For example, change search parameters while keeping all sixteen APIs registered:
 
 ```sh
 magpie plugin options magpie-websearch '{"linkup":{"depth":"deep","maxResults":4,"timeout":25000,"cacheTTL":600000},"anysearch":{"zone":"cn","language":"zh-CN"}}'
@@ -582,6 +695,11 @@ The table lists fields inside each provider's object (`linkup.depth`, for exampl
 | keenable | `mode` | `KEENABLE_MODE` | empty | empty, `pro`, `realtime` |
 | keenable | `title` | `KEENABLE_TITLE` | `magpie-websearch` | `X-Keenable-Title`, at most 256 characters |
 | keenable | `timeout` | `KEENABLE_TIMEOUT` | `25000` | ≥ 0 |
+| bocha | `cacheTTL` | `BOCHA_CACHE_TTL` | `600000` | ≥ 0; milliseconds |
+| bocha | `timeout` | `BOCHA_TIMEOUT` | `25000` | 0–2147483647 ms; 0 disables plugin timeout, preserving host cancellation |
+| bocha | `maxResults` | `BOCHA_MAX_RESULTS` | `10` | 1–50; cap on magpie's requested count |
+| bocha | `freshness` | `BOCHA_FRESHNESS` | empty | empty, `noLimit`, `oneDay`, `oneWeek`, `oneMonth`, `oneYear`, or date/date-range |
+| bocha | `summary` | `BOCHA_SUMMARY` | `false` | JSON boolean; `false` snippet only, `true` generated summary with snippet fallback |
 | linkup | `cacheTTL` | `LINKUP_CACHE_TTL` | `600000` | ≥ 0 |
 | linkup | `depth` | `LINKUP_DEPTH` | `fast` | `flash`, `fast`, `standard`, `deep` |
 | linkup | `maxResults` | `LINKUP_MAX_RESULTS` | `10` | 1–100; upstream limits also apply |
@@ -602,6 +720,10 @@ The table lists fields inside each provider's object (`linkup.depth`, for exampl
 | moonshot-cn | `maxResults` | `MOONSHOT_CN_MAX_RESULTS` | `10` | 1–20; cap on magpie's requested count |
 | moonshot-cn | `content` | `MOONSHOT_CN_CONTENT` | `snippet` | `snippet`, `full` |
 | moonshot-cn | `contentChars` | `MOONSHOT_CN_CONTENT_CHARS` | `4000` | Code points per text (`0` keeps all) |
+| ollama | `cacheTTL` | `OLLAMA_CACHE_TTL` | `600000` | ≥ 0; milliseconds |
+| ollama | `timeout` | `OLLAMA_TIMEOUT` | `25000` | 0–2147483647 ms; 0 disables plugin timeout, preserving host cancellation |
+| ollama | `maxResults` | `OLLAMA_MAX_RESULTS` | `5` | 1–10; cap on magpie's requested count |
+| ollama | `contentChars` | `OLLAMA_CONTENT_CHARS` | `2000` | Code points per content text; 0 keeps all |
 | parallel | `cacheTTL` | `PARALLEL_CACHE_TTL` | `600000` | ≥ 0 |
 | parallel | `timeout` | `PARALLEL_TIMEOUT` | `25000` | ≥ 0; includes reading the MCP stream |
 | parallel | `maxResults` | `PARALLEL_MAX_RESULTS` | `10` | 1–20; cap on magpie's requested count |
@@ -669,12 +791,12 @@ for desktop use.
 ## Optional registration filters
 
 The optional top-level `enable` and `disable` arrays control which APIs the
-plugin registers. Entries use short IDs: `anysearch`, `keenable`, `linkup`,
-`metaso`, `moonshot`, `moonshot-cn`, `parallel`, `perplexity`, `querit`, `serpapi`, `stepfun`, `tinyfish`, `zai`, `zhipu` (without the `magpie-websearch:` prefix).
+plugin registers. Entries use short IDs: `anysearch`, `bocha`, `keenable`, `linkup`,
+`metaso`, `moonshot`, `moonshot-cn`, `ollama`, `parallel`, `perplexity`, `querit`, `serpapi`, `stepfun`, `tinyfish`, `zai`, `zhipu` (without the `magpie-websearch:` prefix).
 
 | Filters | APIs registered |
 |---|---|
-| Both omitted, or `{}` | All fourteen APIs |
+| Both omitted, or `{}` | All sixteen APIs |
 | `"enable": ["linkup", "querit"]` | Linkup and Querit only |
 | `"disable": ["keenable"]` | All except Keenable |
 | `"enable": ["linkup", "querit"], "disable": ["querit"]` | Linkup only; `disable` wins |
@@ -702,7 +824,7 @@ To remove all saved plugin options, including provider overrides and filters:
 magpie plugin options magpie-websearch off
 ```
 
-All fourteen APIs are registered again. Provider settings use environment
+All sixteen APIs are registered again. Provider settings use environment
 values when present, otherwise their defaults. To remove only the filters,
 save a complete options object containing the provider settings you want to keep.
 
@@ -752,11 +874,13 @@ The smoke script requires `magpie` on PATH (`MAGPIE_BIN` can name its executable
 It creates a temporary HOME/config/cache, disables account discovery, starts a
 gateway on a free loopback port, and tests registration, options, custom URL,
 timeout, anonymous search, 429 cooldown and fallback against a local fake API.
-It covers Parallel and TinyFish MCP/REST, SerpApi, Perplexity, StepFun, both Moonshot adapters, and Zhipu/Z.ai.
+It covers Parallel and TinyFish MCP/REST, SerpApi, Perplexity, StepFun, Bocha, Ollama, both Moonshot adapters, and Zhipu/Z.ai.
 Moonshot cases also check seconds/milliseconds reset headers, excessive resets
 and resting-key preference. Zhipu/Z.ai cases check Sogou count buckets, local caps,
 business errors, query length, key rotation and separate credentials on fallback.
 StepFun cases check category, full text, malformed results, Credit 429, 451 and key rotation.
+Bocha cases check snippet vs generated summary opt-in, freshness filters, business errors with code and log_id, malformed results and key rotation.
+Ollama cases check max_results, content truncation, malformed results, 429 retry after and key rotation.
 It removes its sandbox when finished. Search requests
 use only local mocks and dummy keys, without paid search calls; Magpie startup
 may independently fetch public resources such as the model catalog.
@@ -767,11 +891,12 @@ the sandbox. CI runs separate jobs for Node 22/24, Bun, and Magpie testing of th
 unpacked npm package; the three jobs have no ordering dependency.
 
 Local verification on **2026-11-05** used **Node.js 24.19.0, Bun 1.4.4 and magpie
-0.1.3035**. Node and Bun each passed 234 tests, and the Magpie sandbox checks,
-including Perplexity, StepFun China, long error identifiers and key rotation after interrupted
+0.1.3041**. Node and Bun each passed 263 tests, and the Magpie sandbox checks,
+including Perplexity, StepFun China, Bocha, Ollama, long error identifiers and key rotation after interrupted
 401 bodies, passed. Bun ran temporarily from npm's cache via
-`npm exec --yes --package=bun@1.4.4 -- bun run check:bun`, without adding a project
-dependency. Earlier **magpie 0.1.2911/0.1.2964/0.1.3026** records are historical. These records do
+`npm exec --yes --package=bun@1.4.4 -- bun scripts/check.mjs` and
+`npm exec --yes --package=bun@1.4.4 -- bun test ./test/*.test.mjs`, without adding a project
+dependency. Earlier **magpie 0.1.2911/0.1.2964/0.1.3026/0.1.3035** records are historical. These records do
 not establish minimum supported versions.
 
 Local folder installs use the folder name as the short name. Because the package is `@guotree/magpie-websearch` and the folder is `magpie-websearch`, both installs give the same `magpie-websearch:*` IDs.

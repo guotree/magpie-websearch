@@ -10,17 +10,19 @@ standalone search API.
 | Display name | magpie ID | Implementation | Key |
 |---|---|---|---|
 | AnySearch (magpie-websearch) | `magpie-websearch:anysearch` | [anysearch.mjs](src/providers/anysearch.mjs) | optional |
+| Bocha (magpie-websearch) | `magpie-websearch:bocha` | [bocha.mjs](src/providers/bocha.mjs) | required |
 | Keenable (magpie-websearch) | `magpie-websearch:keenable` | [keenable.mjs](src/providers/keenable.mjs) | optional |
 | Linkup (magpie-websearch) | `magpie-websearch:linkup` | [linkup.mjs](src/providers/linkup.mjs) | required |
 | Metaso (magpie-websearch) | `magpie-websearch:metaso` | [metaso.mjs](src/providers/metaso.mjs) | required |
+| Moonshot (magpie-websearch) | `magpie-websearch:moonshot` | [moonshot.mjs](src/providers/moonshot.mjs) | required |
+| Moonshot CN (magpie-websearch) | `magpie-websearch:moonshot-cn` | [moonshot-cn.mjs](src/providers/moonshot-cn.mjs) | required |
+| Ollama (magpie-websearch) | `magpie-websearch:ollama` | [ollama.mjs](src/providers/ollama.mjs) | required |
 | Parallel (magpie-websearch) | `magpie-websearch:parallel` | [parallel.mjs](src/providers/parallel.mjs) | optional |
 | Perplexity (magpie-websearch) | `magpie-websearch:perplexity` | [perplexity.mjs](src/providers/perplexity.mjs) | required |
 | Querit (magpie-websearch) | `magpie-websearch:querit` | [querit.mjs](src/providers/querit.mjs) | required |
 | SerpApi (magpie-websearch) | `magpie-websearch:serpapi` | [serpapi.mjs](src/providers/serpapi.mjs) | required |
 | StepFun (magpie-websearch) | `magpie-websearch:stepfun` | [stepfun.mjs](src/providers/stepfun.mjs) | required |
 | TinyFish (magpie-websearch) | `magpie-websearch:tinyfish` | [tinyfish.mjs](src/providers/tinyfish.mjs) | optional |
-| Moonshot (magpie-websearch) | `magpie-websearch:moonshot` | [moonshot.mjs](src/providers/moonshot.mjs) | required |
-| Moonshot CN (magpie-websearch) | `magpie-websearch:moonshot-cn` | [moonshot-cn.mjs](src/providers/moonshot-cn.mjs) | required |
 | Z.ai (magpie-websearch) | `magpie-websearch:zai` | [zai.mjs](src/providers/zai.mjs) | required |
 | Zhipu (magpie-websearch) | `magpie-websearch:zhipu` | [zhipu.mjs](src/providers/zhipu.mjs) | required |
 
@@ -29,7 +31,7 @@ This suffix identifies the plugin in magpie's GUI and CLI. Keep the short API ID
 and the namespaced vendor ID independent of the display name; suffix changes
 must not rename the IDs used by saved keys, switches, order or plugin options.
 
-All fourteen APIs are registered by default. `enable` and `disable` are optional
+All sixteen APIs are registered by default. `enable` and `disable` are optional
 plugin options that filter this list by short ID (`linkup`, for example).
 `disable` takes precedence over `enable`; `enable: []` registers none, while
 `disable: []` excludes none. Provider settings such as `linkup.depth` do not
@@ -250,6 +252,68 @@ and other endpoints are independent of that cooldown. See
   Real-key successful searches, billing, latency, and quality remain unverified. See the
   [technical reference](docs/technical-reference.en.md#perplexity-search).
 
+### Bocha protocol notes
+
+- POST `https://api.bochaai.com/v1/web-search` with Bearer auth, as documented by the
+  [current console](https://open.bochaai.com/) and
+  [official MCP implementation](https://github.com/BochaAI/bocha-search-mcp/blob/master/src/bocha_search_mcp/server.py).
+  Magpie manages the required [API key](https://open.bochaai.com/api-keys). Custom URLs
+  are exact endpoints; there is no automatic fallback to the old API domain.
+- Requests send normalized `query`, `count` (configured default 10, range 1–50)
+  and `summary: false` by default. Generated summaries require explicit opt-in;
+  this search option does not make an additional model call. Optional `freshness`
+  is trimmed and forwarded as an opaque string: `noLimit`, `oneDay`, `oneWeek`,
+  `oneMonth`, `oneYear`, `YYYY-MM-DD` or `YYYY-MM-DD..YYYY-MM-DD`. Upstream validates
+  its content; an explicit empty string clears an inherited environment filter.
+- Results map `data.webPages.value`: `name`/`url`/`snippet`, with nonblank `summary`
+  preferred only when enabled. Blank or invalid summaries fall back to snippet.
+  Dates use `datePublished` before `dateLastCrawled`, preserving original strings
+  without time-zone conversion. Missing/null `webPages` is a valid empty search;
+  missing/nonobject `data`, invalid `value`, and nonempty unusable arrays are errors.
+- Non-200 business `code` (numeric or string 200 succeeds) and truthy `error` in
+  HTTP 200 fail without a fabricated HTTP status. Bounded diagnostics retain
+  `code` and `log_id` before message/msg. HTTP 401 suggests checking the key;
+  403 suggests checking account access and balance without assuming one cause.
+- The [console overview](https://open.bochaai.com/overview) advertises a claimable
+  1000-call trial resource pack. Eligibility, expiry and summary coverage depend
+  on the account and latest official terms. Generated summaries may cost extra.
+  The linked [pricing document](https://aq6ky2b8nql.feishu.cn/wiki/JYSbwzdPIiFnz4kDYPXcHSDrnZb)
+  required Feishu login during research; no fixed price, QPS or free-empty-result
+  promise is asserted. Historical prices and a zero-valued unloaded purchase form
+  are not current pricing evidence.
+- Dummy-key tests and real Magpie 0.1.3041 sandbox checks cover ordinary/generated
+  summaries, freshness, exact URLs, empty/malformed results, timeouts, bounded
+  business diagnostics, 429 Retry-After, Linkup fallback, and key rotation after
+  429 or an interrupted 401 body. Real-key success, billing, quality and live rate
+  limits remain unverified. See the [technical reference](docs/technical-reference.en.md#bocha-search).
+
+### Ollama protocol notes
+
+- The [Web Search contract](https://docs.ollama.com/capabilities/web-search.md)
+  specifies POST `https://ollama.com/api/web_search`, Bearer
+  [account API key](https://ollama.com/settings/keys), and JSON `{ query, max_results }`.
+  Default `maxResults` is 5, range 1–10. This is cloud search; local Ollama, model
+  credentials, inference and `web_fetch` are not used. Free account keys are still
+  required keys, not anonymous access.
+- Results map `title`/`url`/`content` after removing unusable rows and before
+  applying the cap. Title falls back to URL; absent or non-string content is empty.
+  `contentChars` defaults to 2000 Unicode code points; 0 keeps all, truncation adds
+  `…`. Only the retained prefix is traversed; no full-content array is allocated.
+  No `age` is inferred from content or undocumented response fields. Magpie still
+  caps tool text at 1500 bytes, so local truncation bounds mapping/cache size.
+- The [launch post](https://ollama.com/blog/web-search) describes a personal free
+  layer. A fixed search allowance, paid search price or search QPS was not publicly
+  verified; [model-plan pricing](https://ollama.com/pricing) does not establish
+  search quotas. Real account search, billing, quality and live rate limits remain
+  unverified.
+- Dummy-key tests and real Magpie 0.1.3041 sandbox checks cover exact POST URLs,
+  mandatory keys, content truncation, empty/malformed results, timeout, 429
+  Retry-After, Linkup fallback and key rotation after 429 or interrupted 401 bodies.
+  Both new providers normalize standard Retry-After (including zero), retain
+  numeric HTTP status, isolate caches per instance/request/key/endpoint, and cache
+  valid empty results for at most 30 seconds. See the
+  [technical reference](docs/technical-reference.en.md#ollama-search).
+
 ## Planned
 
 These candidates are not implemented. IDs are provisional; authentication,
@@ -257,19 +321,14 @@ endpoint details and available features must be verified before implementation.
 
 | Provider | Proposed magpie ID |
 |---|---|
-| Bocha | `magpie-websearch:bocha` |
 | Jina | `magpie-websearch:jina` |
 | Kagi | `magpie-websearch:kagi` |
-| Ollama | `magpie-websearch:ollama` |
 | Serper | `magpie-websearch:serper` |
 
 The candidate list was checked on **2026-11-05** against magpie commit
 [`47d58393`](https://github.com/yetone/magpie/tree/47d5839397b1141dbd0394d2080aa6e76753a439).
 None of the planned candidates appears in that revision's
 [built-in search APIs](https://github.com/yetone/magpie/blob/47d5839397b1141dbd0394d2080aa6e76753a439/internal/provider/search_api.go).
-Ollama has a
-[model provider preset](https://github.com/yetone/magpie/blob/47d5839397b1141dbd0394d2080aa6e76753a439/internal/provider/presets.go),
-but its standalone search API remains a candidate for evaluation.
 
 Exclude a candidate from the roadmap only when magpie already integrates the
 corresponding standalone web search API. A model provider preset or a model's

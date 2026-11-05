@@ -8,7 +8,7 @@
 - [自定义 Base URL](#custom-base-url)
 - [命令行管理](#cli)
 - [匿名搜索与限流](#anonymous-search)
-- [Parallel](#parallel-search)、[TinyFish](#tinyfish-search)、[SerpApi](#serpapi-search)、[Moonshot 与 Moonshot CN](#moonshot-search)、[StepFun](#stepfun-search)、[Perplexity](#perplexity-search)、[Zhipu 与 Z.ai](#zhipu-search) 协议说明
+- [Parallel](#parallel-search)、[TinyFish](#tinyfish-search)、[SerpApi](#serpapi-search)、[Moonshot 与 Moonshot CN](#moonshot-search)、[StepFun](#stepfun-search)、[Perplexity](#perplexity-search)、[Bocha](#bocha-search)、[Ollama](#ollama-search)、[Zhipu 与 Z.ai](#zhipu-search) 协议说明
 - [Magpie 结果处理](#result-processing)
 - [完整配置参考](#configuration)
 - [注册过滤](#registration-filters)
@@ -23,9 +23,9 @@
 在 Magpie 桌面客户端中：前往 **设置 › 模型 › 网页搜索**（Settings › Models › Web search），添加你需要的搜索引擎，开启开关并调整优先级顺序。
 
 - 对于 AnySearch、Keenable、Parallel、TinyFish，留空 Key 即可使用匿名免 Key 搜索；填写 Key 则使用你的私人账户额度。
-- 对于 Linkup、Metaso、Moonshot、Moonshot CN、Perplexity、Querit、SerpApi、StepFun、Z.ai、Zhipu，必须填写对应的 API Key。
+- 对于 Bocha、Linkup、Metaso、Moonshot、Moonshot CN、Ollama、Perplexity、Querit、SerpApi、StepFun、Z.ai、Zhipu，必须填写对应的 API Key。
 
-无需强制配置插件选项。在未配置过滤选项时，默认注册全部 14 个搜索 API，由 Magpie 的网页搜索设置界面决定启用哪些和使用顺序。
+无需强制配置插件选项。在未配置过滤选项时，默认注册全部 16 个搜索 API，由 Magpie 的网页搜索设置界面决定启用哪些和使用顺序。
 
 <a id="custom-base-url"></a>
 
@@ -55,6 +55,8 @@ magpie search add magpie-websearch:anysearch <key>
 magpie search add magpie-websearch:keenable <key>
 magpie search add magpie-websearch:parallel <key>
 magpie search add magpie-websearch:tinyfish <key>
+# Bocha：必须提供 key
+magpie search add magpie-websearch:bocha <key>
 
 # Linkup：必须提供 key
 magpie search add magpie-websearch:linkup <key>
@@ -67,6 +69,9 @@ magpie search add magpie-websearch:moonshot <key>
 
 # Moonshot CN（国内站）：必须提供 key
 magpie search add magpie-websearch:moonshot-cn <key>
+
+# Ollama 云端搜索：必须提供官方账户 API Key
+magpie search add magpie-websearch:ollama <key>
 
 # Querit：必须提供 key
 magpie search add magpie-websearch:querit <key>
@@ -290,7 +295,55 @@ magpie plugin options magpie-websearch '{"stepfun":{"category":"research","conte
 magpie plugin options magpie-websearch '{"perplexity":{"searchType":"fast","recency":"week","country":"US","language":"en,zh","maxResults":10}}'
 ```
 
-本地使用合成 fixture、Node/Bun 单元测试（234 项）以及真实 Magpie 0.1.3035 宿主沙箱验证了请求格式、模式与筛选参数、空结果/畸形结果、超时、429 Retry-After、Key 轮换与 Linkup 调度 fallback。真实 Key 未验证（无授权 Key 时明确记录“真实 Key 未验证”），真实检索召回、时延与实际 429 响应头未作线上测试。
+本地使用合成 fixture、Node/Bun 单元测试（263 项）以及真实 Magpie 0.1.3041 宿主沙箱验证了请求格式、模式与筛选参数、空结果/畸形结果、超时、429 Retry-After、Key 轮换与 Linkup 调度 fallback。真实 Key 未验证（无授权 Key 时明确记录“真实 Key 未验证”），真实检索召回、时延与实际 429 响应头未作线上测试。
+
+<a id="bocha-search"></a>
+
+## Bocha 搜索
+
+使用[官方独立网页搜索 API](https://open.bochaai.com/)：`POST https://api.bochaai.com/v1/web-search`，JSON 请求携带 `Authorization: Bearer <key>`，不调用第三方模型或 Agent 通道。Key 从 <https://open.bochaai.com/api-keys> 获取，由 Magpie 管理，不能留空。默认注册 ID 为 `magpie-websearch:bocha`，显示名为 `Bocha (magpie-websearch)`。
+
+请求发送 `query`、`count`、`summary`，以及可选 `freshness`：
+- `query`：规范化首尾及重复空白并校验非空，空值在请求前拦截报错。
+- `count`：取 `sizeFor(count, maxResults, 50)`，默认 `maxResults` 为 10（允许 1–50）。
+- `summary`：默认 `false`，仅选择普通摘要 `snippet`。生成摘要必须显式开启；`summary` 选项只接受 JSON 布尔值，字符串 `"true"` 会抛出 `TypeError`。未设置选项时，`BOCHA_SUMMARY` 去除首尾空白后只接受精确的 `true`／`false`，空值为 false，其他值警告并回退 false。开启时优先选择非空白字符串 `summary`，缺失、空白或类型错误时回退字符串 `snippet`，均无时为空字符串；保留所选文本的原有缩进与换行，不额外调用生成模型。
+- `freshness`：时间筛选字符串。支持 `noLimit`、`oneDay`、`oneWeek`、`oneMonth`、`oneYear`、`YYYY-MM-DD`、`YYYY-MM-DD..YYYY-MM-DD`；只校验配置类型并去除首尾空白，不在本地校验日期或范围，内容由上游校验。显式空字符串可清除环境时间过滤；空值省略字段，显式 `noLimit` 原样发送。
+
+结果读取 `data.webPages.value` 数组，逐条要求为非数组对象且包含非空白字符串 `url`，去除 URL 首尾空白后使用；先过滤再截取上限并保持排序，非空数组无可用项时报错且不缓存，空数组正常返回。`name` 映射标题，缺失、类型错误或为空白时回退 URL。`age` 优先取非空白字符串 `datePublished`，为空时回退至字符串 `dateLastCrawled`，两者均无时省略；原样保留厂商时间字符串（包括时区标识），不转换时区。
+
+结构校验与错误处理：响应须为非数组对象；`data` 缺失或非对象时报错；`data.webPages` 缺失或为 `null` 时视为合法无结果并短缓存（至多 30 秒）；存在的 `webPages` 须为非数组对象，`value` 必须为数组。HTTP 200 下若已定义的 `code` 既非数值 200 也非字符串 `"200"`，或 `error` 为 truthy，抛出业务错误；诊断按 `code`、`log_id`（分别限制 80 码点）、第一个非空白 message／msg 排序，再进行总长限制，不赋予伪造的 HTTP status 且不写缓存。HTTP 失败保留数值 `status`，包括 401 正文中断；401 追加检查 API Key 的链接，403 追加检查账户权限与余额的链接，不断言所有 403 都是余额不足。标准 `Retry-After` 整数秒（包括 0）或规范 HTTP 日期经校验清理后透传。
+
+[控制台总览](https://open.bochaai.com/overview)公开“免费领取1000次调用资源包”，具体资格、有效期、是否覆盖生成摘要以账户和官方最新政策为准。生成摘要可能产生额外费用；调研时[价格文档](https://aq6ky2b8nql.feishu.cn/wiki/JYSbwzdPIiFnz4kDYPXcHSDrnZb)需要飞书登录，未读到正文，固定单价、QPS 及空结果是否收费均未核实。历史报价或未加载表单的零元值不作为当前价格；插件不自动退回旧域名。
+
+```sh
+magpie plugin options magpie-websearch '{"bocha":{"freshness":"oneWeek","summary":false,"maxResults":10},"ollama":{"maxResults":5,"contentChars":2000}}'
+```
+
+这条命令会替换完整 options 对象，须同时包含其他希望保留的配置。需要生成摘要时将 `summary` 显式改为 `true`，并先核对账户计费。
+
+<a id="ollama-search"></a>
+
+## Ollama 云端搜索
+
+使用[官方独立网页搜索 API](https://docs.ollama.com/capabilities/web-search.md)：`POST https://ollama.com/api/web_search`，JSON 请求携带 `Authorization: Bearer <key>`。Key 为官方云端账户 API Key，从 <https://ollama.com/settings/keys> 获取，由 Magpie 管理，不能留空；不调用本地 11434 服务、本地模型或 `web_fetch` 工具。默认注册 ID 为 `magpie-websearch:ollama`，显示名为 `Ollama (magpie-websearch)`。
+
+请求仅发送 `query` 与 `max_results`：
+- `query`：规范化空白后校验非空。
+- `max_results`：取 `sizeFor(count, maxResults, 10)`，默认 `maxResults` 为 5（允许 1–10）。
+
+结果读取 `results` 数组，逐条要求为对象且 `url` 为非空白字符串；自动剔除不含 URL 的项，非空数组无可用项时报错且不缓存。标题缺失或空白时回退 URL。`content` 原文按 `contentChars`（默认 2000 码点，`0` 保留全部）进行本地前缀码点截断，截断时追加 `…`。官方响应不包含日期字段，映射结果省略 `age`，不从正文推测日期。
+
+非字符串 `content` 映射为空字符串，即使上游附带未约定时间字段也省略 `age`。截断仅遍历保留前缀及额外一个码点；本地限制控制映射与缓存体积，Magpie 仍将每条文本处理为最多 1500 字节，不保证模型获得完整正文。
+
+空数组（`results: []`）正常返回并短缓存（至多 30 秒）。HTTP 200 下 `error` 为 truthy 时抛出业务错误（不伪造 HTTP status）。HTTP 失败保留数值 `status`；标准 `Retry-After`（整数秒或规范 HTTP 日期）经清理后透传；超时与取消不写缓存。
+
+[官方发布说明](https://ollama.com/blog/web-search)公布了个人免费层，但固定免费额度、超出后的每次搜索定价及 QPS 配额尚未公开核实；[当前定价页](https://ollama.com/pricing)的模型套餐价格不能外推为搜索额度。
+
+```sh
+magpie plugin options magpie-websearch '{"ollama":{"maxResults":5,"contentChars":2000}}'
+```
+
+两家均使用合成 fixture、Node/Bun 单元测试及真实 Magpie 0.1.3041 宿主沙箱验证：Bocha 普通／生成摘要、时效筛选和业务诊断，Ollama 正文截断，以及共同的精确端点、空结果／畸形结果、超时、429 Retry-After、Linkup 后备、429 与 401 正文中断后的顺序 Key 轮换及健康 Key 优先。只使用调用参数 Key，不读取环境 API Key、OSP 凭证、模型配置或本地 Ollama 配置。每实例创建缓存，身份包含端点、请求、凭证和本地文本选择参数；只缓存映射后的成功结果。真实 Key 未验证，线上成功、扣费、检索质量与速率限制未实测。
 
 <a id="result-processing"></a>
 
@@ -301,7 +354,7 @@ magpie plugin options magpie-websearch '{"perplexity":{"searchType":"fast","rece
 - `age` 保留厂商返回的时间字符串格式，仅去除首尾空白；空白或非字符串值省略，不猜测日期或转换时区。StepFun 的该字段是索引时间。
 - 自动剔除不包含 URL 的无效结果。
 - 抛出带有数值型 `status`（401、402、403、429）的错误被 Magpie 识别为服务商拒绝；对于带 Key 请求，Magpie 会休眠该 Key 并尝试下一个。匿名 429 冷却由本插件自主管理；失败时会触发 Magpie 调度下一可用引擎。
-- 429 响应的 `Retry-After` 按适配器策略处理：Perplexity、SerpApi、StepFun、Zhipu 和 Z.ai 仅传递校验和规范化后的整数秒数或标准 HTTP 日期；Moonshot 双站优先传递合法标准头，非法或缺失时按[重置头规则](#moonshot-search)回退；其他适配器沿用通用头透传逻辑。
+- 429 响应的 `Retry-After` 按适配器策略处理：Bocha、Ollama、Perplexity、SerpApi、StepFun、Zhipu 和 Z.ai 仅传递校验和规范化后的整数秒数或标准 HTTP 日期；Moonshot 双站优先传递合法标准头，非法或缺失时按[重置头规则](#moonshot-search)回退；其他适配器沿用通用头透传逻辑。
 - 公共 HTTP 层在失败响应正文读取中断或超时后，仍保留已知 `status` 和适配器提取的重试信息；请求阶段的宿主主动取消优先报告取消。此规则不把网络连接失败或 HTTP 200 中的业务错误伪装成 HTTP 拒绝。
 
 <a id="configuration"></a>
@@ -335,6 +388,11 @@ magpie plugin options magpie-websearch '{"linkup":{"depth":"deep","maxResults":4
 | anysearch | `language` | `ANYSEARCH_LANGUAGE` | 留空 | 语言代码，例如 `zh-CN` |
 | anysearch | `format` | `ANYSEARCH_FORMAT` | `markdown` | `markdown`、`json` |
 | anysearch | `timeout` | `ANYSEARCH_TIMEOUT` | `25000` | 超时时间（毫秒），≥ 0 |
+| bocha | `cacheTTL` | `BOCHA_CACHE_TTL` | `600000` | 缓存时间（毫秒），≥ 0 |
+| bocha | `timeout` | `BOCHA_TIMEOUT` | `25000` | 0–2147483647 毫秒；0 关闭插件超时，保留宿主取消 |
+| bocha | `maxResults` | `BOCHA_MAX_RESULTS` | `10` | 1–50；请求及本地结果上限 |
+| bocha | `freshness` | `BOCHA_FRESHNESS` | 留空 | 时间筛选，如 `oneWeek`、`YYYY-MM-DD..YYYY-MM-DD`；留空时不发送 |
+| bocha | `summary` | `BOCHA_SUMMARY` | `false` | `false`（普通摘要）、`true`（生成摘要）；显式布尔值 |
 | keenable | `cacheTTL` | `KEENABLE_CACHE_TTL` | `600000` | 缓存时间（毫秒），≥ 0 |
 | keenable | `maxResults` | `KEENABLE_MAX_RESULTS` | `10` | 1–50 |
 | keenable | `mode` | `KEENABLE_MODE` | 留空 | 留空、`pro`、`realtime` |
@@ -360,6 +418,10 @@ magpie plugin options magpie-websearch '{"linkup":{"depth":"deep","maxResults":4
 | moonshot-cn | `maxResults` | `MOONSHOT_CN_MAX_RESULTS` | `10` | 1–20；请求结果上限 |
 | moonshot-cn | `content` | `MOONSHOT_CN_CONTENT` | `snippet` | `snippet`（摘要）、`full`（全文正文） |
 | moonshot-cn | `contentChars` | `MOONSHOT_CN_CONTENT_CHARS` | `4000` | 每条文本的 Unicode 码点上限（`0` 保留全部） |
+| ollama | `cacheTTL` | `OLLAMA_CACHE_TTL` | `600000` | 缓存时间（毫秒），≥ 0 |
+| ollama | `timeout` | `OLLAMA_TIMEOUT` | `25000` | 0–2147483647 毫秒；0 关闭插件超时，保留宿主取消 |
+| ollama | `maxResults` | `OLLAMA_MAX_RESULTS` | `5` | 1–10；请求及本地结果上限 |
+| ollama | `contentChars` | `OLLAMA_CONTENT_CHARS` | `2000` | 每条 content 的 Unicode 码点上限；0 保留全部 |
 | parallel | `cacheTTL` | `PARALLEL_CACHE_TTL` | `600000` | 缓存时间（毫秒），≥ 0 |
 | parallel | `timeout` | `PARALLEL_TIMEOUT` | `25000` | 超时时间（毫秒），≥ 0；包含 MCP 流读取 |
 | parallel | `maxResults` | `PARALLEL_MAX_RESULTS` | `10` | 1–20 |
@@ -425,7 +487,7 @@ magpie plugin options magpie-websearch '{"linkup":{"depth":"deep","maxResults":4
 
 | 过滤器设置 | 实际向 Magpie 注册的 API |
 |---|---|
-| 省略未设，或 `{}` | 全部 14 个 API 均注册 |
+| 省略未设，或 `{}` | 全部 16 个 API 均注册 |
 | `"enable": ["linkup", "querit"]` | 仅注册 Linkup 与 Querit |
 | `"disable": ["keenable"]` | 注册除 Keenable 外的其余 API |
 | `"enable": ["linkup", "querit"], "disable": ["querit"]` | 仅注册 Linkup（`disable` 优先级高于 `enable`） |
@@ -448,7 +510,7 @@ magpie plugin options magpie-websearch '{"disable":["keenable"],"linkup":{"depth
 magpie plugin options magpie-websearch off
 ```
 
-全部 14 个 API 会重新注册。供应商配置优先取环境变量，否则使用默认值。若只想移除过滤器，请保存包含所有需要保留的供应商配置的完整选项对象。
+全部 16 个 API 会重新注册。供应商配置优先取环境变量，否则使用默认值。若只想移除过滤器，请保存包含所有需要保留的供应商配置的完整选项对象。
 
 <a id="development"></a>
 
@@ -469,10 +531,10 @@ npm run smoke:magpie # 在独立沙箱中启动真实 Magpie 进程进行完整�
 
 Magpie 通过其管理的 **Bun** 运行插件。基于 Node 的开发命令要求 **Node.js 20.3.0 或更新版本**，依赖 `AbortSignal.any` 组合超时和取消信号；`check:bun` 直接在 Bun 下运行。本插件使用 Magpie 的 `search` hook；`package.json` 中的 `opencode` 关键词用于 Magpie 的 npm 插件发现。
 
-`npm run smoke:magpie` 测试脚本要求环境变量 PATH 中存在 `magpie` 可执行文件（或通过 `MAGPIE_BIN` 指定）。脚本创建独立的沙箱配置环境、隔离账户发现、在随机回环端口启动网关，验证插件加载、注册过滤、自定义 URL、超时中断、匿名 429 冷却与后备调度、Parallel 及 TinyFish 的 MCP／REST，以及 SerpApi、Perplexity、StepFun、Moonshot 双站和 Zhipu／Z.ai 的带 Key 协议。Moonshot 用例覆盖秒／毫秒重置头、超限值忽略与 Key 休眠排序；Zhipu／Z.ai 用例覆盖搜狗档位、本地截断、业务错误、查询长度、Key 轮换和跨站后备凭证隔离；StepFun 用例覆盖分类、正文、异常结果、Credit 429、451 和 Key 轮换；Perplexity 用例覆盖 fast 模式、筛选参数、异常、超时、429 Retry-After、Key 轮换与后备调度。测试完成后自动清理沙箱，搜索请求只访问本地模拟服务并使用 dummy Key，不调用付费搜索；Magpie 自身启动时仍可能独立获取模型目录等公共资源。
+`npm run smoke:magpie` 测试脚本要求环境变量 PATH 中存在 `magpie` 可执行文件（或通过 `MAGPIE_BIN` 指定）。脚本创建独立的沙箱配置环境、隔离账户发现、在随机回环端口启动网关，验证插件加载、注册过滤、自定义 URL、超时中断、匿名 429 冷却与后备调度、Parallel 及 TinyFish 的 MCP／REST，以及 SerpApi、Perplexity、StepFun、Bocha、Ollama、Moonshot 双站和 Zhipu／Z.ai 的带 Key 协议。Moonshot 用例覆盖秒／毫秒重置头、超限值忽略与 Key 休眠排序；Zhipu／Z.ai 用例覆盖搜狗档位、本地截断、业务错误、查询长度、Key 轮换和跨站后备凭证隔离；StepFun 用例覆盖分类、正文、异常结果、Credit 429、451 和 Key 轮换；Perplexity 用例覆盖 fast 模式、筛选参数、异常、超时、429 Retry-After、Key 轮换与后备调度；Bocha 用例覆盖普通摘要默认值、显式开启生成摘要与时效筛选、业务错误 code/msg/log_id、429 Retry-After 与健康 Key 轮换；Ollama 用例覆盖前缀码点截断、429 Retry-After 与顺序 Key 轮换。测试完成后自动清理沙箱，搜索请求只访问本地模拟服务并使用 dummy Key，不调用付费搜索；Magpie 自身启动时仍可能独立获取模型目录等公共资源。
 
 可用 `MAGPIE_PLUGIN_DIR` 指定解包后的 npm 插件目录，目录名应保持为 `magpie-websearch` 以维持 Vendor ID。`MAGPIE_SMOKE_ROOT` 可覆盖测试沙箱使用的系统临时目录。CI 分别运行 Node 22／24、Bun 检查和解包后的 npm 包 Magpie 验证，三个作业之间没有顺序依赖。
 
-2026-11-05 本地验证使用 **Node.js 24.19.0、Bun 1.4.4、magpie 0.1.3035**。Node 与 Bun 均通过 234 项测试，包含 Perplexity、StepFun 国内站、长错误标识和 401 正文中断后 Key 轮换的 Magpie 沙箱验证通过。Bun 通过 `npm exec --yes --package=bun@1.4.4 -- bun run check:bun` 从 npm 缓存临时运行，不增加项目依赖。此前 **magpie 0.1.2911／0.1.2964／0.1.3026** 的记录属于历史验证；这些记录均不代表最低支持版本。
+2026-11-05 本地验证使用 **Node.js 24.19.0、Bun 1.4.4、magpie 0.1.3041**。Node 与 Bun 均通过 263 项测试（19 个文件），完整 Magpie 沙箱验证通过。Bun 通过 `npm exec --yes --package=bun@1.4.4 -- bun scripts/check.mjs` 与 `npm exec --yes --package=bun@1.4.4 -- bun test ./test/*.test.mjs` 临时运行，不增加项目依赖或 lockfile。Windows 宿主通过 `MAGPIE_BIN` 指定实际的 `magpie-windows-amd64.exe`。此前 **magpie 0.1.2911／0.1.2964／0.1.3026／0.1.3035** 的记录属于历史验证；这些记录均不代表最低支持版本。
 
 本地文件夹安装以文件夹名作为插件短名称。包名为 `@guotree/magpie-websearch`，文件夹名为 `magpie-websearch` 时，两种安装方式均使用 `magpie-websearch:*` ID。

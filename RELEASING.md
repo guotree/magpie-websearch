@@ -76,6 +76,18 @@ Before bumping the version:
   bodies are cancelled without blocking, and interrupted 401 bodies still permit
   key rotation. Keep domestic REST separate from Step Plan MCP; distinguish
   dummy-key/local-host checks from real-key search and billing verification.
+- For Bocha, check ordinary snippets by default, explicit generated-summary opt-in,
+  freshness passthrough, original date strings, nullable webPages and strict data
+  validation. Preserve code/log_id before bounded diagnostics and HTTP status on
+  interrupted refusal bodies. Do not publish unverified summary pricing, trial
+  eligibility, QPS or empty-result billing claims.
+- For Ollama cloud search, require the supplied account key, cap max_results at 10,
+  truncate content by Unicode code points and omit undocumented dates. Distinguish
+  free account access from anonymous search and model subscriptions from search quotas.
+- For both, verify exact URLs, isolated caches, timeout/host cancellation, 429
+  Retry-After (including zero), Linkup fallback and ordered key rotation on 429
+  and interrupted 401 bodies. Report local dummy-key proof separately from real-key
+  success, billing, quality and live limits.
 - Run `npm pack --dry-run` and check that the entry, `src/`, `docs/` and
   `assets/icon-128.png` are included. Keep runtime files committed so GitHub installs
   work without a build.
