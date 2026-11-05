@@ -2,6 +2,40 @@
 // at v4.6.1, with expected results in magpie's { title, url, text, age? } shape.
 // Cases cover full content, snippet fallback, missing URLs and image filtering.
 
+// Standalone search schemas read 2026-11-05; synthetic malformed rows exercise
+// filtering. These are not real account responses.
+// https://docs.bigmodel.cn/api-reference/工具-api/网络搜索
+// https://docs.z.ai/api-reference/tools/web-search
+export const ZHIPU_CASE = {
+  response: {
+    id: "search-cn", created: 1793836800,
+    search_result: [
+      { title: "No link", content: "dropped" },
+      { title: "Zhipu hit", link: "https://example.com/zhipu", content: "Zhipu snippet", publish_date: "2025-05-23", media: "Example", refer: "ref_1" },
+      { link: "https://example.com/zhipu-bare", content: null },
+    ],
+  },
+  expected: [
+    { title: "Zhipu hit", url: "https://example.com/zhipu", text: "Zhipu snippet", age: "2025-05-23" },
+    { title: "https://example.com/zhipu-bare", url: "https://example.com/zhipu-bare", text: "" },
+  ],
+}
+
+export const ZAI_CASE = {
+  response: {
+    id: "search-intl", created: 1793836800,
+    search_result: [
+      { title: "Z.ai hit", link: "https://example.com/zai", content: "Z.ai snippet", publish_date: "2025-05-23" },
+      { title: "No link", content: "dropped" },
+      { link: "https://example.com/zai-bare" },
+    ],
+  },
+  expected: [
+    { title: "Z.ai hit", url: "https://example.com/zai", text: "Z.ai snippet", age: "2025-05-23" },
+    { title: "https://example.com/zai-bare", url: "https://example.com/zai-bare", text: "" },
+  ],
+}
+
 export const ANYSEARCH_CASE = {
   response: {
     code: 0,

@@ -36,14 +36,30 @@ const upstream = createServer(async (req, res) => {
   calls.push({ path: req.url, method: req.method, body, key: req.headers.authorization,
     apiKey: req.headers["x-api-key"], title: req.headers["x-keenable-title"],
     accessMode: req.headers["x-tinyfish-access-mode"] })
-  const query = body?.text_query ?? body?.params?.arguments?.query ?? body?.params?.arguments?.search_queries?.[0] ?? body?.search_queries?.[0] ?? body?.q ?? body?.query ?? target.searchParams.get("query") ?? target.searchParams.get("q")
+  const query = body?.search_query ?? body?.text_query ?? body?.params?.arguments?.query ?? body?.params?.arguments?.search_queries?.[0] ?? body?.search_queries?.[0] ?? body?.q ?? body?.query ?? target.searchParams.get("query") ?? target.searchParams.get("q")
   if (query === "rate limited") {
     res.writeHead(429, { "Retry-After": body?.q ? "30" : "120" }).end("slow down")
     return
   }
   if (query === "timeout") return
   res.setHeader("Content-Type", "application/json")
-  if (target.pathname.startsWith("/moonshot/") || target.pathname.startsWith("/moonshot-cn/")) {
+  if (target.pathname.startsWith("/zhipu/") || target.pathname.startsWith("/zai/")) {
+    const id = target.pathname.startsWith("/zhipu/") ? "zhipu" : "zai"
+    if (query === `${id} refusal` || req.headers.authorization === `Bearer ${id}-resting-dummy-key`) {
+      res.writeHead(429, { "Retry-After": "0007" })
+      res.end(JSON.stringify({ error: { code: "1113", message: "search balance exhausted" } }))
+    } else if (query === `${id} empty`) {
+      res.end(JSON.stringify({ search_result: [] }))
+    } else if (query === `${id} business error`) {
+      res.end(JSON.stringify({ code: 1703, message: "no valid data", search_result: [] }))
+    } else {
+      res.end(JSON.stringify({ search_result: [
+        { title: "Missing link", content: "Drop before applying cap" },
+        { title: `${id} smoke page`, link: `https://example.com/${id}`, content: `${id} snippet result`, publish_date: "2025-05-23" },
+        { title: "Over the local cap", link: `https://example.com/${id}-extra`, content: "Must be capped" },
+      ] }))
+    }
+  } else if (target.pathname.startsWith("/moonshot/") || target.pathname.startsWith("/moonshot-cn/")) {
     const isCN = target.pathname.startsWith("/moonshot-cn/")
     const tag = isCN ? "Moonshot CN" : "Moonshot"
     if ((!isCN && ["moonshot refusal", "moonshot milliseconds", "moonshot oversized reset"].includes(query)) || req.headers.authorization === "Bearer moonshot-resting-dummy-key") {
@@ -173,10 +189,14 @@ try {
   console.log("Loading the plugin in an isolated magpie configuration…")
   await run("plugin", "add", root)
   const definitions = await loadedSearches()
-  assert.deepEqual(definitions.map((entry) => entry.id).sort(), ["anysearch", "keenable", "linkup", "metaso", "moonshot", "moonshot-cn", "parallel", "querit", "serpapi", "tinyfish"])
+  assert.deepEqual(definitions.map((entry) => entry.id).sort(), ["anysearch", "keenable", "linkup", "metaso", "moonshot", "moonshot-cn", "parallel", "querit", "serpapi", "tinyfish", "zai", "zhipu"])
   assert.deepEqual(definitions.filter((entry) => entry.keyOptional).map((entry) => entry.id).sort(), ["anysearch", "keenable", "parallel", "tinyfish"])
   await run("plugin", "options", root, JSON.stringify({ enable: ["moonshot", "moonshot-cn"], disable: ["moonshot-cn"] }))
   assert.deepEqual(await loadedIDs(), ["moonshot"])
+  await run("plugin", "options", root, JSON.stringify({ enable: ["zhipu", "zai"], disable: ["zai"] }))
+  assert.deepEqual(await loadedIDs(), ["zhipu"])
+  await run("plugin", "options", root, JSON.stringify({ enable: ["zai"] }))
+  assert.deepEqual(await loadedIDs(), ["zai"])
   await run("plugin", "options", root, JSON.stringify({ enable: ["linkup", "querit"], disable: ["querit"] }))
   assert.deepEqual(await loadedIDs(), ["linkup"])
   await run("plugin", "options", root, JSON.stringify({
@@ -188,6 +208,8 @@ try {
     parallel: { maxResults: 1, mode: "fast", cacheTTL: 0, timeout: 500 },
     serpapi: { maxResults: 1, hl: "en", gl: "us", cacheTTL: 0, timeout: 500 },
     tinyfish: { maxResults: 1, language: "zh", cacheTTL: 0, timeout: 500 },
+    zhipu: { engine: "search_pro_sogou", contentSize: "high", recency: "oneWeek", maxResults: 1, cacheTTL: 0, timeout: 500 },
+    zai: { maxResults: 1, cacheTTL: 0, timeout: 500 },
   }))
   await run("search", "add", "magpie-websearch:linkup", "smoke-dummy-key", `url=http://127.0.0.1:${upstream.address().port}/proxy/v1/search`)
   gateway = spawn(binary, ["serve"], { cwd: root, env, stdio: ["ignore", "pipe", "pipe"] })
@@ -520,7 +542,65 @@ try {
   assert.equal(calls.at(-1).key, "Bearer moonshot-cn-dummy-key")
   await run("search", "rm", "magpie-websearch:moonshot")
   await run("search", "rm", "magpie-websearch:moonshot-cn")
-  console.log("✓ magpie loads ten APIs, filters registrations, applies options/custom URLs, handles timeout/429, and runs anonymous search with cooldown and fallback; Parallel and TinyFish support MCP JSON/SSE and keyed REST; SerpApi supports keyed REST with URL auth and leak protection; Moonshot dual sites support Basic REST with Bearer auth, limit, snippets/full text, and X-RateLimit-Reset cooldown")
+  console.log("Checking Zhipu/Z.ai REST, engine sizing, business errors, timeout, key rotation and separate credentials…")
+  for (const id of ["zhipu", "zai"]) {
+    const searchURL = `http://127.0.0.1:${upstream.address().port}/${id}/search`
+    await run("search", "add", `magpie-websearch:${id}`, `${id}-dummy-key`, `url=${searchURL}`)
+    await run("search", "move", `magpie-websearch:${id}`, "1")
+    const result = await search(`${id} smoke 中文`)
+    assert.ok(result.includes(`https://example.com/${id}`), result)
+    assert.ok(!result.includes(`${id}-extra`), result)
+    assert.ok(result.includes(`${id} snippet result`), result)
+    const call = calls.at(-1)
+    assert.equal(call.path, `/${id}/search`)
+    assert.equal(call.method, "POST")
+    assert.equal(call.key, `Bearer ${id}-dummy-key`)
+    assert.deepEqual(call.body, {
+      search_query: `${id} smoke 中文`,
+      search_engine: id === "zhipu" ? "search_pro_sogou" : "search-prime",
+      ...(id === "zhipu" ? { search_intent: false, count: 10, content_size: "high", search_recency_filter: "oneWeek" } : { count: 1 }),
+    })
+    assert.match(await failure(`${id} empty`), /found nothing/)
+    assert.match(await failure(`${id} business error`), /1703.*|no valid data/)
+    assert.match(await failure("timeout"), /search timed out after 500ms/)
+    if (id === "zhipu") {
+      const beforeLongQuery = calls.length
+      assert.match(await failure("搜".repeat(71)), /1–70 characters/)
+      assert.equal(calls.length, beforeLongQuery, "reject a long cn query without sending or truncating it")
+    }
+    const refusal = await failure(`${id} refusal`)
+    assert.match(refusal, /429/)
+    assert.match(refusal, /retry after 7s/)
+    assert.match(refusal, /search balance exhausted/)
+    await run("search", "rm", `magpie-websearch:${id}`)
+    await run("search", "add", `magpie-websearch:${id}`,
+      `${id}-resting-dummy-key,${id}-good-dummy-key`, `url=${searchURL}`, "pick=order")
+    await run("search", "move", `magpie-websearch:${id}`, "1")
+    const beforeRotation = calls.length
+    assert.ok((await search(`${id} rotation`)).includes(`https://example.com/${id}`))
+    assert.equal(calls.length, beforeRotation + 2)
+    assert.equal(calls.at(-2).key, `Bearer ${id}-resting-dummy-key`)
+    assert.equal(calls.at(-1).key, `Bearer ${id}-good-dummy-key`)
+    const beforeRest = calls.length
+    await search(`${id} healthy preference`)
+    assert.equal(calls.length, beforeRest + 1)
+    assert.equal(calls.at(-1).key, `Bearer ${id}-good-dummy-key`)
+    await run("search", "rm", `magpie-websearch:${id}`)
+  }
+  await run("search", "add", "magpie-websearch:zhipu", "cn-only-dummy-key", `url=http://127.0.0.1:${upstream.address().port}/zhipu/search`)
+  await run("search", "add", "magpie-websearch:zai", "intl-only-dummy-key", `url=http://127.0.0.1:${upstream.address().port}/zai/search`)
+  await run("search", "move", "magpie-websearch:zhipu", "1")
+  await run("search", "move", "magpie-websearch:zai", "2")
+  const beforeZhipuFallback = calls.length
+  assert.match(await search("zhipu refusal"), /example\.com\/zai/)
+  assert.equal(calls.length, beforeZhipuFallback + 2)
+  assert.equal(calls.at(-2).path, "/zhipu/search")
+  assert.equal(calls.at(-2).key, "Bearer cn-only-dummy-key")
+  assert.equal(calls.at(-1).path, "/zai/search")
+  assert.equal(calls.at(-1).key, "Bearer intl-only-dummy-key")
+  await run("search", "rm", "magpie-websearch:zhipu")
+  await run("search", "rm", "magpie-websearch:zai")
+  console.log("✓ magpie loads twelve APIs; registration, options, custom URLs, timeouts, errors, anonymous cooldown, keyed rotation and fallback pass; Zhipu/Z.ai use separate REST credentials and engine parameters")
 } catch (error) {
   console.error(gatewayLog)
   throw error

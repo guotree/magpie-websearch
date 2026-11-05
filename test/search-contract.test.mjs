@@ -3,9 +3,9 @@ import assert from "node:assert/strict"
 import { WebSearch } from "../index.mjs"
 import { resolveEndpoint } from "../src/core.mjs"
 import { context, json, stubFetch } from "./harness.mjs"
-import { ANYSEARCH_CASE, KEENABLE_CASE, LINKUP_CASE, METASO_CASE, MOONSHOT_CASE, MOONSHOT_CN_CASE, PARALLEL_CASE, QUERIT_CASE, SERPAPI_CASE, TINYFISH_CASE } from "./cases.mjs"
+import { ANYSEARCH_CASE, KEENABLE_CASE, LINKUP_CASE, METASO_CASE, MOONSHOT_CASE, MOONSHOT_CN_CASE, PARALLEL_CASE, QUERIT_CASE, SERPAPI_CASE, TINYFISH_CASE, ZAI_CASE, ZHIPU_CASE } from "./cases.mjs"
 
-const fixtures = { anysearch: ANYSEARCH_CASE, keenable: KEENABLE_CASE, linkup: LINKUP_CASE, metaso: METASO_CASE, moonshot: MOONSHOT_CASE, "moonshot-cn": MOONSHOT_CN_CASE, parallel: PARALLEL_CASE, querit: QUERIT_CASE, serpapi: SERPAPI_CASE, tinyfish: TINYFISH_CASE }
+const fixtures = { anysearch: ANYSEARCH_CASE, keenable: KEENABLE_CASE, linkup: LINKUP_CASE, metaso: METASO_CASE, moonshot: MOONSHOT_CASE, "moonshot-cn": MOONSHOT_CN_CASE, parallel: PARALLEL_CASE, querit: QUERIT_CASE, serpapi: SERPAPI_CASE, tinyfish: TINYFISH_CASE, zai: ZAI_CASE, zhipu: ZHIPU_CASE }
 
 test("custom Base URL uses the exact endpoint as given and validates HTTP(S)", () => {
   for (const [base, want] of [

@@ -8,6 +8,8 @@ import { createParallel } from "./src/providers/parallel.mjs"
 import { createQuerit } from "./src/providers/querit.mjs"
 import { createSerpapi } from "./src/providers/serpapi.mjs"
 import { createTinyfish } from "./src/providers/tinyfish.mjs"
+import { createZai } from "./src/providers/zai.mjs"
+import { createZhipu } from "./src/providers/zhipu.mjs"
 import { optionGroup } from "./src/core.mjs"
 
 const PROVIDERS = [
@@ -21,6 +23,8 @@ const PROVIDERS = [
   ["querit", createQuerit],
   ["serpapi", createSerpapi],
   ["tinyfish", createTinyfish],
+  ["zai", createZai],
+  ["zhipu", createZhipu],
 ]
 const KNOWN = new Set(PROVIDERS.map(([id]) => id))
 const WARNING = "[magpie-websearch]"
