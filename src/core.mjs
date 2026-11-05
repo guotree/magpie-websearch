@@ -10,20 +10,34 @@ export function optionGroup(options, name) {
   throw new TypeError(`${name} options must be an object`)
 }
 
+function configNamespace(name, env) {
+  // Strip the complete option suffix: MOONSHOT_CN_CACHE_TTL -> moonshot-cn.
+  const suffix = "_" + name
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1_$2")
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .toUpperCase()
+  if (env.endsWith(suffix) && env.length > suffix.length) {
+    return env.slice(0, -suffix.length).toLowerCase().replaceAll("_", "-")
+  }
+  // Aliased environment fields keep the legacy inference; namespace can override it.
+  return env.split("_")[0].toLowerCase()
+}
+
 // Explicit options win over environment variables. Invalid explicit
 // values fail loading with a useful error instead of silently changing a tier.
-export function configInt(options, name, env, fallback, min = 0, max = Number.MAX_SAFE_INTEGER) {
+// An optional namespace names error fields independently of the environment key.
+export function configInt(options, name, env, fallback, min = 0, max = Number.MAX_SAFE_INTEGER, namespace) {
   if (options[name] === undefined) return clamp(envInt(env, fallback), min, max)
   const value = options[name]
   if (!Number.isSafeInteger(value) || value < min || value > max) {
-    throw new TypeError(`${env.split("_")[0].toLowerCase()}.${name} must be an integer from ${min} to ${max}`)
+    throw new TypeError(`${namespace ?? configNamespace(name, env)}.${name} must be an integer from ${min} to ${max}`)
   }
   return value
 }
 
-export function configStr(options, name, env, fallback = "", values) {
+export function configStr(options, name, env, fallback = "", values, namespace) {
   const explicit = options[name] !== undefined
-  const field = `${env.split("_")[0].toLowerCase()}.${name}`
+  const field = `${namespace ?? configNamespace(name, env)}.${name}`
   if (explicit && typeof options[name] !== "string") throw new TypeError(`${field} must be a string`)
   const value = explicit ? options[name].trim() : envStr(env) || fallback
   if (!values || values.includes(value)) return value
@@ -226,8 +240,15 @@ export function cleanRetryAfter(raw) {
 // A custom reader shares the HTTP errors and the deadline, including while
 // consuming a streaming response. JSON providers keep the default text reader.
 export async function requestResponse(input, init, ctx, options = {}, read) {
-  const { label = "search", timeout = 25_000, messages = {}, sensitive = false } = options
+  const { label = "search", timeout = 25_000, messages = {}, sensitive = false, retryAfterFromResponse } = options
   const signal = signalFor(ctx, timeout)
+
+  const extractRetry = (res) => {
+    if (typeof retryAfterFromResponse === "function") {
+      return retryAfterFromResponse(res)
+    }
+    return sensitive ? cleanRetryAfter(res.headers.get("Retry-After")) : res.headers.get("Retry-After")
+  }
 
   let response
   try {
@@ -245,7 +266,7 @@ export async function requestResponse(input, init, ctx, options = {}, read) {
     // Cleanup must not delay a known refusal, even if a transport's cancel
     // promise never settles. Handle rejection without retaining its details.
     try { response.body?.cancel().catch(() => {}) } catch {}
-    const retry = cleanRetryAfter(response.headers.get("Retry-After"))
+    const retry = extractRetry(response)
     const custom = messages[response.status]
     const defaultMsg = response.status === 400 ? "bad request"
       : response.status === 401 ? "invalid API key"
@@ -262,7 +283,7 @@ export async function requestResponse(input, init, ctx, options = {}, read) {
   // A 402 body can carry freshly generated credentials (AnySearch does), so a
   // provider with a custom 402 message has its body withheld, not echoed.
   if (!response.ok && response.status === 402 && messages[402]) {
-    throw apiError(402, messages[402], response.headers.get("Retry-After"))
+    throw apiError(402, messages[402], extractRetry(response))
   }
 
   let raw
@@ -270,7 +291,7 @@ export async function requestResponse(input, init, ctx, options = {}, read) {
     raw = await (response.ok && read ? read(response, signal) : response.text())
   } catch (error) {
     if (response.status === 429) {
-      const retry = response.headers.get("Retry-After")
+      const retry = extractRetry(response)
       throw apiError(429, `${label} API error 429: response body unavailable${retryHint(retry)}`, retry)
     }
     if (ctx?.abort?.aborted) throw new Error(`${label} search cancelled`)
@@ -282,7 +303,7 @@ export async function requestResponse(input, init, ctx, options = {}, read) {
   }
 
   if (!response.ok) {
-    const retry = response.headers.get("Retry-After")
+    const retry = extractRetry(response)
     const custom = messages[response.status]
     let message = custom ?? `${label} API error ${response.status}: ${boundDetail(raw)}`
     if (response.status === 429) message += retryHint(retry)
