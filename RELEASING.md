@@ -42,7 +42,8 @@ Before bumping the version:
 
 - Run `npm run check`, `npm run check:bun` and `npm run smoke:magpie`.
 - Record the magpie version verified by the smoke test in the release notes.
-- Keep [README's configuration reference](README.md#configuration) and the
+- Keep the Chinese and English READMEs, both versions of the
+  [configuration reference](docs/technical-reference.en.md#configuration), and the
   [provider checklist](PROVIDERS.md#adding-a-provider) in sync with any option changes.
   All options are optional: omitted `enable`/`disable` register every API;
   `enable: []` registers none, `disable: []` excludes none, and `disable` wins
@@ -58,7 +59,12 @@ Before bumping the version:
   [src/mcp.mjs](src/mcp.mjs) included in the
   npm package. Distinguish live anonymous verification from local fake-service
   checks; do not claim a live keyed success or an anonymous quota without evidence.
-- Run `npm pack --dry-run` and check that the entry, `src/` and `assets/icon.png`
+- For both Moonshot sites, check independent registration and credentials, Basic
+  request limits, snippet/full-text mapping, seconds/milliseconds reset headers,
+  excessive-reset omission, key rotation and explicit fallback. Keep both entry
+  modules and the shared factory in the package. Report local dummy-key verification
+  separately from any successful live search with real account keys.
+- Run `npm pack --dry-run` and check that the entry, `src/`, `docs/` and `assets/icon.png`
   are included. Keep runtime files committed so GitHub installs work without a build.
 - If `assets/icon.png` changes, change the `magpie.icon` URL's `v` parameter in
   `package.json` too. magpie caches a successful icon URL; new bytes at the same
