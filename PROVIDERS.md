@@ -11,6 +11,8 @@ standalone search API.
 |---|---|---|---|
 | AnySearch (magpie-websearch) | `magpie-websearch:anysearch` | [anysearch.mjs](src/providers/anysearch.mjs) | optional |
 | Bocha (magpie-websearch) | `magpie-websearch:bocha` | [bocha.mjs](src/providers/bocha.mjs) | required |
+| Jina (magpie-websearch) | `magpie-websearch:jina` | [jina.mjs](src/providers/jina.mjs) | required |
+| Kagi (magpie-websearch) | `magpie-websearch:kagi` | [kagi.mjs](src/providers/kagi.mjs) | required |
 | Keenable (magpie-websearch) | `magpie-websearch:keenable` | [keenable.mjs](src/providers/keenable.mjs) | optional |
 | Linkup (magpie-websearch) | `magpie-websearch:linkup` | [linkup.mjs](src/providers/linkup.mjs) | required |
 | Metaso (magpie-websearch) | `magpie-websearch:metaso` | [metaso.mjs](src/providers/metaso.mjs) | required |
@@ -21,6 +23,7 @@ standalone search API.
 | Perplexity (magpie-websearch) | `magpie-websearch:perplexity` | [perplexity.mjs](src/providers/perplexity.mjs) | required |
 | Querit (magpie-websearch) | `magpie-websearch:querit` | [querit.mjs](src/providers/querit.mjs) | required |
 | SerpApi (magpie-websearch) | `magpie-websearch:serpapi` | [serpapi.mjs](src/providers/serpapi.mjs) | required |
+| Serper (magpie-websearch) | `magpie-websearch:serper` | [serper.mjs](src/providers/serper.mjs) | required |
 | StepFun (magpie-websearch) | `magpie-websearch:stepfun` | [stepfun.mjs](src/providers/stepfun.mjs) | required |
 | TinyFish (magpie-websearch) | `magpie-websearch:tinyfish` | [tinyfish.mjs](src/providers/tinyfish.mjs) | optional |
 | Z.ai (magpie-websearch) | `magpie-websearch:zai` | [zai.mjs](src/providers/zai.mjs) | required |
@@ -31,7 +34,7 @@ This suffix identifies the plugin in magpie's GUI and CLI. Keep the short API ID
 and the namespaced vendor ID independent of the display name; suffix changes
 must not rename the IDs used by saved keys, switches, order or plugin options.
 
-All sixteen APIs are registered by default. `enable` and `disable` are optional
+All nineteen APIs are registered by default. `enable` and `disable` are optional
 plugin options that filter this list by short ID (`linkup`, for example).
 `disable` takes precedence over `enable`; `enable: []` registers none, while
 `disable: []` excludes none. Provider settings such as `linkup.depth` do not
@@ -314,29 +317,34 @@ and other endpoints are independent of that cooldown. See
   valid empty results for at most 30 seconds. See the
   [technical reference](docs/technical-reference.en.md#ollama-search).
 
+### Jina protocol notes
+
+- Sourced from official [Jina Search API documentation](https://docs.jina.ai/api.md) and [Search OpenAPI](https://s.jina.ai/openapi.json) read 2026-11-05.
+- POST `https://s.jina.ai/search`, Bearer key authentication.
+- Snippet mode (`content: "snippet"`, default) sends `X-Respond-With: no-content` and extracts `description`. Full mode (`content: "full"`) omits `X-Respond-With: no-content` and prioritizes `content`, falling back to `description`. `contentChars` (default 4000; 0 for full) bounds code points in both modes. Note: Jina search pricing is based on a fixed token charge per request from 10,000 tokens; snippet mode does not guarantee reduced billing.
+- `publishedTime` mapped directly to `age`; missing dates are omitted rather than guessed from text.
+- Validated via unit tests, dummy keys, and real Magpie 0.1.3041 host sandbox tests covering endpoint routing, headers, truncation, empty results, malformed data, timeouts, 429 Retry-After, Linkup fallback, and sequential key rotation. Real account search quality, billing, and live rate limits remain unverified without a user-provided API key.
+
+### Kagi protocol notes
+
+- Sourced from official [Kagi Search API documentation](https://redocly-api-docs.kagi.com/api/docs/openapi/search/search.md) and [announcement](https://form.kagi.com/searchapi) read 2026-11-05.
+- The Kagi Search API is in public **preview** for all Kagi users since 2026-05.
+- POST `https://kagi.com/api/v1/search`, Bearer key authentication, `workflow: "search"`.
+- Supports `lens` (named or shared URL), `recency` (`day`, `week`, `month`), and `region` (filters.region). Lens takes priority over recency with a single factory warning. The expensive `extract` parameter is not requested.
+- `data.search` mapped to `{ title, url, snippet, age: time }`. Other collections (e.g. `news`, `images`) without `search` return an empty list `[]`.
+- Validated via unit tests, dummy keys, and real Magpie 0.1.3041 host sandbox tests. Real account access, billing, and live rate limits remain unverified without a user-provided API key.
+
+### Serper protocol notes
+
+- Sourced from official [Serper documentation](https://serper.dev/) and current playground script read 2026-11-05.
+- POST `https://google.serper.dev/search`, `X-API-KEY` header (independent from SerpApi Bearer / URL query).
+- Wire `num: 10` is fixed for standard single-page Google organic search; local capping via `maxResults` (1–10) and `count` bounds the returned results. Identity includes the local limit to isolate caches.
+- Rich-media collections (`knowledgeGraph`, `answerBox`, `peopleAlsoAsk`, `relatedSearches`) without `organic` fall back to `[]`, while arbitrary objects missing `organic` throw invalid response.
+- Validated via unit tests, dummy keys, and real Magpie 0.1.3041 host sandbox tests covering endpoint routing, header isolation against SerpApi, empty results, malformed data, timeouts, 429 Retry-After, Linkup fallback, and key rotation. Real account search quality, billing, and live rate limits remain unverified without a user-provided API key.
+
 ## Planned
 
-These candidates are not implemented. IDs are provisional; authentication,
-endpoint details and available features must be verified before implementation.
-
-| Provider | Proposed magpie ID |
-|---|---|
-| Jina | `magpie-websearch:jina` |
-| Kagi | `magpie-websearch:kagi` |
-| Serper | `magpie-websearch:serper` |
-
-The candidate list was checked on **2026-11-05** against magpie commit
-[`47d58393`](https://github.com/yetone/magpie/tree/47d5839397b1141dbd0394d2080aa6e76753a439).
-None of the planned candidates appears in that revision's
-[built-in search APIs](https://github.com/yetone/magpie/blob/47d5839397b1141dbd0394d2080aa6e76753a439/internal/provider/search_api.go).
-
-Exclude a candidate from the roadmap only when magpie already integrates the
-corresponding standalone web search API. A model provider preset or a model's
-built-in search capability is not sufficient: neither establishes that magpie
-can call the vendor's standalone search API independently of the selected model.
-Before starting an integration, recheck magpie's official search support and
-remove candidates whose corresponding search API magpie has since integrated.
-A custom user-configured endpoint is not a built-in integration.
+All third-batch planned standalone web search APIs (Jina, Kagi, Serper) have now been integrated.
 
 ## Adding a provider
 

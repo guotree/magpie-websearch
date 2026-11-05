@@ -31,7 +31,7 @@ magpie search add magpie-websearch:linkup <key>
 magpie search
 ```
 
-All sixteen APIs are registered by default without plugin options. Magpie's Web search settings determine which APIs are used.
+All nineteen APIs are registered by default without plugin options. Magpie's Web search settings determine which APIs are used.
 
 Leave **Base URL** empty for official services. A custom address must be the complete endpoint; the plugin does not append paths. See [Custom Base URL](docs/technical-reference.en.md#custom-base-url).
 
@@ -49,6 +49,8 @@ Each command replaces the complete saved options object, so include every option
 |---|---|---|---|
 | AnySearch | `magpie-websearch:anysearch` | optional | Intent routing, `cn`/`intl` zones, Markdown/JSON output |
 | Bocha | `magpie-websearch:bocha` | required | Standalone China REST search, snippet default with optional generated summary, freshness filters |
+| Jina | `magpie-websearch:jina` | required | Dedicated Jina Search endpoint, snippet default with optional full text truncation and publishedTime |
+| Kagi | `magpie-websearch:kagi` | required | Kagi Search API in public preview, with Lens, recency, and region filters |
 | Keenable | `magpie-websearch:keenable` | optional | Anonymous or keyed search, `pro`/`realtime` modes |
 | Linkup | `magpie-websearch:linkup` | required | Query-relevant excerpts with four search depths |
 | Metaso | `magpie-websearch:metaso` | required | Metaso search with scopes such as webpages and papers |
@@ -59,6 +61,7 @@ Each command replaces the complete saved options object, so include every option
 | Perplexity | `magpie-websearch:perplexity` | required | Standalone Search API, `web`/`fast` modes, recency and country/language filters |
 | Querit | `magpie-websearch:querit` | required | Snippets or sentence-level matches |
 | SerpApi | `magpie-websearch:serpapi` | required | Google organic search with geography, language and safe-search settings |
+| Serper | `magpie-websearch:serper` | required | Alternative Google organic search, single-page 10 results, geography, language and tbs filters |
 | StepFun | `magpie-websearch:stepfun` | required | Standalone China REST search with scenario preferences and snippet/full text selection |
 | TinyFish | `magpie-websearch:tinyfish` | optional | Anonymous MCP or keyed REST; web, news and papers (papers require a key) |
 | Z.ai | `magpie-websearch:zai` | required | Standalone REST search on Zhipu's international site using `search-prime` |

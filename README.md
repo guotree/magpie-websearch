@@ -31,7 +31,7 @@ magpie search add magpie-websearch:linkup <key>
 magpie search
 ```
 
-默认注册全部 16 个 API，无需设置插件选项。Magpie 的网页搜索设置决定实际使用哪些 API。
+默认注册全部 19 个 API，无需设置插件选项。Magpie 的网页搜索设置决定实际使用哪些 API。
 
 使用官方服务时，将 **Base URL** 留空；自定义地址应填写完整端点，插件不会追加路径。详见[自定义 Base URL](docs/technical-reference.md#custom-base-url)。
 
@@ -49,6 +49,8 @@ magpie plugin options magpie-websearch '{"linkup":{"depth":"deep","maxResults":4
 |---|---|---|---|
 | AnySearch | `magpie-websearch:anysearch` | 可选 | 意图路由、`cn`／`intl` 分区、Markdown／JSON 输出 |
 | Bocha | `magpie-websearch:bocha` | 必填 | 博查中文搜索，默认普通摘要、可选生成摘要与时效筛选 |
+| Jina | `magpie-websearch:jina` | 必填 | Jina Search 专用端点，默认摘要、可选全文正文截断与时效映射 |
+| Kagi | `magpie-websearch:kagi` | 必填 | Kagi Search API 公开 Preview，支持 Lens、时间与地区过滤 |
 | Keenable | `magpie-websearch:keenable` | 可选 | 匿名或带 Key 搜索，支持 `pro`／`realtime` 模式 |
 | Linkup | `magpie-websearch:linkup` | 必填 | 查询相关摘录，支持四档检索深度 |
 | Metaso | `magpie-websearch:metaso` | 必填 | 秘塔搜索，支持网页、论文等搜索范围 |
@@ -59,6 +61,7 @@ magpie plugin options magpie-websearch '{"linkup":{"depth":"deep","maxResults":4
 | Perplexity | `magpie-websearch:perplexity` | 必填 | 官方独立 Search API，支持 `web`／`fast` 模式、时效与国家／语言筛选 |
 | Querit | `magpie-websearch:querit` | 必填 | 摘要或句子级匹配内容 |
 | SerpApi | `magpie-websearch:serpapi` | 必填 | Google 自然搜索，支持地区、语言和安全搜索配置 |
+| Serper | `magpie-websearch:serper` | 必填 | Google 自然搜索备用渠道，当前单页 10 条、支持地区语言与 tbs 筛选 |
 | StepFun | `magpie-websearch:stepfun` | 必填 | 阶跃星辰国内站独立 REST 搜索，支持场景偏好、摘要／正文选择 |
 | TinyFish | `magpie-websearch:tinyfish` | 可选 | 匿名 MCP 或带 Key REST；网页、新闻和论文搜索（论文需 Key） |
 | Z.ai | `magpie-websearch:zai` | 必填 | 智谱国际站独立 REST 搜索，使用 `search-prime` |

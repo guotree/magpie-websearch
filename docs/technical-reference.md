@@ -23,9 +23,9 @@
 在 Magpie 桌面客户端中：前往 **设置 › 模型 › 网页搜索**（Settings › Models › Web search），添加你需要的搜索引擎，开启开关并调整优先级顺序。
 
 - 对于 AnySearch、Keenable、Parallel、TinyFish，留空 Key 即可使用匿名免 Key 搜索；填写 Key 则使用你的私人账户额度。
-- 对于 Bocha、Linkup、Metaso、Moonshot、Moonshot CN、Ollama、Perplexity、Querit、SerpApi、StepFun、Z.ai、Zhipu，必须填写对应的 API Key。
+- 对于 Bocha、Jina、Kagi、Linkup、Metaso、Moonshot、Moonshot CN、Ollama、Perplexity、Querit、SerpApi、Serper、StepFun、Z.ai、Zhipu，必须填写对应的 API Key。
 
-无需强制配置插件选项。在未配置过滤选项时，默认注册全部 16 个搜索 API，由 Magpie 的网页搜索设置界面决定启用哪些和使用顺序。
+无需强制配置插件选项。在未配置过滤选项时，默认注册全部 19 个搜索 API，由 Magpie 的网页搜索设置界面决定启用哪些和使用顺序。
 
 <a id="custom-base-url"></a>
 
@@ -393,6 +393,20 @@ magpie plugin options magpie-websearch '{"linkup":{"depth":"deep","maxResults":4
 | bocha | `maxResults` | `BOCHA_MAX_RESULTS` | `10` | 1–50；请求及本地结果上限 |
 | bocha | `freshness` | `BOCHA_FRESHNESS` | 留空 | 时间筛选，如 `oneWeek`、`YYYY-MM-DD..YYYY-MM-DD`；留空时不发送 |
 | bocha | `summary` | `BOCHA_SUMMARY` | `false` | `false`（普通摘要）、`true`（生成摘要）；显式布尔值 |
+| jina | `cacheTTL` | `JINA_CACHE_TTL` | `600000` | 缓存时间（毫秒），≥ 0 |
+| jina | `content` | `JINA_CONTENT` | `snippet` | `snippet`（摘要）、`full`（全文正文） |
+| jina | `timeout` | `JINA_TIMEOUT` | 摘要 `25000`；全文 `60000` | 0–2147483647 毫秒；0 关闭插件超时，保留宿主取消；覆盖模式默认 |
+| jina | `maxResults` | `JINA_MAX_RESULTS` | `10` | 1–20；请求及本地结果上限 |
+| jina | `contentChars` | `JINA_CONTENT_CHARS` | `4000` | 每条文本的 Unicode 码点上限；0 保留全部 |
+| jina | `gl` | `JINA_GL` | 留空 | 国家代码，例如 `us` |
+| jina | `hl` | `JINA_HL` | 留空 | 语言代码，例如 `zh-cn` |
+| jina | `location` | `JINA_LOCATION` | 留空 | 城市或地理位置字符串 |
+| kagi | `cacheTTL` | `KAGI_CACHE_TTL` | `600000` | 缓存时间（毫秒），≥ 0 |
+| kagi | `timeout` | `KAGI_TIMEOUT` | `25000` | 0–2147483647 毫秒；0 关闭插件超时，保留宿主取消 |
+| kagi | `maxResults` | `KAGI_MAX_RESULTS` | `10` | 1–1024；请求及本地结果上限 |
+| kagi | `lens` | `KAGI_LENS` | 留空 | 命名或共享 Lens ID / URL；优先于 `recency` |
+| kagi | `recency` | `KAGI_RECENCY` | 留空 | 留空、`day`、`week`、`month`；未设 lens 时生效 |
+| kagi | `region` | `KAGI_REGION` | 留空 | 国家代码，如 `cn`、`us`，映射 `filters.region` |
 | keenable | `cacheTTL` | `KEENABLE_CACHE_TTL` | `600000` | 缓存时间（毫秒），≥ 0 |
 | keenable | `maxResults` | `KEENABLE_MAX_RESULTS` | `10` | 1–50 |
 | keenable | `mode` | `KEENABLE_MODE` | 留空 | 留空、`pro`、`realtime` |
@@ -446,6 +460,12 @@ magpie plugin options magpie-websearch '{"linkup":{"depth":"deep","maxResults":4
 | serpapi | `hl` | `SERPAPI_HL` | 留空 | 界面语言代码，例如 `zh-cn` |
 | serpapi | `googleDomain` | `SERPAPI_GOOGLE_DOMAIN` | 留空 | Google 域名，例如 `google.com` |
 | serpapi | `safe` | `SERPAPI_SAFE` | 留空 | 留空、`active`、`off` |
+| serper | `cacheTTL` | `SERPER_CACHE_TTL` | `600000` | 缓存时间（毫秒），≥ 0 |
+| serper | `timeout` | `SERPER_TIMEOUT` | `25000` | 0–2147483647 毫秒；0 关闭插件超时，保留宿主取消 |
+| serper | `maxResults` | `SERPER_MAX_RESULTS` | `10` | 1–10；本地截取上限（上游固定单页 10 条） |
+| serper | `gl` | `SERPER_GL` | 留空 | 国家代码，例如 `cn`、`us` |
+| serper | `hl` | `SERPER_HL` | 留空 | 界面语言代码，例如 `zh-cn`、`en` |
+| serper | `tbs` | `SERPER_TBS` | 留空 | 留空、`qdr:h`、`qdr:d`、`qdr:w`、`qdr:m`、`qdr:y` |
 | stepfun | `cacheTTL` | `STEPFUN_CACHE_TTL` | `600000` | 缓存时间（毫秒），≥ 0 |
 | stepfun | `timeout` | `STEPFUN_TIMEOUT` | `25000` | 0–2147483647 毫秒；0 关闭插件超时，保留宿主取消 |
 | stepfun | `maxResults` | `STEPFUN_MAX_RESULTS` | `10` | 1–20；请求及本地结果上限 |
@@ -487,7 +507,7 @@ magpie plugin options magpie-websearch '{"linkup":{"depth":"deep","maxResults":4
 
 | 过滤器设置 | 实际向 Magpie 注册的 API |
 |---|---|
-| 省略未设，或 `{}` | 全部 16 个 API 均注册 |
+| 省略未设，或 `{}` | 全部 19 个 API 均注册 |
 | `"enable": ["linkup", "querit"]` | 仅注册 Linkup 与 Querit |
 | `"disable": ["keenable"]` | 注册除 Keenable 外的其余 API |
 | `"enable": ["linkup", "querit"], "disable": ["querit"]` | 仅注册 Linkup（`disable` 优先级高于 `enable`） |
@@ -510,7 +530,7 @@ magpie plugin options magpie-websearch '{"disable":["keenable"],"linkup":{"depth
 magpie plugin options magpie-websearch off
 ```
 
-全部 16 个 API 会重新注册。供应商配置优先取环境变量，否则使用默认值。若只想移除过滤器，请保存包含所有需要保留的供应商配置的完整选项对象。
+全部 19 个 API 会重新注册。供应商配置优先取环境变量，否则使用默认值。若只想移除过滤器，请保存包含所有需要保留的供应商配置的完整选项对象。
 
 <a id="development"></a>
 

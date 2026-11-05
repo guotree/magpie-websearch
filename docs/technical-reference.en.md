@@ -24,9 +24,9 @@ checks. See the [README](../README.en.md) for installation and quick start, and
 
 In the app: **Settings › Models › Web search**, add each API you want, switch it
 on, and order it. Leave the key empty for anonymous AnySearch, Keenable, Parallel
-or TinyFish, or provide a key to use your account. Bocha, Linkup, Metaso, Moonshot, Moonshot CN, Ollama, Perplexity, Querit, SerpApi, StepFun, Z.ai and Zhipu require a key.
+or TinyFish, or provide a key to use your account. Bocha, Jina, Kagi, Linkup, Metaso, Moonshot, Moonshot CN, Ollama, Perplexity, Querit, SerpApi, Serper, StepFun, Z.ai and Zhipu require a key.
 
-No plugin options are required. With no registration filters, all sixteen APIs are
+No plugin options are required. With no registration filters, all nineteen APIs are
 registered; magpie's Web search settings decide which are configured and used.
 
 <a id="custom-base-url"></a>
@@ -650,7 +650,7 @@ the top-level `enable` and `disable` filters. Omitted provider fields fall back
 to the environment variable or the default listed below.
 
 Use **Plugins → Installed → Options**, or pass a JSON object on the command line.
-For example, change search parameters while keeping all sixteen APIs registered:
+For example, change search parameters while keeping all nineteen APIs registered:
 
 ```sh
 magpie plugin options magpie-websearch '{"linkup":{"depth":"deep","maxResults":4,"timeout":25000,"cacheTTL":600000},"anysearch":{"zone":"cn","language":"zh-CN"}}'
@@ -700,6 +700,20 @@ The table lists fields inside each provider's object (`linkup.depth`, for exampl
 | bocha | `maxResults` | `BOCHA_MAX_RESULTS` | `10` | 1–50; cap on magpie's requested count |
 | bocha | `freshness` | `BOCHA_FRESHNESS` | empty | empty, `noLimit`, `oneDay`, `oneWeek`, `oneMonth`, `oneYear`, or date/date-range |
 | bocha | `summary` | `BOCHA_SUMMARY` | `false` | JSON boolean; `false` snippet only, `true` generated summary with snippet fallback |
+| jina | `cacheTTL` | `JINA_CACHE_TTL` | `600000` | ≥ 0; milliseconds |
+| jina | `content` | `JINA_CONTENT` | `snippet` | `snippet`, `full` |
+| jina | `timeout` | `JINA_TIMEOUT` | snippet `25000`; full `60000` | 0–2147483647 ms; 0 disables plugin timeout, preserving host cancellation; overrides mode default |
+| jina | `maxResults` | `JINA_MAX_RESULTS` | `10` | 1–20; cap on magpie's requested count |
+| jina | `contentChars` | `JINA_CONTENT_CHARS` | `4000` | Code points per text; 0 keeps all |
+| jina | `gl` | `JINA_GL` | empty | Country code, e.g. `us` |
+| jina | `hl` | `JINA_HL` | empty | Language code, e.g. `zh-cn` |
+| jina | `location` | `JINA_LOCATION` | empty | City or geographic location string |
+| kagi | `cacheTTL` | `KAGI_CACHE_TTL` | `600000` | ≥ 0; milliseconds |
+| kagi | `timeout` | `KAGI_TIMEOUT` | `25000` | 0–2147483647 ms; 0 disables plugin timeout, preserving host cancellation |
+| kagi | `maxResults` | `KAGI_MAX_RESULTS` | `10` | 1–1024; cap on magpie's requested count |
+| kagi | `lens` | `KAGI_LENS` | empty | Named or shared Lens ID / URL; overrides `recency` |
+| kagi | `recency` | `KAGI_RECENCY` | empty | empty, `day`, `week`, `month`; effective when lens is empty |
+| kagi | `region` | `KAGI_REGION` | empty | Country code, e.g. `cn`, `us`; maps to `filters.region` |
 | linkup | `cacheTTL` | `LINKUP_CACHE_TTL` | `600000` | ≥ 0 |
 | linkup | `depth` | `LINKUP_DEPTH` | `fast` | `flash`, `fast`, `standard`, `deep` |
 | linkup | `maxResults` | `LINKUP_MAX_RESULTS` | `10` | 1–100; upstream limits also apply |
@@ -748,6 +762,12 @@ The table lists fields inside each provider's object (`linkup.depth`, for exampl
 | serpapi | `hl` | `SERPAPI_HL` | empty | Interface language code, e.g. `zh-cn` |
 | serpapi | `googleDomain` | `SERPAPI_GOOGLE_DOMAIN` | empty | Google domain, e.g. `google.com` |
 | serpapi | `safe` | `SERPAPI_SAFE` | empty | empty, `active`, `off` |
+| serper | `cacheTTL` | `SERPER_CACHE_TTL` | `600000` | ≥ 0; milliseconds |
+| serper | `timeout` | `SERPER_TIMEOUT` | `25000` | 0–2147483647 ms; 0 disables plugin timeout, preserving host cancellation |
+| serper | `maxResults` | `SERPER_MAX_RESULTS` | `10` | 1–10; local cap on magpie's requested count (wire fixed at 10) |
+| serper | `gl` | `SERPER_GL` | empty | Country code, e.g. `cn`, `us` |
+| serper | `hl` | `SERPER_HL` | empty | Interface language code, e.g. `zh-cn`, `en` |
+| serper | `tbs` | `SERPER_TBS` | empty | empty, `qdr:h`, `qdr:d`, `qdr:w`, `qdr:m`, `qdr:y` |
 | stepfun | `cacheTTL` | `STEPFUN_CACHE_TTL` | `600000` | ≥ 0; milliseconds |
 | stepfun | `timeout` | `STEPFUN_TIMEOUT` | `25000` | 0–2147483647 ms; 0 disables the plugin timeout, preserving host cancellation |
 | stepfun | `maxResults` | `STEPFUN_MAX_RESULTS` | `10` | 1–20; upstream and local cap |
@@ -791,12 +811,12 @@ for desktop use.
 ## Optional registration filters
 
 The optional top-level `enable` and `disable` arrays control which APIs the
-plugin registers. Entries use short IDs: `anysearch`, `bocha`, `keenable`, `linkup`,
-`metaso`, `moonshot`, `moonshot-cn`, `ollama`, `parallel`, `perplexity`, `querit`, `serpapi`, `stepfun`, `tinyfish`, `zai`, `zhipu` (without the `magpie-websearch:` prefix).
+plugin registers. Entries use short IDs: `anysearch`, `bocha`, `jina`, `kagi`, `keenable`, `linkup`,
+`metaso`, `moonshot`, `moonshot-cn`, `ollama`, `parallel`, `perplexity`, `querit`, `serpapi`, `serper`, `stepfun`, `tinyfish`, `zai`, `zhipu` (without the `magpie-websearch:` prefix).
 
 | Filters | APIs registered |
 |---|---|
-| Both omitted, or `{}` | All sixteen APIs |
+| Both omitted, or `{}` | All nineteen APIs |
 | `"enable": ["linkup", "querit"]` | Linkup and Querit only |
 | `"disable": ["keenable"]` | All except Keenable |
 | `"enable": ["linkup", "querit"], "disable": ["querit"]` | Linkup only; `disable` wins |
@@ -824,7 +844,7 @@ To remove all saved plugin options, including provider overrides and filters:
 magpie plugin options magpie-websearch off
 ```
 
-All sixteen APIs are registered again. Provider settings use environment
+All nineteen APIs are registered again. Provider settings use environment
 values when present, otherwise their defaults. To remove only the filters,
 save a complete options object containing the provider settings you want to keep.
 
