@@ -1,9 +1,9 @@
 # Providers
 
-This plugin adds search services to magpie. The roadmap includes standalone
-web search APIs that magpie has not already integrated in the official source
-reviewed below. A model provider preset alone does not cover a vendor's
-standalone search API.
+This plugin adds search services to magpie. It targets standalone web search
+APIs that magpie has not already integrated in the official source reviewed
+below; all third-batch candidates (Jina, Kagi, Serper) have now been integrated.
+A model provider preset alone does not cover a vendor's standalone search API.
 
 ## Supported
 
@@ -337,7 +337,7 @@ and other endpoints are independent of that cooldown. See
 ### Serper protocol notes
 
 - Sourced from official [Serper documentation](https://serper.dev/) and current playground script read 2026-11-05.
-- POST `https://google.serper.dev/search`, `X-API-KEY` header (independent from SerpApi Bearer / URL query).
+- POST `https://google.serper.dev/search` with an `X-API-KEY` header and no Bearer/`Authorization` header, independent from SerpApi (which uses a GET `api_key` query parameter, not Bearer auth).
 - Wire `num: 10` is fixed for standard single-page Google organic search; local capping via `maxResults` (1–10) and `count` bounds the returned results. Identity includes the local limit to isolate caches.
 - Rich-media collections (`knowledgeGraph`, `answerBox`, `peopleAlsoAsk`, `relatedSearches`) without `organic` fall back to `[]`, while arbitrary objects missing `organic` throw invalid response.
 - Validated via unit tests, dummy keys, and real Magpie 0.1.3041 host sandbox tests covering endpoint routing, header isolation against SerpApi, empty results, malformed data, timeouts, 429 Retry-After, Linkup fallback, and key rotation. Real account search quality, billing, and live rate limits remain unverified without a user-provided API key.

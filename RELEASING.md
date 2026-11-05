@@ -88,6 +88,33 @@ Before bumping the version:
   Retry-After (including zero), Linkup fallback and ordered key rotation on 429
   and interrupted 401 bodies. Report local dummy-key proof separately from real-key
   success, billing, quality and live limits.
+- For Jina, Kagi and Serper, check the required key and exact POST endpoints:
+  `https://s.jina.ai/search`, `https://kagi.com/api/v1/search` and
+  `https://google.serper.dev/search`. Jina and Kagi authenticate with a Bearer
+  key; Serper uses an `X-API-KEY` header, not Bearer. Confirm the result mapping:
+  Jina reads `data[]` (`description`, or `content` with a `description` fallback;
+  `publishedTime` to `age`), Kagi reads `data.search[]` (`snippet`, `time` to `age`)
+  and Serper reads `organic[]` (`snippet`, `date` to `age`); all three drop entries
+  without a URL before the local cap, with blank titles falling back to the URL.
+- For Jina, verify `content` snippet/full: `X-Respond-With: no-content` only in
+  snippet mode, full text preferring `content` over `description`, and
+  `contentChars` truncation by Unicode code points (default 4000; `0` keeps all),
+  with `maxResults` 1–20 and the wire `num` capped at 20. For Kagi, verify `lens`
+  overriding `recency` (day/week/month) with a factory warning, `lens_id` versus
+  `lens.time_relative`, `region` via `filters.region` and the 1024 local cap. For
+  Serper, keep the wire `num` fixed at 10 with a local cap of 10 (`maxResults` 1–10)
+  and `gl`/`hl`/`tbs` in the body; keep SerpApi isolated as a separate GET
+  `https://serpapi.com/search` with an `api_key` query parameter, its own key and
+  cache, and no `X-API-KEY` or `api_key` cross-talk between the two.
+- For all three, check the locally exercised coverage: exact URLs (including
+  custom endpoints), caches isolated by key, count and endpoint, timeouts
+  (per-provider in the host smoke test; host cancellation via the shared
+  `requestJSON` tests), 429 `Retry-After` (for example `0007` normalized to `7`),
+  HTTP/business refusals, malformed and empty payloads, ordered key rotation on 429
+  and interrupted 401 bodies that prefers the healthy key afterward, and fallback
+  to a configured Linkup search on refusal. Report the local dummy-key and
+  fake-upstream checks separately; do not claim real-key success, billing,
+  quality or live limits without evidence.
 - Run `npm pack --dry-run` and check that the entry, `src/`, `docs/` and
   `assets/icon-128.png` are included. Keep runtime files committed so GitHub installs
   work without a build.

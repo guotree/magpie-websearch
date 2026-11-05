@@ -4,7 +4,7 @@
 
 Additional web search APIs for [magpie](https://usemagpie.ai). Once installed, the APIs appear in **Settings › Models › Web search**, where Magpie manages keys, on/off switches and request order.
 
-Current providers: **AnySearch, Bocha, Keenable, Linkup, Metaso, Moonshot, Moonshot CN, Ollama, Parallel, Perplexity, Querit, SerpApi, StepFun, TinyFish, Z.ai and Zhipu**. AnySearch, Keenable, Parallel and TinyFish support keyless anonymous access; the other twelve require an API key.
+Current providers: **AnySearch, Bocha, Jina, Kagi, Keenable, Linkup, Metaso, Moonshot, Moonshot CN, Ollama, Parallel, Perplexity, Querit, SerpApi, Serper, StepFun, TinyFish, Z.ai and Zhipu**. AnySearch, Keenable, Parallel and TinyFish support keyless anonymous access; the other fifteen require an API key.
 
 ## Install
 
@@ -67,7 +67,7 @@ Each command replaces the complete saved options object, so include every option
 | Z.ai | `magpie-websearch:zai` | required | Standalone REST search on Zhipu's international site using `search-prime` |
 | Zhipu | `magpie-websearch:zhipu` | required | Standalone REST search on the China site with `search_std`/`search_pro`, Sogou and Quark engines |
 
-Search entries appear as `<Provider> (magpie-websearch)` in Magpie. Vendor IDs remain `magpie-websearch:<id>`; plugin options and registration filters use short IDs such as `linkup`. See [PROVIDERS.md](PROVIDERS.md) for full support status and candidate providers.
+Search entries appear as `<Provider> (magpie-websearch)` in Magpie. Vendor IDs remain `magpie-websearch:<id>`; plugin options and registration filters use short IDs such as `linkup`. See [PROVIDERS.md](PROVIDERS.md) for full support status and the integration plan.
 
 ## Privacy and security
 
@@ -85,7 +85,7 @@ Leaving the key empty while editing an existing keyed entry keeps its saved key.
 | [Custom Base URL](docs/technical-reference.en.md#custom-base-url) | Exact endpoints, URL validation and MCP/REST switching |
 | [CLI management](docs/technical-reference.en.md#cli) | Adding APIs, multiple keys, ordering, switches and removal |
 | [Anonymous search and rate limits](docs/technical-reference.en.md#anonymous-search) | Anonymous endpoints, access-mode switching, 429 cooldowns and fallback |
-| [Provider protocols](docs/technical-reference.en.md#parallel-search) | Endpoints, capability limits and verification records for Parallel, [TinyFish](docs/technical-reference.en.md#tinyfish-search), [SerpApi](docs/technical-reference.en.md#serpapi-search), [Moonshot](docs/technical-reference.en.md#moonshot-search), [StepFun](docs/technical-reference.en.md#stepfun-search), [Perplexity](docs/technical-reference.en.md#perplexity-search), [Zhipu and Z.ai](docs/technical-reference.en.md#zhipu-search), [Bocha](docs/technical-reference.en.md#bocha-search), and [Ollama](docs/technical-reference.en.md#ollama-search) |
+| [Provider protocols](docs/technical-reference.en.md#parallel-search) | Endpoints, capability limits and verification records for Parallel, [TinyFish](docs/technical-reference.en.md#tinyfish-search), [SerpApi](docs/technical-reference.en.md#serpapi-search), [Moonshot](docs/technical-reference.en.md#moonshot-search), [Zhipu and Z.ai](docs/technical-reference.en.md#zhipu-search), [StepFun](docs/technical-reference.en.md#stepfun-search), [Perplexity](docs/technical-reference.en.md#perplexity-search), [Bocha](docs/technical-reference.en.md#bocha-search), [Ollama](docs/technical-reference.en.md#ollama-search), [Jina](docs/technical-reference.en.md#jina-search), [Kagi](docs/technical-reference.en.md#kagi-search), and [Serper](docs/technical-reference.en.md#serper-search) |
 | [Result processing](docs/technical-reference.en.md#result-processing) | Result counts, text cleanup, dates and error statuses |
 | [Full configuration reference](docs/technical-reference.en.md#configuration) | Options, environment variables, precedence, caching and timeouts |
 | [Registration filters](docs/technical-reference.en.md#registration-filters) | `enable`/`disable` rules and examples |
@@ -93,7 +93,7 @@ Leaving the key empty while editing an existing keyed entry keeps its saved key.
 
 ## Roadmap
 
-[PROVIDERS.md](PROVIDERS.md#planned) lists candidate standalone web search APIs that Magpie has not already integrated. A model provider preset or a model's built-in search capability alone does not exclude a vendor's standalone search API from consideration. Official search support is checked before adding a new integration.
+The third batch of planned standalone web search APIs (Jina, Kagi, Serper) has now been fully integrated; see [PROVIDERS.md](PROVIDERS.md#planned) for the integration plan. A model provider preset or a model's built-in search capability alone does not exclude a vendor's standalone search API from consideration. Official search support is checked before adding a new integration.
 
 ## Acknowledgements
 

@@ -10,7 +10,7 @@ checks. See the [README](../README.en.md) for installation and quick start, and
 - [Custom Base URL](#custom-base-url)
 - [CLI management](#cli)
 - [Anonymous search and rate limits](#anonymous-search)
-- [Parallel](#parallel-search), [TinyFish](#tinyfish-search), [SerpApi](#serpapi-search), [Moonshot and Moonshot CN](#moonshot-search), [StepFun](#stepfun-search), [Perplexity](#perplexity-search), [Zhipu and Z.ai](#zhipu-search), [Bocha](#bocha-search), and [Ollama](#ollama-search) protocols
+- [Parallel](#parallel-search), [TinyFish](#tinyfish-search), [SerpApi](#serpapi-search), [Moonshot and Moonshot CN](#moonshot-search), [Zhipu and Z.ai](#zhipu-search), [StepFun](#stepfun-search), [Perplexity](#perplexity-search), [Bocha](#bocha-search), [Ollama](#ollama-search), [Jina](#jina-search), [Kagi](#kagi-search), and [Serper](#serper-search) protocols
 - [Magpie result processing](#result-processing)
 - [Full configuration reference](#configuration)
 - [Registration filters](#registration-filters)
@@ -66,6 +66,13 @@ magpie search add magpie-websearch:keenable <key>
 magpie search add magpie-websearch:parallel <key>
 magpie search add magpie-websearch:tinyfish <key>
 
+# Bocha: API key from the open platform is required
+magpie search add magpie-websearch:bocha <key>
+
+# Jina and Kagi: each service requires its own API key
+magpie search add magpie-websearch:jina <key>
+magpie search add magpie-websearch:kagi <key>
+
 # Linkup: a key is required
 magpie search add magpie-websearch:linkup <key>
 
@@ -78,30 +85,29 @@ magpie search add magpie-websearch:moonshot <key>
 # Moonshot CN (domestic): a key is required
 magpie search add magpie-websearch:moonshot-cn <key>
 
+# Ollama: cloud account API key required
+magpie search add magpie-websearch:ollama <key>
+
+# Perplexity: official Search API Key required
+magpie search add magpie-websearch:perplexity <key>
+
 # Querit: a key is required
 magpie search add magpie-websearch:querit <key>
 
 # SerpApi: a key is required
 magpie search add magpie-websearch:serpapi <key>
 
+# Serper: a separate API key from SerpApi
+magpie search add magpie-websearch:serper <key>
+
 # StepFun China: a key from the domestic Open Platform is required
 magpie search add magpie-websearch:stepfun <china-key>
-
-# Perplexity: official Search API Key required
-magpie search add magpie-websearch:perplexity <key>
 
 # Zhipu (China) and Z.ai (international): each site's own Standard API Key
 magpie search add magpie-websearch:zhipu <china-key>
 magpie search add magpie-websearch:zai <international-key>
 
-# Bocha: API key from the open platform is required
-magpie search add magpie-websearch:bocha <key>
-
-# Ollama: cloud account API key required
-magpie search add magpie-websearch:ollama <key>
-
 # A compatible endpoint of your own
-
 magpie search add magpie-websearch:linkup <key> url=https://search.example.com/proxy/v1/search
 ```
 
@@ -493,8 +499,8 @@ a model or agent call. Magpie manages the required API key from
 Requests send `query`, `max_results` and `search_type`, plus configured filtering options:
 - `searchType`: `"web"` (default, comprehensive search) or `"fast"` (isomorphic response, lower latency). The `people` search type is excluded from this initial rollout.
 - `recency`: Maps to `search_recency_filter`, accepting `hour`, `day`, `week`, `month`, `year`; empty by default for no limit.
-- `country`: Maps to `country`, empty or a 2-letter uppercase ISO country code (e.g. `US`); explicit invalid values throw TypeError, while invalid environment variables warn and fall back to empty.
-- `language`: Maps to `search_language_filter`, a comma-separated list of up to 20 2-letter lowercase ISO 639-1 language codes (e.g. `en,zh`); explicit violations throw TypeError, while invalid environment variables warn and fall back to empty array. An explicit empty string overrides environment configuration.
+- `country`: Maps to `country`; trims whitespace and uppercases before accepting an empty value or two ASCII letters (e.g. `us` becomes `US`). Explicit invalid values throw TypeError; invalid environment values warn and fall back to no filter. Assignment to an actual country is not checked.
+- `language`: Maps to `search_language_filter`; splits on commas, trims each item, removes empty items and lowercases before accepting at most 20 two-letter codes (e.g. `EN, zh` becomes `en,zh`). Explicit violations throw TypeError; invalid environment values warn and fall back to an empty array. Assignment to actual languages is not checked. An explicit empty string overrides environment configuration.
 - `maxResults`: 1–20 (default 10); caps Magpie's requested count.
 
 `snippet` contains query-relevant extracted text; original whitespace and indentation are preserved,
@@ -504,8 +510,8 @@ Empty snippets still retain valid URLs. `url` must be a valid non-empty string; 
 to `last_updated`, and is omitted if neither is present; `server_time` is not used.
 
 Empty result arrays (`results: []`) return successfully and are cached for a short beat (at most 30s);
-non-empty result arrays without usable items fail and are not cached. HTTP 200 responses with an `error`
-field throw an API error (without inventing a numeric status). HTTP failures retain numeric `status`;
+non-empty result arrays without usable items fail and are not cached. HTTP 200 responses with a truthy
+`error` field throw an API error (without inventing a numeric status). HTTP failures retain numeric `status`;
 standard `Retry-After` headers (integer seconds or canonical HTTP-date) are cleaned and forwarded;
 timeouts and cancellations are not cached.
 
@@ -517,6 +523,12 @@ form a permanent free tier.
 ```sh
 magpie plugin options magpie-websearch '{"perplexity":{"searchType":"fast","recency":"week","country":"US","language":"en,zh","maxResults":10}}'
 ```
+
+Synthetic fixtures, Node/Bun unit tests and the real Magpie 0.1.3041 host sandbox
+verify request formatting, search modes and filters, empty/malformed results,
+timeouts, 429 Retry-After, key rotation and Linkup fallback dispatch. Real keys
+have not been verified, and live recall, latency and real 429 response headers
+have not been tested online; see [Development and local tests](#development) for full test counts.
 
 <a id="bocha-search"></a>
 
@@ -616,8 +628,8 @@ do not produce `age`. Both providers consume only the supplied execution key; en
 keys, OSP credentials, model credentials and local Ollama configuration are not read.
 
 [Ollama's web search announcement](https://ollama.com/blog/web-search) describes a personal free tier,
-but fixed quotas, per-search pricing, and QPS are unverified. Cloud model subscription plans do not
-constitute a search allowance.
+but fixed quotas, per-search pricing, and QPS are unverified; [current pricing page](https://ollama.com/pricing)
+plans for cloud models do not constitute a search allowance.
 
 ```sh
 magpie plugin options magpie-websearch '{"ollama":{"maxResults":5,"contentChars":2000}}'
@@ -629,16 +641,58 @@ and exact endpoints, malformed/empty results, timeout, 429 Retry-After, Linkup f
 rotation after 429 and interrupted 401 bodies, and healthy-key preference. Successful live searches,
 billing, quality and rate limits remain explicitly recorded as "real Key unverified".
 
+<a id="jina-search"></a>
+
+## Jina search
+
+Uses the [Jina Search API](https://docs.jina.ai/api.md): POST `https://s.jina.ai/search` with JSON, `Authorization: Bearer <key>` and `Accept: application/json`. Magpie manages the required key from <https://jina.ai/?sui=apikey>. Requests send a normalized, nonempty `q` and `num` sized via `sizeFor(count, maxResults, 20)`. Optional `gl`, `hl` and `location` strings are trimmed and forwarded when nonempty.
+
+The default `content: "snippet"` sends `X-Respond-With: no-content` and maps only string `description`. `content: "full"` omits that header and prefers nonblank string `content`, falling back to `description`. Both modes retain up to `contentChars` code points (4000 by default; 0 keeps all) and append `…` on truncation. The default timeout is 25000 ms for snippets or 60000 ms for full content; an explicit `timeout` or valid `JINA_TIMEOUT` overrides that mode default. These describe the adapter's request and mapping; a local dummy service does not establish live page-fetching behavior or billing.
+
+Responses read the `data` array, filtering rows without nonblank string URLs before capping. A nonempty array with no usable URLs fails. Missing/blank titles fall back to the URL; string `publishedTime` maps to `age` after trimming. A supplied `code` other than numeric 200 or a supplied `status` other than numeric 20000 raises a business error. An `error` field is tolerated only when absent, null, an empty string or an empty array; other values fail without inventing an HTTP status. Missing, null or non-array `data` fails.
+
+```sh
+magpie plugin options magpie-websearch '{"jina":{"content":"full","contentChars":4000,"maxResults":6}}'
+```
+
+<a id="kagi-search"></a>
+
+## Kagi search
+
+Uses the [Kagi Search API](https://redocly-api-docs.kagi.com/api/docs/openapi/search/search.md): POST `https://kagi.com/api/v1/search` with JSON and `Authorization: Bearer <key>`. Magpie manages the required key from <https://kagi.com/api/keys>. Requests send a normalized, nonempty `query`, fixed `workflow: "search"` and `limit` sized via `sizeFor(count, maxResults, 1024)` (`maxResults` defaults to 10). This caps the returned count without guaranteeing that many results.
+
+A nonempty `lens` maps to `lens_id`, accepting a named Lens or shared Lens ID/URL. Otherwise, nonempty `recency` maps to `lens.time_relative` (`day`, `week`, `month`). When both are set, Lens wins and the factory warns. Explicit `lens: ""` clears an inherited environment value to restore recency filtering. `region` maps to `filters.region`. The adapter omits `extract` and does not request additional page extraction.
+
+Responses require an object `data`. Missing or empty-array `data.search` returns `[]`; other collections are not mapped to web results. Null/non-array search results or a nonempty array with no usable URLs fail. Valid rows are filtered before capping; missing/blank titles fall back to the URL, `snippet` maps to `text` and string `time` maps to `age`. There is no separate `contentChars` option. An `error` field is tolerated only when absent, null or an empty array; other values raise a business error without inventing an HTTP status.
+
+```sh
+magpie plugin options magpie-websearch '{"kagi":{"recency":"week","region":"cn","maxResults":6}}'
+```
+
+<a id="serper-search"></a>
+
+## Serper search
+
+Uses POST `https://google.serper.dev/search` with JSON and an `X-API-KEY` header. Magpie manages the required key from <https://serper.dev/>. Serper is independent of SerpApi, which uses GET and a URL `api_key` parameter. Requests send a normalized, nonempty `q`, fixed `num: 10` and optional `gl`, `hl`, `tbs`. `tbs` accepts `qdr:h`, `qdr:d`, `qdr:w`, `qdr:m`, `qdr:y`; the empty default is omitted. `maxResults` (1–10, default 10) and the host's `count` only cap results locally, without changing the wire `num`. One page is fetched without extra calls to fill short results.
+
+Only `organic` is mapped: rows without nonblank string `link` are removed before capping; missing/blank titles fall back to the URL, string `snippet` maps to `text` and string `date` maps to `age`. Missing `organic` returns `[]` only when an object `knowledgeGraph`/`answerBox` or array `peopleAlsoAsk`/`relatedSearches` is present. Other missing, null/non-array, or nonempty but unusable organic results fail. A nonblank string `message` raises a business error. An `error` field is tolerated only when absent, null or an empty array; other values fail without inventing an HTTP status. There is no separate text-budget option; cache identities include the local count cap.
+
+```sh
+magpie plugin options magpie-websearch '{"serper":{"gl":"cn","hl":"zh-cn","tbs":"qdr:w","maxResults":6}}'
+```
+
+All three reject redirects and use custom Base URLs as exact endpoints. HTTP refusals retain numeric `status` and validated standard `Retry-After`. Settings, caches and credentials are isolated per plugin instance; valid empty results cache for at most 30 seconds. The commands above replace the complete options object, so include other settings you want to keep. Synthetic fixtures, unit tests and the Magpie 0.1.3041 local sandbox cover requests, mapping, timeouts, 429, key rotation and Linkup fallback. Live real-key searches, billing, quality and rate limits remain unverified. Magpie still applies its final 1500-byte cap to each result's `text`.
+
 <a id="result-processing"></a>
 
 ## What magpie does with a result
 
-- `count` is 6: adapters request the needed count and cap locally. Sogou must request at least 10 because of its upstream buckets; APIs without a configurable count are capped locally. magpie keeps at most 6.
+- `count` is 6: adapters request the needed count and cap locally. Sogou must request at least 10 because of its upstream buckets; Serper always sends `num: 10`; APIs without a configurable count are capped locally. magpie keeps at most 6.
 - `text` is stripped of tags, unescaped, whitespace-collapsed, and cut to 1500 bytes.
 - `age` preserves the vendor's date-string format after trimming surrounding whitespace. Blank or non-string values are omitted, without guessing dates or converting time zones. StepFun supplies index time.
 - A hit without a URL is dropped.
 - A thrown error with a numeric `status` (401, 402, 403, 429) is an API refusal. For keyed calls, magpie records the key's rest and tries the next key. Anonymous 429 cooldowns are managed by this plugin; failed APIs give way to the next configured API.
-- `retryAfter` on a 429 follows the adapter's policy. Bocha, Ollama, Perplexity, SerpApi, StepFun, Zhipu and Z.ai forward only validated and normalized integer seconds or a standard HTTP date. Moonshot's two adapters prefer a valid standard header, falling back to the [reset-header rules](#moonshot-search) when it is missing or invalid. Other adapters use the shared header passthrough behavior.
+- `retryAfter` on a 429 follows the adapter's policy. Bocha, Jina, Kagi, Ollama, Perplexity, SerpApi, Serper, StepFun, Zhipu and Z.ai forward only validated and normalized integer seconds or a standard HTTP date. Moonshot's two adapters prefer a valid standard header, falling back to the [reset-header rules](#moonshot-search) when it is missing or invalid. Other adapters use the shared header passthrough behavior.
 - If reading a failed HTTP response body is interrupted or times out, the shared HTTP layer retains the known `status` and retry metadata extracted by the adapter. Explicit host cancellation during a request takes precedence. Network failures and business errors in HTTP 200 responses do not acquire invented HTTP statuses.
 
 <a id="configuration"></a>
@@ -690,11 +744,6 @@ The table lists fields inside each provider's object (`linkup.depth`, for exampl
 | anysearch | `language` | `ANYSEARCH_LANGUAGE` | empty | e.g. `zh-CN` |
 | anysearch | `format` | `ANYSEARCH_FORMAT` | `markdown` | `markdown`, `json` |
 | anysearch | `timeout` | `ANYSEARCH_TIMEOUT` | `25000` | ≥ 0 |
-| keenable | `cacheTTL` | `KEENABLE_CACHE_TTL` | `600000` | ≥ 0 |
-| keenable | `maxResults` | `KEENABLE_MAX_RESULTS` | `10` | 1–50 |
-| keenable | `mode` | `KEENABLE_MODE` | empty | empty, `pro`, `realtime` |
-| keenable | `title` | `KEENABLE_TITLE` | `magpie-websearch` | `X-Keenable-Title`, at most 256 characters |
-| keenable | `timeout` | `KEENABLE_TIMEOUT` | `25000` | ≥ 0 |
 | bocha | `cacheTTL` | `BOCHA_CACHE_TTL` | `600000` | ≥ 0; milliseconds |
 | bocha | `timeout` | `BOCHA_TIMEOUT` | `25000` | 0–2147483647 ms; 0 disables plugin timeout, preserving host cancellation |
 | bocha | `maxResults` | `BOCHA_MAX_RESULTS` | `10` | 1–50; cap on magpie's requested count |
@@ -714,6 +763,11 @@ The table lists fields inside each provider's object (`linkup.depth`, for exampl
 | kagi | `lens` | `KAGI_LENS` | empty | Named or shared Lens ID / URL; overrides `recency` |
 | kagi | `recency` | `KAGI_RECENCY` | empty | empty, `day`, `week`, `month`; effective when lens is empty |
 | kagi | `region` | `KAGI_REGION` | empty | Country code, e.g. `cn`, `us`; maps to `filters.region` |
+| keenable | `cacheTTL` | `KEENABLE_CACHE_TTL` | `600000` | ≥ 0 |
+| keenable | `maxResults` | `KEENABLE_MAX_RESULTS` | `10` | 1–50 |
+| keenable | `mode` | `KEENABLE_MODE` | empty | empty, `pro`, `realtime` |
+| keenable | `title` | `KEENABLE_TITLE` | `magpie-websearch` | `X-Keenable-Title`, at most 256 characters |
+| keenable | `timeout` | `KEENABLE_TIMEOUT` | `25000` | ≥ 0 |
 | linkup | `cacheTTL` | `LINKUP_CACHE_TTL` | `600000` | ≥ 0 |
 | linkup | `depth` | `LINKUP_DEPTH` | `fast` | `flash`, `fast`, `standard`, `deep` |
 | linkup | `maxResults` | `LINKUP_MAX_RESULTS` | `10` | 1–100; upstream limits also apply |
@@ -748,8 +802,8 @@ The table lists fields inside each provider's object (`linkup.depth`, for exampl
 | perplexity | `maxResults` | `PERPLEXITY_MAX_RESULTS` | `10` | 1–20; upstream and local cap |
 | perplexity | `searchType` | `PERPLEXITY_SEARCH_TYPE` | `web` | `web`, `fast`; `people` excluded from initial release |
 | perplexity | `recency` | `PERPLEXITY_RECENCY` | empty | empty, `hour`, `day`, `week`, `month`, `year`; maps to `search_recency_filter` |
-| perplexity | `country` | `PERPLEXITY_COUNTRY` | empty | 2-letter uppercase country code, e.g. `US` |
-| perplexity | `language` | `PERPLEXITY_LANGUAGE` | empty | Up to 20 comma-separated 2-letter lowercase language codes, e.g. `en,zh` |
+| perplexity | `country` | `PERPLEXITY_COUNTRY` | empty | Trimmed, uppercased and checked for 2 ASCII letters, e.g. `us` → `US` |
+| perplexity | `language` | `PERPLEXITY_LANGUAGE` | empty | Comma-separated, trimmed, empty items removed and lowercased; at most 20 two-letter codes, e.g. `EN, zh` → `en,zh` |
 | perplexity | `contentChars` | `PERPLEXITY_CONTENT_CHARS` | `4000` | Code points per snippet; 0 keeps all |
 | querit | `cacheTTL` | `QUERIT_CACHE_TTL` | `600000` | ≥ 0 |
 | querit | `count` | `QUERIT_COUNT` | `8` | ≥ 1; cap on magpie's count, Querit's own limit applies |
@@ -832,7 +886,7 @@ magpie plugin options magpie-websearch '{"disable":["keenable"],"linkup":{"depth
 An unknown ID is logged and ignored. An explicit `enable` list containing no
 known IDs registers no APIs and logs a warning. A filter that is not an array is
 logged and ignored; malformed per-provider settings instead fail loading as
-described under Configuration.
+described under [Full configuration reference](#configuration).
 
 These filters control registration. magpie's Web search switches independently
 control whether a registered API is asked, keeping its key and place in the list
@@ -894,13 +948,15 @@ The smoke script requires `magpie` on PATH (`MAGPIE_BIN` can name its executable
 It creates a temporary HOME/config/cache, disables account discovery, starts a
 gateway on a free loopback port, and tests registration, options, custom URL,
 timeout, anonymous search, 429 cooldown and fallback against a local fake API.
-It covers Parallel and TinyFish MCP/REST, SerpApi, Perplexity, StepFun, Bocha, Ollama, both Moonshot adapters, and Zhipu/Z.ai.
+It covers Parallel and TinyFish MCP/REST, SerpApi, Perplexity, StepFun, Bocha, Ollama, Jina, Kagi, Serper, both Moonshot adapters, and Zhipu/Z.ai.
 Moonshot cases also check seconds/milliseconds reset headers, excessive resets
 and resting-key preference. Zhipu/Z.ai cases check Sogou count buckets, local caps,
 business errors, query length, key rotation and separate credentials on fallback.
 StepFun cases check category, full text, malformed results, Credit 429, 451 and key rotation.
+Perplexity cases check fast mode, filter parameters, errors, timeout, 429 Retry-After, key rotation and fallback dispatch.
 Bocha cases check snippet vs generated summary opt-in, freshness filters, business errors with code and log_id, malformed results and key rotation.
 Ollama cases check max_results, content truncation, malformed results, 429 retry after and key rotation.
+Jina cases check snippet/full content, text budgets and header switching. Kagi cases check Lens priority, clearing Lens to restore recency, and region filtering. Serper cases check fixed num, local capping and endpoint/credential isolation from SerpApi. All three also cover empty/malformed results, timeouts, 429 Retry-After, Linkup fallback, key rotation after 429 and interrupted 401 bodies, and healthy-key preference.
 It removes its sandbox when finished. Search requests
 use only local mocks and dummy keys, without paid search calls; Magpie startup
 may independently fetch public resources such as the model catalog.
@@ -911,12 +967,13 @@ the sandbox. CI runs separate jobs for Node 22/24, Bun, and Magpie testing of th
 unpacked npm package; the three jobs have no ordering dependency.
 
 Local verification on **2026-11-05** used **Node.js 24.19.0, Bun 1.4.4 and magpie
-0.1.3041**. Node and Bun each passed 263 tests, and the Magpie sandbox checks,
-including Perplexity, StepFun China, Bocha, Ollama, long error identifiers and key rotation after interrupted
-401 bodies, passed. Bun ran temporarily from npm's cache via
-`npm exec --yes --package=bun@1.4.4 -- bun scripts/check.mjs` and
-`npm exec --yes --package=bun@1.4.4 -- bun test ./test/*.test.mjs`, without adding a project
-dependency. Earlier **magpie 0.1.2911/0.1.2964/0.1.3026/0.1.3035** records are historical. These records do
+0.1.3041**. Node and Bun each passed 300 tests across 22 test files. The complete
+Magpie sandbox checks passed, including the new Jina, Kagi and Serper cases.
+Bun ran temporarily via `npm exec --yes --package=bun@1.4.4 -- bun run check:bun`,
+without adding a project dependency or lockfile. On Windows, `MAGPIE_BIN` can name
+the executable; otherwise the script uses `magpie` on PATH. These checks use
+local fake services and dummy keys, not live account search, quality or billing.
+Earlier **magpie 0.1.2911/0.1.2964/0.1.3026/0.1.3035** records are historical and do
 not establish minimum supported versions.
 
 Local folder installs use the folder name as the short name. Because the package is `@guotree/magpie-websearch` and the folder is `magpie-websearch`, both installs give the same `magpie-websearch:*` IDs.
