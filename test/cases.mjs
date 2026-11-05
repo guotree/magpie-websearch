@@ -538,3 +538,93 @@ export const PERPLEXITY_CASE = {
     { title: "https://example.com/perplexity-bare", url: "https://example.com/perplexity-bare", text: "" },
   ],
 }
+
+// Jina Search API reference read 2026-11-05; synthetic nullable/missing fields.
+// https://docs.jina.ai/api.md
+// https://s.jina.ai/openapi.json
+// This fixture is not a real account response.
+export const JINA_CASE = {
+  response: {
+    code: 200,
+    status: 20000,
+    data: [
+      { title: "Missing URL", description: "dropped" },
+      {
+        title: "Jina hit",
+        url: "https://example.com/jina",
+        description: "Jina snippet",
+        content: "Jina full markdown content",
+        publishedTime: "2026-10-01",
+      },
+      {
+        title: "",
+        url: "https://example.com/jina-bare",
+        description: null,
+        content: null,
+      },
+    ],
+  },
+  expected: [
+    { title: "Jina hit", url: "https://example.com/jina", text: "Jina snippet", age: "2026-10-01" },
+    { title: "https://example.com/jina-bare", url: "https://example.com/jina-bare", text: "" },
+  ],
+}
+
+// Kagi Search API reference read 2026-11-05; synthetic nullable/missing fields.
+// https://redocly-api-docs.kagi.com/api/docs/openapi/search/search.md
+// This fixture is not a real account response.
+export const KAGI_CASE = {
+  response: {
+    meta: { id: "kagi-fixture" },
+    data: {
+      search: [
+        { title: "Missing URL", snippet: "dropped" },
+        {
+          title: "Kagi hit",
+          url: "https://example.com/kagi",
+          snippet: "Kagi snippet",
+          time: "2026-05-15T10:00:00Z",
+        },
+        {
+          title: null,
+          url: "https://example.com/kagi-bare",
+          snippet: null,
+          time: null,
+        },
+      ],
+    },
+  },
+  expected: [
+    { title: "Kagi hit", url: "https://example.com/kagi", text: "Kagi snippet", age: "2026-05-15T10:00:00Z" },
+    { title: "https://example.com/kagi-bare", url: "https://example.com/kagi-bare", text: "" },
+  ],
+}
+
+// Serper Google Search reference read 2026-11-05; synthetic nullable/missing fields.
+// https://serper.dev/
+// https://serper.dev/playground
+// This fixture is not a real account response.
+export const SERPER_CASE = {
+  response: {
+    searchParameters: { q: "test", type: "search", engine: "google" },
+    organic: [
+      { title: "Missing URL", snippet: "dropped" },
+      {
+        title: "Serper hit",
+        link: "https://example.com/serper",
+        snippet: "Serper snippet",
+        date: "1 day ago",
+      },
+      {
+        title: "",
+        link: "https://example.com/serper-bare",
+        snippet: null,
+        date: null,
+      },
+    ],
+  },
+  expected: [
+    { title: "Serper hit", url: "https://example.com/serper", text: "Serper snippet", age: "1 day ago" },
+    { title: "https://example.com/serper-bare", url: "https://example.com/serper-bare", text: "" },
+  ],
+}

@@ -1,5 +1,7 @@
 import { createAnysearch } from "./src/providers/anysearch.mjs"
 import { createBocha } from "./src/providers/bocha.mjs"
+import { createJina } from "./src/providers/jina.mjs"
+import { createKagi } from "./src/providers/kagi.mjs"
 import { createKeenable } from "./src/providers/keenable.mjs"
 import { createLinkup } from "./src/providers/linkup.mjs"
 import { createMetaso } from "./src/providers/metaso.mjs"
@@ -10,6 +12,7 @@ import { createParallel } from "./src/providers/parallel.mjs"
 import { createPerplexity } from "./src/providers/perplexity.mjs"
 import { createQuerit } from "./src/providers/querit.mjs"
 import { createSerpapi } from "./src/providers/serpapi.mjs"
+import { createSerper } from "./src/providers/serper.mjs"
 import { createStepfun } from "./src/providers/stepfun.mjs"
 import { createTinyfish } from "./src/providers/tinyfish.mjs"
 import { createZai } from "./src/providers/zai.mjs"
@@ -19,6 +22,8 @@ import { optionGroup } from "./src/core.mjs"
 const PROVIDERS = [
   ["anysearch", createAnysearch],
   ["bocha", createBocha],
+  ["jina", createJina],
+  ["kagi", createKagi],
   ["keenable", createKeenable],
   ["linkup", createLinkup],
   ["metaso", createMetaso],
@@ -29,6 +34,7 @@ const PROVIDERS = [
   ["perplexity", createPerplexity],
   ["querit", createQuerit],
   ["serpapi", createSerpapi],
+  ["serper", createSerper],
   ["stepfun", createStepfun],
   ["tinyfish", createTinyfish],
   ["zai", createZai],
