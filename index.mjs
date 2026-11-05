@@ -2,6 +2,8 @@ import { createAnysearch } from "./src/providers/anysearch.mjs"
 import { createKeenable } from "./src/providers/keenable.mjs"
 import { createLinkup } from "./src/providers/linkup.mjs"
 import { createMetaso } from "./src/providers/metaso.mjs"
+import { createMoonshot } from "./src/providers/moonshot.mjs"
+import { createMoonshotCN } from "./src/providers/moonshot-cn.mjs"
 import { createParallel } from "./src/providers/parallel.mjs"
 import { createQuerit } from "./src/providers/querit.mjs"
 import { createSerpapi } from "./src/providers/serpapi.mjs"
@@ -13,6 +15,8 @@ const PROVIDERS = [
   ["keenable", createKeenable],
   ["linkup", createLinkup],
   ["metaso", createMetaso],
+  ["moonshot", createMoonshot],
+  ["moonshot-cn", createMoonshotCN],
   ["parallel", createParallel],
   ["querit", createQuerit],
   ["serpapi", createSerpapi],

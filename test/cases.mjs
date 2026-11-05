@@ -337,3 +337,100 @@ export const SERPAPI_CASE = {
     },
   ],
 }
+
+// Moonshot Basic Web Search API observed 2026-11-05:
+// https://platform.kimi.ai/docs/api/tools-search.md
+// https://platform.kimi.com/docs/api/tools-search.md
+export const MOONSHOT_CASE = {
+  response: {
+    search_results: [
+      {
+        url: "https://example.com/moonshot",
+        title: "Moonshot hit",
+        snippet: "Moonshot snippet",
+        text: "Moonshot full text",
+        date: "2026-11-05",
+      },
+      {
+        url: "https://example.com/moonshot-fallback",
+        title: "Moonshot fallback",
+        snippet: "Solo snippet",
+      },
+      {
+        url: "https://example.com/bare",
+        title: "",
+        snippet: "",
+        text: "",
+      },
+      {
+        title: "No URL",
+        snippet: "dropped",
+      },
+    ],
+  },
+  expected: [
+    {
+      url: "https://example.com/moonshot",
+      title: "Moonshot hit",
+      text: "Moonshot snippet",
+      age: "2026-11-05",
+    },
+    {
+      url: "https://example.com/moonshot-fallback",
+      title: "Moonshot fallback",
+      text: "Solo snippet",
+    },
+    {
+      url: "https://example.com/bare",
+      title: "https://example.com/bare",
+      text: "",
+    },
+  ],
+}
+
+export const MOONSHOT_CN_CASE = {
+  response: {
+    search_results: [
+      {
+        url: "https://example.com/moonshot-cn",
+        title: "Moonshot CN hit",
+        snippet: "Moonshot CN snippet",
+        text: "Moonshot CN full text",
+        date: "2026-11-05",
+      },
+      {
+        url: "https://example.com/moonshot-cn-fallback",
+        title: "Moonshot CN fallback",
+        snippet: "Solo CN snippet",
+      },
+      {
+        url: "https://example.com/bare",
+        title: "",
+        snippet: "",
+        text: "",
+      },
+      {
+        title: "No URL",
+        snippet: "dropped",
+      },
+    ],
+  },
+  expected: [
+    {
+      url: "https://example.com/moonshot-cn",
+      title: "Moonshot CN hit",
+      text: "Moonshot CN snippet",
+      age: "2026-11-05",
+    },
+    {
+      url: "https://example.com/moonshot-cn-fallback",
+      title: "Moonshot CN fallback",
+      text: "Solo CN snippet",
+    },
+    {
+      url: "https://example.com/bare",
+      title: "https://example.com/bare",
+      text: "",
+    },
+  ],
+}

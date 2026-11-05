@@ -36,14 +36,43 @@ const upstream = createServer(async (req, res) => {
   calls.push({ path: req.url, method: req.method, body, key: req.headers.authorization,
     apiKey: req.headers["x-api-key"], title: req.headers["x-keenable-title"],
     accessMode: req.headers["x-tinyfish-access-mode"] })
-  const query = body?.params?.arguments?.query ?? body?.params?.arguments?.search_queries?.[0] ?? body?.search_queries?.[0] ?? body?.q ?? body?.query ?? target.searchParams.get("query") ?? target.searchParams.get("q")
+  const query = body?.text_query ?? body?.params?.arguments?.query ?? body?.params?.arguments?.search_queries?.[0] ?? body?.search_queries?.[0] ?? body?.q ?? body?.query ?? target.searchParams.get("query") ?? target.searchParams.get("q")
   if (query === "rate limited") {
     res.writeHead(429, { "Retry-After": body?.q ? "30" : "120" }).end("slow down")
     return
   }
   if (query === "timeout") return
   res.setHeader("Content-Type", "application/json")
-  if (target.pathname.startsWith("/serpapi/")) {
+  if (target.pathname.startsWith("/moonshot/") || target.pathname.startsWith("/moonshot-cn/")) {
+    const isCN = target.pathname.startsWith("/moonshot-cn/")
+    const tag = isCN ? "Moonshot CN" : "Moonshot"
+    if ((!isCN && ["moonshot refusal", "moonshot milliseconds", "moonshot oversized reset"].includes(query)) || req.headers.authorization === "Bearer moonshot-resting-dummy-key") {
+      const reset = query === "moonshot milliseconds" ? Date.now() + 12_000
+        : query === "moonshot oversized reset" ? Math.floor(Date.now() / 1000) + 172_800
+        : Math.floor(Date.now() / 1000) + 12
+      res.writeHead(429, { "X-RateLimit-Reset": String(reset) })
+      res.end("rate limit reached")
+    } else if (query === "moonshot empty") {
+      res.end(JSON.stringify({ search_results: [] }))
+    } else {
+      res.end(JSON.stringify({
+        search_results: [
+          {
+            title: `${tag} smoke page`,
+            url: `https://example.com/${isCN ? "moonshot-cn" : "moonshot"}`,
+            snippet: `${tag} snippet result`,
+            text: `Detailed ${tag} full text`,
+            date: "Nov 5, 2026",
+          },
+          {
+            title: "Over the local cap",
+            url: `https://example.com/${isCN ? "moonshot-cn" : "moonshot"}-extra`,
+            snippet: "Must be capped",
+          },
+        ],
+      }))
+    }
+  } else if (target.pathname.startsWith("/serpapi/")) {
     if (query === "serpapi private refusal" || target.searchParams.get("api_key") === "serpapi-resting-dummy-key") {
       // Echo the request and leave the body open: a known 429 must return
       // immediately without consuming or exposing the credential-bearing body.
@@ -144,14 +173,18 @@ try {
   console.log("Loading the plugin in an isolated magpie configuration…")
   await run("plugin", "add", root)
   const definitions = await loadedSearches()
-  assert.deepEqual(definitions.map((entry) => entry.id).sort(), ["anysearch", "keenable", "linkup", "metaso", "parallel", "querit", "serpapi", "tinyfish"])
+  assert.deepEqual(definitions.map((entry) => entry.id).sort(), ["anysearch", "keenable", "linkup", "metaso", "moonshot", "moonshot-cn", "parallel", "querit", "serpapi", "tinyfish"])
   assert.deepEqual(definitions.filter((entry) => entry.keyOptional).map((entry) => entry.id).sort(), ["anysearch", "keenable", "parallel", "tinyfish"])
+  await run("plugin", "options", root, JSON.stringify({ enable: ["moonshot", "moonshot-cn"], disable: ["moonshot-cn"] }))
+  assert.deepEqual(await loadedIDs(), ["moonshot"])
   await run("plugin", "options", root, JSON.stringify({ enable: ["linkup", "querit"], disable: ["querit"] }))
   assert.deepEqual(await loadedIDs(), ["linkup"])
   await run("plugin", "options", root, JSON.stringify({
     linkup: { depth: "deep", maxResults: 2, cacheTTL: 0, timeout: 500 },
     anysearch: { cacheTTL: 0 }, keenable: { cacheTTL: 0 },
     metaso: { maxResults: 2, cacheTTL: 0, timeout: 500 },
+    moonshot: { maxResults: 1, content: "snippet", cacheTTL: 0, timeout: 500 },
+    "moonshot-cn": { maxResults: 1, content: "full", contentChars: 2000, cacheTTL: 0, timeout: 500 },
     parallel: { maxResults: 1, mode: "fast", cacheTTL: 0, timeout: 500 },
     serpapi: { maxResults: 1, hl: "en", gl: "us", cacheTTL: 0, timeout: 500 },
     tinyfish: { maxResults: 1, language: "zh", cacheTTL: 0, timeout: 500 },
@@ -392,7 +425,102 @@ try {
   assert.equal(new URL(calls.at(-1).path, "http://localhost").searchParams.get("api_key"), "serpapi-good-dummy-key")
   assertPrivate(preferred, "serpapi resting preference")
   await run("search", "rm", "magpie-websearch:serpapi")
-  console.log("✓ magpie loads eight APIs, filters registrations, applies options/custom URLs, handles timeout/429, and runs anonymous search with cooldown and fallback; Parallel and TinyFish support MCP JSON/SSE and keyed REST; SerpApi supports keyed REST with URL auth and leak protection")
+  await run("search", "off", "magpie-websearch:linkup")
+  console.log("Checking Moonshot dual-site Basic search, limit, snippet/full text, 429 reset, rotation, and isolation…")
+  const moonshotURL = `http://127.0.0.1:${upstream.address().port}/moonshot/search`
+  const moonshotCNURL = `http://127.0.0.1:${upstream.address().port}/moonshot-cn/search`
+
+  // 1. Moonshot international site: snippet mode, limit, Bearer auth
+  await run("search", "add", "magpie-websearch:moonshot", "moonshot-dummy-key", `url=${moonshotURL}`)
+  await run("search", "move", "magpie-websearch:moonshot", "1")
+  const moonshotResult = await search("moonshot smoke query")
+  assert.match(moonshotResult, /example\.com\/moonshot/)
+  assert.doesNotMatch(moonshotResult, /moonshot-extra/)
+  const moonshotCall = calls.at(-1)
+  assert.equal(moonshotCall.path, "/moonshot/search")
+  assert.equal(moonshotCall.method, "POST")
+  assert.equal(moonshotCall.key, "Bearer moonshot-dummy-key")
+  assert.equal(moonshotCall.body.text_query, "moonshot smoke query")
+  assert.equal(moonshotCall.body.limit, 1)
+  assert.equal(moonshotCall.body.include_content, undefined)
+  assert.match(moonshotResult, /Moonshot snippet result/)
+  assert.doesNotMatch(moonshotResult, /Detailed Moonshot full text/)
+
+  // 2. Empty results and timeout
+  assert.match(await failure("moonshot empty"), /found nothing/)
+  assert.match(await failure("timeout"), /Moonshot search timed out after 500ms/)
+
+  // 3. 429 refusal with X-RateLimit-Reset and fallback to another configured search (linkup)
+  const moonshotRefused = await failure("moonshot refusal")
+  assert.match(moonshotRefused, /429/)
+  await delay(50)
+  assert.match(gatewayLog, /Moonshot API error 429: rate limit reached, retry after 1[12]s/)
+  const millisecondsRefused = await failure("moonshot milliseconds")
+  assert.match(millisecondsRefused, /Moonshot API error 429: rate limit reached, retry after 1[12]s/)
+  const oversizedRefused = await failure("moonshot oversized reset")
+  assert.match(oversizedRefused, /Moonshot API error 429: rate limit reached/)
+  assert.doesNotMatch(oversizedRefused, /retry after/)
+  await run("search", "rm", "magpie-websearch:moonshot")
+  await run("search", "add", "magpie-websearch:moonshot", "moonshot-fallback-dummy-key", `url=${moonshotURL}`)
+  await run("search", "move", "magpie-websearch:moonshot", "1")
+  await run("search", "on", "magpie-websearch:linkup")
+  for (const query of ["moonshot refusal", "moonshot oversized reset"]) {
+    const beforeMoonshotFallback = calls.length
+    const moonshotFallbackResult = await search(query)
+    assert.match(moonshotFallbackResult, /example\.com\/smoke/)
+    assert.equal(calls.length, beforeMoonshotFallback + 2)
+    assert.equal(calls.at(-2).path, "/moonshot/search")
+    assert.equal(calls.at(-1).path, "/proxy/v1/search")
+  }
+  await run("search", "off", "magpie-websearch:linkup")
+  await run("search", "rm", "magpie-websearch:moonshot")
+
+  // 4. Moonshot key rotation with resting key
+  await run("search", "add", "magpie-websearch:moonshot",
+    "moonshot-resting-dummy-key,moonshot-good-dummy-key", `url=${moonshotURL}`, "pick=order")
+  await run("search", "move", "magpie-websearch:moonshot", "1")
+  const beforeMoonshotRotation = calls.length
+  assert.match(await search("moonshot key rotation"), /example\.com\/moonshot/)
+  assert.equal(calls.length, beforeMoonshotRotation + 2)
+  assert.equal(calls.at(-2).key, "Bearer moonshot-resting-dummy-key")
+  assert.equal(calls.at(-1).key, "Bearer moonshot-good-dummy-key")
+  const beforeMoonshotRested = calls.length
+  const moonshotPreferred = await search("moonshot resting preference")
+  assert.match(moonshotPreferred, /example\.com\/moonshot/)
+  assert.equal(calls.length, beforeMoonshotRested + 1, "a resting key must follow the healthy key even in fixed order")
+  assert.equal(calls.at(-1).key, "Bearer moonshot-good-dummy-key")
+  await run("search", "rm", "magpie-websearch:moonshot")
+
+  // 5. Moonshot CN: full text mode, include_content: true, domestic credentials
+  await run("search", "add", "magpie-websearch:moonshot-cn", "moonshot-cn-dummy-key", `url=${moonshotCNURL}`)
+  await run("search", "move", "magpie-websearch:moonshot-cn", "1")
+  const moonshotCNResult = await search("moonshot cn smoke query")
+  assert.match(moonshotCNResult, /example\.com\/moonshot-cn/)
+  assert.doesNotMatch(moonshotCNResult, /moonshot-cn-extra/)
+  const moonshotCNCall = calls.at(-1)
+  assert.equal(moonshotCNCall.path, "/moonshot-cn/search")
+  assert.equal(moonshotCNCall.method, "POST")
+  assert.equal(moonshotCNCall.key, "Bearer moonshot-cn-dummy-key")
+  assert.equal(moonshotCNCall.body.text_query, "moonshot cn smoke query")
+  assert.equal(moonshotCNCall.body.limit, 1)
+  assert.equal(moonshotCNCall.body.include_content, true)
+  assert.match(moonshotCNResult, /Detailed Moonshot CN full text/)
+
+  // 6. Dual-site isolation: refusal on moonshot does not accidentally switch to moonshot-cn with same key
+  await run("search", "add", "magpie-websearch:moonshot", "moonshot-only-key", `url=${moonshotURL}`)
+  await run("search", "move", "magpie-websearch:moonshot", "1")
+  await run("search", "move", "magpie-websearch:moonshot-cn", "2")
+  const beforeCrossSite = calls.length
+  const crossSiteResult = await search("moonshot refusal")
+  assert.match(crossSiteResult, /example\.com\/moonshot-cn/)
+  assert.equal(calls.length, beforeCrossSite + 2)
+  assert.equal(calls.at(-2).path, "/moonshot/search")
+  assert.equal(calls.at(-2).key, "Bearer moonshot-only-key")
+  assert.equal(calls.at(-1).path, "/moonshot-cn/search")
+  assert.equal(calls.at(-1).key, "Bearer moonshot-cn-dummy-key")
+  await run("search", "rm", "magpie-websearch:moonshot")
+  await run("search", "rm", "magpie-websearch:moonshot-cn")
+  console.log("✓ magpie loads ten APIs, filters registrations, applies options/custom URLs, handles timeout/429, and runs anonymous search with cooldown and fallback; Parallel and TinyFish support MCP JSON/SSE and keyed REST; SerpApi supports keyed REST with URL auth and leak protection; Moonshot dual sites support Basic REST with Bearer auth, limit, snippets/full text, and X-RateLimit-Reset cooldown")
 } catch (error) {
   console.error(gatewayLog)
   throw error
