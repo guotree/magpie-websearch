@@ -70,6 +70,12 @@ Before bumping the version:
   response/business-error validation, key rotation and explicit cross-site fallback.
   Keep both entry modules and the shared factory in the package. Distinguish local
   dummy-key checks from real-key verification of result counts, filters and billing.
+- For StepFun China, check REST `query`/`n`/`category`, snippet/full-text fallback,
+  Unicode text budgets, malformed/empty results, timeout and cancellation, Credit
+  429 and moderation 451. Verify long errors retain `type`/`code`, withheld 402
+  bodies are cancelled without blocking, and interrupted 401 bodies still permit
+  key rotation. Keep domestic REST separate from Step Plan MCP; distinguish
+  dummy-key/local-host checks from real-key search and billing verification.
 - Run `npm pack --dry-run` and check that the entry, `src/`, `docs/` and
   `assets/icon-128.png` are included. Keep runtime files committed so GitHub installs
   work without a build.

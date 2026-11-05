@@ -10,7 +10,7 @@ checks. See the [README](../README.en.md) for installation and quick start, and
 - [Custom Base URL](#custom-base-url)
 - [CLI management](#cli)
 - [Anonymous search and rate limits](#anonymous-search)
-- [Parallel](#parallel-search), [TinyFish](#tinyfish-search), [SerpApi](#serpapi-search), [Moonshot and Moonshot CN](#moonshot-search), and [Zhipu and Z.ai](#zhipu-search) protocols
+- [Parallel](#parallel-search), [TinyFish](#tinyfish-search), [SerpApi](#serpapi-search), [Moonshot and Moonshot CN](#moonshot-search), [StepFun](#stepfun-search), and [Zhipu and Z.ai](#zhipu-search) protocols
 - [Magpie result processing](#result-processing)
 - [Full configuration reference](#configuration)
 - [Registration filters](#registration-filters)
@@ -24,9 +24,9 @@ checks. See the [README](../README.en.md) for installation and quick start, and
 
 In the app: **Settings › Models › Web search**, add each API you want, switch it
 on, and order it. Leave the key empty for anonymous AnySearch, Keenable, Parallel
-or TinyFish, or provide a key to use your account. Linkup, Metaso, Moonshot, Moonshot CN, Querit, SerpApi, Z.ai and Zhipu require a key.
+or TinyFish, or provide a key to use your account. Linkup, Metaso, Moonshot, Moonshot CN, Querit, SerpApi, StepFun, Z.ai and Zhipu require a key.
 
-No plugin options are required. With no registration filters, all twelve APIs are
+No plugin options are required. With no registration filters, all thirteen APIs are
 registered; magpie's Web search settings decide which are configured and used.
 
 <a id="custom-base-url"></a>
@@ -83,6 +83,9 @@ magpie search add magpie-websearch:querit <key>
 
 # SerpApi: a key is required
 magpie search add magpie-websearch:serpapi <key>
+
+# StepFun China: a key from the domestic Open Platform is required
+magpie search add magpie-websearch:stepfun <china-key>
 
 # Zhipu (China) and Z.ai (international): each site's own Standard API Key
 magpie search add magpie-websearch:zhipu <china-key>
@@ -384,16 +387,100 @@ limits or search quality.
 magpie plugin options magpie-websearch '{"zhipu":{"engine":"search_pro","contentSize":"high","maxResults":6},"zai":{"maxResults":6}}'
 ```
 
+<a id="stepfun-search"></a>
+
+## StepFun China search
+
+Uses the [standalone REST search API](https://platform.stepfun.com/docs/zh/api-reference/search/search.md):
+POST `https://api.stepfun.com/v1/search`, JSON with `Authorization: Bearer <key>`,
+without a model call. Magpie manages the required API key from
+<https://platform.stepfun.com/interface-key>. The adapter registers by default as
+`magpie-websearch:stepfun`, displayed as `StepFun (magpie-websearch)`.
+
+Queries are whitespace-normalized and must be nonempty, without an invented
+length ceiling or silent truncation. Requests send `query`, `n` sized via
+`sizeFor(count, maxResults, 20)`, and optional `category`: `programming`, `research`,
+`gov` or `business`. The default omits category to search all scenarios. Invalid
+links are filtered before capping, preserving upstream order without extra calls
+to fill short results. Pagination, domain, recency, language and safe-search
+parameters are not published and are not exposed.
+
+The default `content: "snippet"` prefers snippets, falling back to the full
+`content` when the snippet is blank. `"full"` reverses that preference. Selected
+text preserves indentation and line breaks, then retains up to `contentChars`
+Unicode code points (4000 by default; 0 keeps all) and appends `…` on truncation.
+Both modes use this budget. Magpie still applies its own 1500-byte cap. The API
+documents no way to suppress the response's full body; no `include_content`
+switch is sent, and these options only select text locally.
+
+Results read the `results` array. Each row requires a nonblank string `url`,
+which is trimmed without further protocol, syntax or reachability checks.
+Missing, non-string or blank titles fall back to the URL. String `time` maps to
+`age` after trimming surrounding whitespace; blank or non-string values are
+omitted. It is not parsed: it is the page's **index time**, not its publication
+date. As a plugin validation policy, missing/null/non-array results and
+nonempty arrays with no usable URLs fail without caching. Explicit
+empty arrays cache for at most 30 seconds. A truthy `error` also fails on HTTP 200
+without inventing an HTTP status. Each plugin instance owns its cache, hashing
+the endpoint, key, query, count, category, content mode and text budget together.
+
+HTTP refusals retain numeric `status` and bounded upstream diagnostics; 402 uses
+a fixed insufficient-balance/organization-Credit message. 401 suggests checking
+the domestic key and account access. 429 can mean rate limits or project/member
+Credit caps, and retains upstream error identifiers and validated standard
+`Retry-After` (integer seconds or HTTP date, including 0). 451 reports moderation
+of the query or result content. Magpie owns key rest, rotation and fallback;
+the adapter adds no sleeps or retries. Custom URLs are exact endpoints without
+appended paths, and redirects are rejected. Timeout and `ctx.abort` cover fetch
+and body consumption; `timeout: 0` still preserves host cancellation.
+
+Error details put string or numeric `type`/`code` before the message. Each
+identifier retains its first 80 code points plus an appended `…` when truncated.
+Upstream diagnostics retain up to 300 code points plus `… [truncated]` when
+truncated; HTTP prefixes, retry hints and action suggestions are outside that
+budget. Without usable structured fields, or for non-JSON bodies, bounded raw
+diagnostics are used. Interrupted or timed-out error bodies still retain known
+HTTP statuses such as 401/403 so key rotation can continue. Explicit host
+cancellation during a request takes precedence. 402 uses a fixed message and
+cancels the unread body without waiting for cleanup.
+
+[Domestic pricing](https://platform.stepfun.com/docs/zh/guides/pricing/details.md)
+lists ¥0.04/search without promising free empty or failed requests. The
+[rate-limit guide](https://platform.stepfun.com/docs/zh/guides/pricing/rate-limits.md)
+lists account tiers without a separate numeric search quota. The
+[error reference](https://platform.stepfun.com/docs/zh/api-reference/error-codes.md)
+lists `project_credit_limit_exceeded` and `member_project_credit_limit_exceeded`
+as 429 errors, so not every refusal is a short rate-limit window.
+
+This adapter supports domestic standard REST only. On 2026-11-05, unauthenticated
+domestic REST returned 401, international `/v1/search` returned 404 and international
+chat returned 401. The [international documentation](https://platform.stepfun.ai/docs/en/guides/developer/integrations/codex.md#connect-stepsearch-mcp)
+does list a separate Step Plan MCP endpoint at
+`https://api.stepfun.ai/step_plan/v1/mcp/web_search/mcp` (also returned 401 without a
+key). Its protocol and subscription channel differ; it is not an automatic fallback.
+
+```sh
+magpie plugin options magpie-websearch '{"stepfun":{"category":"research","content":"full","maxResults":6,"contentChars":4000}}'
+```
+
+Dummy-key local tests cover requests, snippet/full-text fallback, empty/malformed
+results, cancellation/timeouts, Credit 429, moderation 451, key rotation and host
+fallback. Host cases also verify Credit identifiers survive long error messages,
+and interrupted 401 bodies still rotate to a healthy key.
+Successful searches, full-text responses, latency, billing, limits and
+quality with real account keys remain unverified.
+
 <a id="result-processing"></a>
 
 ## What magpie does with a result
 
 - `count` is 6: adapters request the needed count and cap locally. Sogou must request at least 10 because of its upstream buckets; APIs without a configurable count are capped locally. magpie keeps at most 6.
 - `text` is stripped of tags, unescaped, whitespace-collapsed, and cut to 1500 bytes.
-- `age` is the vendor's own date string; this plugin does not parse or rewrite it.
+- `age` preserves the vendor's date-string format after trimming surrounding whitespace. Blank or non-string values are omitted, without guessing dates or converting time zones. StepFun supplies index time.
 - A hit without a URL is dropped.
 - A thrown error with a numeric `status` (401, 402, 403, 429) is an API refusal. For keyed calls, magpie records the key's rest and tries the next key. Anonymous 429 cooldowns are managed by this plugin; failed APIs give way to the next configured API.
-- `retryAfter` on a 429 follows the adapter's policy. SerpApi, Zhipu and Z.ai forward only validated and normalized integer seconds or a standard HTTP date. Moonshot's two adapters prefer a valid standard header, falling back to the [reset-header rules](#moonshot-search) when it is missing or invalid. Other adapters use the shared header passthrough behavior.
+- `retryAfter` on a 429 follows the adapter's policy. SerpApi, StepFun, Zhipu and Z.ai forward only validated and normalized integer seconds or a standard HTTP date. Moonshot's two adapters prefer a valid standard header, falling back to the [reset-header rules](#moonshot-search) when it is missing or invalid. Other adapters use the shared header passthrough behavior.
+- If reading a failed HTTP response body is interrupted or times out, the shared HTTP layer retains the known `status` and retry metadata extracted by the adapter. Explicit host cancellation during a request takes precedence. Network failures and business errors in HTTP 200 responses do not acquire invented HTTP statuses.
 
 <a id="configuration"></a>
 
@@ -404,7 +491,7 @@ the top-level `enable` and `disable` filters. Omitted provider fields fall back
 to the environment variable or the default listed below.
 
 Use **Plugins → Installed → Options**, or pass a JSON object on the command line.
-For example, change search parameters while keeping all twelve APIs registered:
+For example, change search parameters while keeping all thirteen APIs registered:
 
 ```sh
 magpie plugin options magpie-websearch '{"linkup":{"depth":"deep","maxResults":4,"timeout":25000,"cacheTTL":600000},"anysearch":{"zone":"cn","language":"zh-CN"}}'
@@ -485,6 +572,12 @@ The table lists fields inside each provider's object (`linkup.depth`, for exampl
 | serpapi | `hl` | `SERPAPI_HL` | empty | Interface language code, e.g. `zh-cn` |
 | serpapi | `googleDomain` | `SERPAPI_GOOGLE_DOMAIN` | empty | Google domain, e.g. `google.com` |
 | serpapi | `safe` | `SERPAPI_SAFE` | empty | empty, `active`, `off` |
+| stepfun | `cacheTTL` | `STEPFUN_CACHE_TTL` | `600000` | ≥ 0; milliseconds |
+| stepfun | `timeout` | `STEPFUN_TIMEOUT` | `25000` | 0–2147483647 ms; 0 disables the plugin timeout, preserving host cancellation |
+| stepfun | `maxResults` | `STEPFUN_MAX_RESULTS` | `10` | 1–20; upstream and local cap |
+| stepfun | `category` | `STEPFUN_CATEGORY` | empty | empty, `programming`, `research`, `gov`, `business` |
+| stepfun | `content` | `STEPFUN_CONTENT` | `snippet` | `snippet`, `full`; local text selection only |
+| stepfun | `contentChars` | `STEPFUN_CONTENT_CHARS` | `4000` | Code points per text; 0 keeps all |
 | tinyfish | `cacheTTL` | `TINYFISH_CACHE_TTL` | `600000` | ≥ 0 |
 | tinyfish | `timeout` | `TINYFISH_TIMEOUT` | `25000` | ≥ 0; includes reading the MCP stream |
 | tinyfish | `maxResults` | `TINYFISH_MAX_RESULTS` | `10` | ≥ 1; local cap, not an upstream page-size guarantee |
@@ -523,11 +616,11 @@ for desktop use.
 
 The optional top-level `enable` and `disable` arrays control which APIs the
 plugin registers. Entries use short IDs: `anysearch`, `keenable`, `linkup`,
-`metaso`, `moonshot`, `moonshot-cn`, `parallel`, `querit`, `serpapi`, `tinyfish`, `zai`, `zhipu` (without the `magpie-websearch:` prefix).
+`metaso`, `moonshot`, `moonshot-cn`, `parallel`, `querit`, `serpapi`, `stepfun`, `tinyfish`, `zai`, `zhipu` (without the `magpie-websearch:` prefix).
 
 | Filters | APIs registered |
 |---|---|
-| Both omitted, or `{}` | All twelve APIs |
+| Both omitted, or `{}` | All thirteen APIs |
 | `"enable": ["linkup", "querit"]` | Linkup and Querit only |
 | `"disable": ["keenable"]` | All except Keenable |
 | `"enable": ["linkup", "querit"], "disable": ["querit"]` | Linkup only; `disable` wins |
@@ -555,7 +648,7 @@ To remove all saved plugin options, including provider overrides and filters:
 magpie plugin options magpie-websearch off
 ```
 
-All twelve APIs are registered again. Provider settings use environment
+All thirteen APIs are registered again. Provider settings use environment
 values when present, otherwise their defaults. To remove only the filters,
 save a complete options object containing the provider settings you want to keep.
 
@@ -571,6 +664,23 @@ must be strings in camelCase; adapters define these names locally. The shared he
 strip the complete option suffix to label configuration errors. For retained aliases
 or other naming schemes, pass the provider short ID as the final `namespace` argument.
 See the [provider integration rules](../PROVIDERS.md#configuration-naming) for details.
+
+Reuse `truncateCodePoints(text, limit)` for text budgets. Callers supply a string
+and a validated nonnegative integer; the function does not validate types, trim
+whitespace or normalize text. 0 keeps all text; truncation retains the first N
+code points and appends `…`. It only iterates through the retained prefix plus one
+code point without expanding the full page. Adapters own text selection and
+field tolerance.
+
+`requestResponse`/`requestJSON` accept an optional synchronous
+`errorDetailFromBody(raw, response)` callback for vendor formatting after reading
+a non-successful HTTP response body and before bounding its diagnostic.
+Exceptions or non-string returns fall back to the raw body. A fixed `messages`
+entry for that status, sensitive mode and withheld 402 bodies take precedence
+and skip the callback. It does not handle business errors in HTTP 200 responses;
+adapters validate those themselves. Failed body reads retain the known HTTP
+status and retry metadata; explicit host cancellation during a request takes
+precedence.
 
 ```sh
 npm test        # node:test, no dependencies
@@ -588,10 +698,11 @@ The smoke script requires `magpie` on PATH (`MAGPIE_BIN` can name its executable
 It creates a temporary HOME/config/cache, disables account discovery, starts a
 gateway on a free loopback port, and tests registration, options, custom URL,
 timeout, anonymous search, 429 cooldown and fallback against a local fake API.
-It covers Parallel and TinyFish MCP/REST, SerpApi, both Moonshot adapters, and Zhipu/Z.ai.
+It covers Parallel and TinyFish MCP/REST, SerpApi, StepFun, both Moonshot adapters, and Zhipu/Z.ai.
 Moonshot cases also check seconds/milliseconds reset headers, excessive resets
 and resting-key preference. Zhipu/Z.ai cases check Sogou count buckets, local caps,
 business errors, query length, key rotation and separate credentials on fallback.
+StepFun cases check category, full text, malformed results, Credit 429, 451 and key rotation.
 It removes its sandbox when finished. Search requests
 use only local mocks and dummy keys, without paid search calls; Magpie startup
 may independently fetch public resources such as the model catalog.
@@ -602,10 +713,11 @@ the sandbox. CI runs separate jobs for Node 22/24, Bun, and Magpie testing of th
 unpacked npm package; the three jobs have no ordering dependency.
 
 Local verification on **2026-11-05** used **Node.js 24.19.0, Bun 1.4.4 and magpie
-0.1.2964**. Node and Bun each passed 196 tests, and the Magpie sandbox checks
-passed. Bun ran temporarily from npm's cache via
+0.1.3026**. Node and Bun each passed 219 tests, and the Magpie sandbox checks,
+including StepFun China, long error identifiers and key rotation after interrupted
+401 bodies, passed. Bun ran temporarily from npm's cache via
 `npm exec --yes --package=bun -- bun run check:bun`, without adding a project
-dependency. The earlier **magpie 0.1.2911** record is historical. These records do
+dependency. Earlier **magpie 0.1.2911/0.1.2964** records are historical. These records do
 not establish minimum supported versions.
 
 Local folder installs use the folder name as the short name. Because the package is `@guotree/magpie-websearch` and the folder is `magpie-websearch`, both installs give the same `magpie-websearch:*` IDs.

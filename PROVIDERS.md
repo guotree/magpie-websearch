@@ -16,6 +16,7 @@ standalone search API.
 | Parallel (magpie-websearch) | `magpie-websearch:parallel` | [parallel.mjs](src/providers/parallel.mjs) | optional |
 | Querit (magpie-websearch) | `magpie-websearch:querit` | [querit.mjs](src/providers/querit.mjs) | required |
 | SerpApi (magpie-websearch) | `magpie-websearch:serpapi` | [serpapi.mjs](src/providers/serpapi.mjs) | required |
+| StepFun (magpie-websearch) | `magpie-websearch:stepfun` | [stepfun.mjs](src/providers/stepfun.mjs) | required |
 | TinyFish (magpie-websearch) | `magpie-websearch:tinyfish` | [tinyfish.mjs](src/providers/tinyfish.mjs) | optional |
 | Moonshot (magpie-websearch) | `magpie-websearch:moonshot` | [moonshot.mjs](src/providers/moonshot.mjs) | required |
 | Moonshot CN (magpie-websearch) | `magpie-websearch:moonshot-cn` | [moonshot-cn.mjs](src/providers/moonshot-cn.mjs) | required |
@@ -27,7 +28,7 @@ This suffix identifies the plugin in magpie's GUI and CLI. Keep the short API ID
 and the namespaced vendor ID independent of the display name; suffix changes
 must not rename the IDs used by saved keys, switches, order or plugin options.
 
-All twelve APIs are registered by default. `enable` and `disable` are optional
+All thirteen APIs are registered by default. `enable` and `disable` are optional
 plugin options that filter this list by short ID (`linkup`, for example).
 `disable` takes precedence over `enable`; `enable: []` registers none, while
 `disable: []` excludes none. Provider settings such as `linkup.depth` do not
@@ -182,6 +183,52 @@ and other endpoints are independent of that cooldown. See
   filter effects, billing, real account limits and quality with real keys remain
   unverified. See the [technical reference](docs/technical-reference.en.md#zhipu-search).
 
+### StepFun protocol notes
+
+- The domestic [REST reference](https://platform.stepfun.com/docs/zh/api-reference/search/search.md)
+  documents standalone POST `https://api.stepfun.com/v1/search` with Bearer auth.
+  Magpie manages the key from `https://platform.stepfun.com/interface-key`;
+  `keyOptional: false`. Custom URLs are exact endpoints and redirects are rejected.
+- Requests send a normalized nonempty `query`, `n` sized via
+  `sizeFor(count, maxResults, 20)`, and optional `category` (`programming`,
+  `research`, `gov`, `business`). The API publishes no query length ceiling,
+  pagination, domain/recency filters or safe-search switch.
+- Results read `results`, retaining rows with a nonblank string `url` before
+  capping in upstream order. URLs are trimmed without further syntax, protocol
+  or reachability checks.
+  Missing/null/non-array results and nonempty arrays with no usable links fail
+  without caching; explicit empty arrays cache for at most 30 seconds. This is a
+  plugin validation policy. Truthy `error` payloads fail even on HTTP 200.
+- `content: "snippet"` defaults to the snippet with blank-text fallback to the
+  full `content`; `"full"` reverses that preference. Both apply `contentChars`
+  (4000 Unicode code points by default, 0 keeps all), appending `…` on truncation.
+  These are local choices: no undocumented `include_content` switch is sent.
+  String `time` maps to `age` after trimming surrounding whitespace; blank or
+  non-string values are omitted. It represents index time, not publication.
+- Numeric HTTP status, bounded diagnostics and validated standard `Retry-After`
+  are retained. 402 reports insufficient balance/Credit; 429 can mean rate limits
+  or project/member Credit caps; 451 reports query/result moderation. Magpie owns
+  key rotation and fallback, with no adapter sleeps or retries.
+  Error formatting keeps string/numeric `type`/`code` before long messages:
+  each identifier retains 80 code points plus `…` when truncated; the diagnostic
+  retains 300 code points plus `… [truncated]`, excluding prefixes and advice.
+  Interrupted error bodies retain the known HTTP status; explicit host cancellation
+  takes precedence. Withheld 402 bodies are cancelled without waiting for cleanup.
+- Domestic [pricing](https://platform.stepfun.com/docs/zh/guides/pricing/details.md)
+  lists ¥0.04/search without promising free empty or failed calls. Search-specific
+  numeric rate limits are not published; account tier limits are documented separately.
+- On 2026-11-05, unauthenticated domestic REST returned 401; international
+  `/v1/search` returned 404 while international chat returned 401. International
+  [Step Plan documentation](https://platform.stepfun.ai/docs/en/guides/developer/integrations/codex.md#connect-stepsearch-mcp)
+  does list a separate StepSearch MCP at
+  `https://api.stepfun.ai/step_plan/v1/mcp/web_search/mcp` (also returned 401).
+  This adapter implements domestic REST only, with no automatic channel switching.
+- Dummy-key tests and Magpie host checks cover requests, full text, malformed/empty
+  results, timeout, Credit refusals, moderation, key rotation (including interrupted
+  401 bodies) and fallback. Real-key
+  successful searches, billing, latency and quality remain unverified. See the
+  [technical reference](docs/technical-reference.en.md#stepfun-search).
+
 ## Planned
 
 These candidates are not implemented. IDs are provisional; authentication,
@@ -195,15 +242,14 @@ endpoint details and available features must be verified before implementation.
 | Ollama | `magpie-websearch:ollama` |
 | Perplexity | `magpie-websearch:perplexity` |
 | Serper | `magpie-websearch:serper` |
-| StepFun (China) | `magpie-websearch:stepfun` |
 
 The candidate list was checked on **2026-11-05** against magpie commit
 [`47d58393`](https://github.com/yetone/magpie/tree/47d5839397b1141dbd0394d2080aa6e76753a439).
 None of the planned candidates appears in that revision's
 [built-in search APIs](https://github.com/yetone/magpie/blob/47d5839397b1141dbd0394d2080aa6e76753a439/internal/provider/search_api.go).
-Ollama and StepFun have
-[model provider presets](https://github.com/yetone/magpie/blob/47d5839397b1141dbd0394d2080aa6e76753a439/internal/provider/presets.go),
-but their standalone search APIs remain candidates for evaluation.
+Ollama has a
+[model provider preset](https://github.com/yetone/magpie/blob/47d5839397b1141dbd0394d2080aa6e76753a439/internal/provider/presets.go),
+but its standalone search API remains a candidate for evaluation.
 
 Exclude a candidate from the roadmap only when magpie already integrates the
 corresponding standalone web search API. A model provider preset or a model's
