@@ -96,3 +96,7 @@ Provider adapters and response fixtures were initially based on [guotree/opencod
 ## License
 
 MIT
+
+## Friend Links
+
+- [LINUX DO](https://linux.do/) — the new ideal community

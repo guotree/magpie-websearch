@@ -96,3 +96,7 @@ magpie plugin options magpie-websearch '{"linkup":{"depth":"deep","maxResults":4
 ## 开源协议
 
 MIT
+
+## 友情链接
+
+- [LINUX DO](https://linux.do/) — the new ideal community
