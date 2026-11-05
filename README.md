@@ -4,7 +4,7 @@
 
 为 [magpie](https://usemagpie.ai) 增加的第三方多源网页搜索 API 插件。安装后，这些 API 会出现在 **设置 › 模型 › 网页搜索** 中，由 Magpie 统一管理密钥、启用开关与请求顺序。
 
-当前支持 **AnySearch、Keenable、Linkup、Metaso、Moonshot、Moonshot CN、Parallel、Querit、SerpApi、TinyFish**。其中 AnySearch、Keenable、Parallel 和 TinyFish 支持免 Key 匿名访问；其余六家需要 API Key。
+当前支持 **AnySearch、Keenable、Linkup、Metaso、Moonshot、Moonshot CN、Parallel、Querit、SerpApi、TinyFish、Z.ai、Zhipu**。其中 AnySearch、Keenable、Parallel 和 TinyFish 支持免 Key 匿名访问；其余八家需要 API Key。
 
 ## 安装
 
@@ -31,7 +31,7 @@ magpie search add magpie-websearch:linkup <key>
 magpie search
 ```
 
-默认注册全部 10 个 API，无需设置插件选项。Magpie 的网页搜索设置决定实际使用哪些 API。
+默认注册全部 12 个 API，无需设置插件选项。Magpie 的网页搜索设置决定实际使用哪些 API。
 
 使用官方服务时，将 **Base URL** 留空；自定义地址应填写完整端点，插件不会追加路径。详见[自定义 Base URL](docs/technical-reference.md#custom-base-url)。
 
@@ -57,6 +57,8 @@ magpie plugin options magpie-websearch '{"linkup":{"depth":"deep","maxResults":4
 | Querit | `magpie-websearch:querit` | 必填 | 摘要或句子级匹配内容 |
 | SerpApi | `magpie-websearch:serpapi` | 必填 | Google 自然搜索，支持地区、语言和安全搜索配置 |
 | TinyFish | `magpie-websearch:tinyfish` | 可选 | 匿名 MCP 或带 Key REST；网页、新闻和论文搜索（论文需 Key） |
+| Z.ai | `magpie-websearch:zai` | 必填 | 智谱国际站独立 REST 搜索，使用 `search-prime` |
+| Zhipu | `magpie-websearch:zhipu` | 必填 | 智谱国内站独立 REST 搜索，支持 `search_std`／`search_pro`、搜狗和夸克引擎 |
 
 搜索项在 Magpie 中显示为 `<Provider> (magpie-websearch)`。Vendor ID 保持为 `magpie-websearch:<id>`；插件选项和注册过滤使用 `linkup` 等短 ID。完整支持状态和待评估供应商见 [PROVIDERS.md](PROVIDERS.md)。
 
@@ -76,7 +78,7 @@ magpie plugin options magpie-websearch '{"linkup":{"depth":"deep","maxResults":4
 | [自定义 Base URL](docs/technical-reference.md#custom-base-url) | 精确端点规则、URL 校验、MCP／REST 切换 |
 | [命令行管理](docs/technical-reference.md#cli) | 添加 API、多个 Key、排序、启停与移除 |
 | [匿名搜索与限流](docs/technical-reference.md#anonymous-search) | 匿名端点、切换访问模式、429 冷却与回退 |
-| [供应商协议](docs/technical-reference.md#parallel-search) | Parallel、[TinyFish](docs/technical-reference.md#tinyfish-search)、[SerpApi](docs/technical-reference.md#serpapi-search)、[Moonshot](docs/technical-reference.md#moonshot-search) 的端点、能力限制与验证记录 |
+| [供应商协议](docs/technical-reference.md#parallel-search) | Parallel、[TinyFish](docs/technical-reference.md#tinyfish-search)、[SerpApi](docs/technical-reference.md#serpapi-search)、[Moonshot](docs/technical-reference.md#moonshot-search)、[Zhipu 与 Z.ai](docs/technical-reference.md#zhipu-search) 的端点、能力限制与验证记录 |
 | [结果处理](docs/technical-reference.md#result-processing) | 结果数、文本清理、日期与错误状态 |
 | [完整配置参考](docs/technical-reference.md#configuration) | 参数表、环境变量、优先级、缓存与超时 |
 | [注册过滤](docs/technical-reference.md#registration-filters) | `enable`／`disable` 的规则与示例 |

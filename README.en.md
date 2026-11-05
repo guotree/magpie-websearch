@@ -4,7 +4,7 @@
 
 Additional web search APIs for [magpie](https://usemagpie.ai). Once installed, the APIs appear in **Settings › Models › Web search**, where Magpie manages keys, on/off switches and request order.
 
-Current providers: **AnySearch, Keenable, Linkup, Metaso, Moonshot, Moonshot CN, Parallel, Querit, SerpApi and TinyFish**. AnySearch, Keenable, Parallel and TinyFish support keyless anonymous access; the other six require an API key.
+Current providers: **AnySearch, Keenable, Linkup, Metaso, Moonshot, Moonshot CN, Parallel, Querit, SerpApi, TinyFish, Z.ai and Zhipu**. AnySearch, Keenable, Parallel and TinyFish support keyless anonymous access; the other eight require an API key.
 
 ## Install
 
@@ -31,7 +31,7 @@ magpie search add magpie-websearch:linkup <key>
 magpie search
 ```
 
-All ten APIs are registered by default without plugin options. Magpie's Web search settings determine which APIs are used.
+All twelve APIs are registered by default without plugin options. Magpie's Web search settings determine which APIs are used.
 
 Leave **Base URL** empty for official services. A custom address must be the complete endpoint; the plugin does not append paths. See [Custom Base URL](docs/technical-reference.en.md#custom-base-url).
 
@@ -57,6 +57,8 @@ Each command replaces the complete saved options object, so include every option
 | Querit | `magpie-websearch:querit` | required | Snippets or sentence-level matches |
 | SerpApi | `magpie-websearch:serpapi` | required | Google organic search with geography, language and safe-search settings |
 | TinyFish | `magpie-websearch:tinyfish` | optional | Anonymous MCP or keyed REST; web, news and papers (papers require a key) |
+| Z.ai | `magpie-websearch:zai` | required | Standalone REST search on Zhipu's international site using `search-prime` |
+| Zhipu | `magpie-websearch:zhipu` | required | Standalone REST search on the China site with `search_std`/`search_pro`, Sogou and Quark engines |
 
 Search entries appear as `<Provider> (magpie-websearch)` in Magpie. Vendor IDs remain `magpie-websearch:<id>`; plugin options and registration filters use short IDs such as `linkup`. See [PROVIDERS.md](PROVIDERS.md) for full support status and candidate providers.
 
@@ -76,7 +78,7 @@ Leaving the key empty while editing an existing keyed entry keeps its saved key.
 | [Custom Base URL](docs/technical-reference.en.md#custom-base-url) | Exact endpoints, URL validation and MCP/REST switching |
 | [CLI management](docs/technical-reference.en.md#cli) | Adding APIs, multiple keys, ordering, switches and removal |
 | [Anonymous search and rate limits](docs/technical-reference.en.md#anonymous-search) | Anonymous endpoints, access-mode switching, 429 cooldowns and fallback |
-| [Provider protocols](docs/technical-reference.en.md#parallel-search) | Endpoints, capability limits and verification records for Parallel, [TinyFish](docs/technical-reference.en.md#tinyfish-search), [SerpApi](docs/technical-reference.en.md#serpapi-search) and [Moonshot](docs/technical-reference.en.md#moonshot-search) |
+| [Provider protocols](docs/technical-reference.en.md#parallel-search) | Endpoints, capability limits and verification records for Parallel, [TinyFish](docs/technical-reference.en.md#tinyfish-search), [SerpApi](docs/technical-reference.en.md#serpapi-search), [Moonshot](docs/technical-reference.en.md#moonshot-search), and [Zhipu and Z.ai](docs/technical-reference.en.md#zhipu-search) |
 | [Result processing](docs/technical-reference.en.md#result-processing) | Result counts, text cleanup, dates and error statuses |
 | [Full configuration reference](docs/technical-reference.en.md#configuration) | Options, environment variables, precedence, caching and timeouts |
 | [Registration filters](docs/technical-reference.en.md#registration-filters) | `enable`/`disable` rules and examples |

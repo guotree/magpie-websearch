@@ -8,7 +8,7 @@
 - [自定义 Base URL](#custom-base-url)
 - [命令行管理](#cli)
 - [匿名搜索与限流](#anonymous-search)
-- [Parallel](#parallel-search)、[TinyFish](#tinyfish-search)、[SerpApi](#serpapi-search)、[Moonshot 与 Moonshot CN](#moonshot-search) 协议说明
+- [Parallel](#parallel-search)、[TinyFish](#tinyfish-search)、[SerpApi](#serpapi-search)、[Moonshot 与 Moonshot CN](#moonshot-search)、[Zhipu 与 Z.ai](#zhipu-search) 协议说明
 - [Magpie 结果处理](#result-processing)
 - [完整配置参考](#configuration)
 - [注册过滤](#registration-filters)
@@ -23,9 +23,9 @@
 在 Magpie 桌面客户端中：前往 **设置 › 模型 › 网页搜索**（Settings › Models › Web search），添加你需要的搜索引擎，开启开关并调整优先级顺序。
 
 - 对于 AnySearch、Keenable、Parallel、TinyFish，留空 Key 即可使用匿名免 Key 搜索；填写 Key 则使用你的私人账户额度。
-- 对于 Linkup、Metaso、Moonshot、Moonshot CN、Querit、SerpApi，必须填写对应的 API Key。
+- 对于 Linkup、Metaso、Moonshot、Moonshot CN、Querit、SerpApi、Z.ai、Zhipu，必须填写对应的 API Key。
 
-无需强制配置插件选项。在未配置过滤选项时，默认注册全部 10 个搜索 API，由 Magpie 的网页搜索设置界面决定启用哪些和使用顺序。
+无需强制配置插件选项。在未配置过滤选项时，默认注册全部 12 个搜索 API，由 Magpie 的网页搜索设置界面决定启用哪些和使用顺序。
 
 <a id="custom-base-url"></a>
 
@@ -73,6 +73,10 @@ magpie search add magpie-websearch:querit <key>
 
 # SerpApi：必须提供 key
 magpie search add magpie-websearch:serpapi <key>
+
+# Zhipu 国内站、Z.ai 国际站：分别提供本站的 Standard API Key
+magpie search add magpie-websearch:zhipu <china-key>
+magpie search add magpie-websearch:zai <international-key>
 
 # 使用自定义端点代理
 magpie search add magpie-websearch:linkup <key> url=https://search.example.com/proxy/v1/search
@@ -122,7 +126,7 @@ Parallel 提供两种访问链路，由 Magpie 传入的 Key 决定：
 
 Parallel 托管 MCP 服务默认运行于 `fast` 模式。若配置了 `parallel.mode` 为其他模式（`turbo`、`basic` 或 `advanced`），匿名请求会在发起前直接报错并提示需要填入 Key。在配置 Key 的情况下，REST 接口支持全部四种模式。
 
-Parallel 公开搜索上限为 20 条，插件通过 REST 请求最多 20 条，并在两条链路上根据 Magpie 要求与 `parallel.maxResults` 截断有效结果。`text` 字段由 `excerpts` 以 `\n\n` 拼接并截断至 `parallel.contentChars`（默认 4000 个 Unicode 码点，配置 `0` 保留全部返回文本）。`publish_date` 保留原始日期字符串作为 `age`。
+Parallel 公开搜索上限为 20 条，插件通过 REST 请求最多 20 条，并在两条链路上根据 Magpie 要求与 `parallel.maxResults` 截断有效结果。`text` 字段由 `excerpts` 以 `\n\n` 拼接；超过 `parallel.contentChars`（默认 4000 个 Unicode 码点，配置 `0` 保留全部返回文本）时保留前 N 个码点并追加 `…`。`publish_date` 保留原始日期字符串作为 `age`。
 
 匿名访问已于 **2026-11-04** 在官方 MCP 端点实测通过：免 Key 调用的 `tools/call` 对中英文检索均正常返回 HTTP 200 与搜索结果。配置了 Key 时始终严格走 REST，即便 Key 欠费或无效也绝不静默降级为 MCP。自定义端点对两种协议都按完整地址使用，不追加路径。
 
@@ -189,16 +193,58 @@ Moonshot 提供国际站与国内站两个独立的 Basic 网页搜索服务：
 
 双站均已通过 dummy Key、本地模拟服务与 Magpie 宿主验证，覆盖请求、摘要／全文映射、空结果、超时、429 重置头、Key 轮换与后备调度。尚未使用任一站的真实账户 Key 验证搜索成功、正文返回、实测延迟、真实账户限流或检索质量。
 
+<a id="zhipu-search"></a>
+
+## Zhipu 与 Z.ai 搜索
+
+两站提供独立的 REST 网页搜索，无需模型调用，分别注册、分别配置凭证和缓存：
+
+| 站点 | 适配器 ID | 默认 POST 端点 | 获取 Standard API Key |
+|---|---|---|---|
+| 国内站 | `zhipu` | `https://open.bigmodel.cn/api/paas/v4/web_search` | <https://bigmodel.cn/apikey/platform> |
+| 国际站 | `zai` | `https://api.z.ai/api/paas/v4/web_search` | <https://z.ai/manage-apikey/apikey-list> |
+
+使用 `Authorization: Bearer <key>` 和 JSON，请求拒绝重定向。自定义 Base URL 按精确端点使用，不追加路径。Key 由 Magpie 管理；插件不读取模型凭证，不自动跨站重发。请区分 Standard API Key、个人／团队 Coding Plan Key 和旧 Compatible Key；401 提示检查所属站点和产品类型，不断言一定是跨站用错 Key。
+
+国内站归一化查询后按 Unicode 码点校验 1–70 字符，超长时本地报错，不静默截断。国际站仅要求非空，不额外套用国内长度限制。国内显式发送 `search_intent: false` 执行直接搜索；国际固定 `search-prime`，不发送 `search_intent` 或 `content_size`。`engine` 与 `contentSize` 仅 Zhipu 支持；在 `zai` options 中显式传入时会警告并忽略，包括非法值。
+
+| 国内引擎 | 上游条数 | 域名过滤 | 时间过滤／摘要长度 | 官方价格（元／次） |
+|---|---|---|---|---|
+| `search_std`（默认） | 1–50 | 支持 | 支持 | 0.01 |
+| `search_pro` | 1–50 | 支持 | 支持 | 0.03 |
+| `search_pro_sogou` | 10／20／30／40／50 | 支持 | 支持 | 0.05 |
+| `search_pro_quark` | 省略 `count`，本地截取 | 未列为支持 | 支持 | 0.05 |
+
+本地有效上限为 `sizeFor(count, maxResults, 50)`。搜狗的请求数向上取档，例如本地需要 6 条则请求 10 条，需要 24 条则请求 30 条，过滤后仍只返回所需条数。搜狗同时设置域名和时间过滤时，上游 `count` 不生效；不追加请求补齐结果。夸克省略 `count`，实际条数由上游决定，`maxResults` 仅限制本地返回数量，不保证能取到 50 条；其默认条数和实际最大条数尚待真实 Key 验证。缓存同时包含上游参数和本地上限，避免夸克或同一搜狗档位的不同数量串用已截断结果。
+
+在夸克引擎下，夸克不支持域名过滤：来自 `ZHIPU_DOMAIN_FILTER` 的非空值会警告并忽略，无论引擎来自 options 还是环境变量，均不阻断插件加载。显式传入非空 `zhipu.domainFilter` 时仍会抛出配置错误，导致包含该 provider 的插件初始化失败；传入空字符串可清除继承的环境变量。
+
+`domainFilter` 映射单个白名单域名 `search_domain_filter`，例如 `www.example.com`，应使用不带协议、路径、逗号列表或通配符的裸域名。插件仅 trim 后透传，不校验或转换域名格式，错误格式可能被上游拒绝。`recency` 可选 `oneDay`、`oneWeek`、`oneMonth`、`oneYear`、`noLimit`；默认 `noLimit` 省略发送。国内 `contentSize` 默认 `medium`（省略发送），选择 `high` 时请求更长摘要，但它不是独立网页正文抓取。两站的返回文本会先保留最多 `contentChars` 个码点（默认 4000，0 取消本地截断）；发生截断时另加一个 `…`，因此最终可能为 `contentChars + 1` 个码点。Magpie 另有单条 1500 字节的最终限制。
+
+国际站价格为 $0.01／次。[官方指南](https://docs.z.ai/guides/tools/web-search)示例使用 `count`、域名和时间过滤，但 [API 参考](https://docs.z.ai/api-reference/tools/web-search) 的这些字段说明提到枚举中不存在的 `search_pro_jina`。适配器按指南发送参数，实际过滤与条数效果尚待真实 Key 验证；不提供 Jina 引擎或国际站 `contentSize`。价格依据[国内定价](https://docs.bigmodel.cn/cn/guide/start/pricing)及[国际定价](https://docs.z.ai/guides/overview/pricing)，不承诺空结果或失败免费。
+
+结果读取 `search_result`：有效字符串 `link` 映射为 `url`，`content` 映射为 `text`，原生 `publish_date` 字符串映射为 `age`；标题为空时回退 URL，顶层请求时间 `created` 不作为网页发布日期。先过滤无链接条目再截断，保持顺序。**插件的校验策略**要求明确的结果数组：缺失、null、错误类型，以及非空但完全无有效链接的结果均报错且不缓存；这不是官方 schema 的必填字段保证。合法空数组最多缓存 30 秒。truthy 的 `error` 或已提供、非 null 且不属于 `0`、`"0"`、`200`、`"200"` 的顶层业务 `code` 即使出现在 HTTP 200 中也会报错，不转成虚假的 HTTP 状态。对这些成功码及 falsy `error` 的容忍是代理兼容策略，仍须通过结果数组校验。
+
+HTTP 拒绝保留数值 `status`、有界的上游诊断及校验后的标准 `Retry-After`（整数秒数或标准 HTTP 日期，包括 0）。429 可能表示限流、余额不足或额度耗尽，不能一概解释为并发上限；业务码 1701／1702／1703 分别指国内搜索并发达限／无可用引擎／无有效数据。Key 休眠、轮换和后备调度交给 Magpie，不增加插件内睡眠或自动重试。超时与宿主取消覆盖请求及正文读取，`timeout: 0` 仍保留 `ctx.abort`。
+
+首版只接入标准 REST。Coding Plan 的 `webSearchPrime` MCP 是另一个访问方式，凭证与计费不能与 REST 混用；两站当前套餐文档采用积分抵扣，不应沿用旧固定月次数或视为匿名免费搜索。协议说明见[国内 REST 参考](https://docs.bigmodel.cn/api-reference/工具-api/网络搜索)、[国内 MCP](https://docs.bigmodel.cn/cn/coding-plan/mcp/search-mcp-server)和[国际 MCP](https://docs.z.ai/devpack/mcp/search-mcp-server)。
+
+本地验证使用 dummy Key 和模拟服务，覆盖两站请求、国内引擎差异、结果映射、数量及文本限制、缓存、异常响应、超时、429、Key 轮换与后备调度。尚未使用真实账户 Key 验证搜索成功、国际过滤效果、延迟、实际扣费、账户限流或检索质量。
+
+```sh
+magpie plugin options magpie-websearch '{"zhipu":{"engine":"search_pro","contentSize":"high","maxResults":6},"zai":{"maxResults":6}}'
+```
+
 <a id="result-processing"></a>
 
 ## Magpie 结果处理规范
 
-- Magpie 当前传入的 `count` 为 6：适配器在支持的接口中最多申请 6 条结果；对结果数不可配置的响应在本地截断，Magpie 最多保留 6 条。
+- Magpie 当前传入的 `count` 为 6：适配器按所需数量请求并本地截断。搜狗因上游档位约束至少请求 10 条；不可配置结果数的接口仅本地截断。Magpie 最多保留 6 条。
 - `text` 会自动剔除 HTML 标签、反转义字符、折叠多余空白并截断至 1500 字节。
 - `age` 保留厂商返回的原生时间字符串，插件不作猜测与改写。
 - 自动剔除不包含 URL 的无效结果。
 - 抛出带有数值型 `status`（401、402、403、429）的错误被 Magpie 识别为服务商拒绝；对于带 Key 请求，Magpie 会休眠该 Key 并尝试下一个。匿名 429 冷却由本插件自主管理；失败时会触发 Magpie 调度下一可用引擎。
-- 429 响应的 `Retry-After` 按适配器策略处理：SerpApi 仅传递校验和规范化后的整数秒数或标准 HTTP 日期；Moonshot 双站优先传递合法标准头，非法或缺失时按[重置头规则](#moonshot-search)回退；其他适配器沿用通用头透传逻辑。
+- 429 响应的 `Retry-After` 按适配器策略处理：SerpApi、Zhipu 和 Z.ai 仅传递校验和规范化后的整数秒数或标准 HTTP 日期；Moonshot 双站优先传递合法标准头，非法或缺失时按[重置头规则](#moonshot-search)回退；其他适配器沿用通用头透传逻辑。
 
 <a id="configuration"></a>
 
@@ -218,7 +264,7 @@ magpie plugin options magpie-websearch '{"linkup":{"depth":"deep","maxResults":4
 
 环境变量沿用回退规则：空白值视为未设置；数值无法解析为非负安全整数时使用默认值，合法数值再限制到该字段允许的范围；枚举字符串不合法时记录警告并使用默认值。`timeout` 与 `cacheTTL` 单位为毫秒，`timeout` 最大为 2,147,483,647 毫秒。设置 `timeout: 0` 取消插件自身的超时保护，但 Magpie 宿主的取消信号与期限仍生效；设置 `cacheTTL: 0` 关闭内存缓存。
 
-各 API 使用有容量上限的内存搜索缓存，按最终端点、Key 摘要及请求参数（包括结果数）隔离。空结果最多缓存 30 秒。
+各 API 使用有容量上限的内存搜索缓存，按最终端点、凭证及请求参数（包括结果数）整体哈希隔离。空结果最多缓存 30 秒。
 
 各厂商配置项清单：
 
@@ -280,6 +326,22 @@ magpie plugin options magpie-websearch '{"linkup":{"depth":"deep","maxResults":4
 | tinyfish | `domainType` | `TINYFISH_DOMAIN_TYPE` | `web` | `web`、`news`、`research_paper`（学术论文模式需填 Key） |
 | tinyfish | `includeDomains` | `TINYFISH_INCLUDE_DOMAINS` | 留空 | 包含域名列表（逗号分隔） |
 | tinyfish | `excludeDomains` | `TINYFISH_EXCLUDE_DOMAINS` | 留空 | 排除域名列表（逗号分隔） |
+| zai | `cacheTTL` | `ZAI_CACHE_TTL` | `600000` | 缓存时间（毫秒），≥ 0 |
+| zai | `timeout` | `ZAI_TIMEOUT` | `25000` | 超时时间（毫秒），≥ 0 |
+| zai | `maxResults` | `ZAI_MAX_RESULTS` | `10` | 1–50；本地结果上限 |
+| zai | `contentChars` | `ZAI_CONTENT_CHARS` | `4000` | 每条文本的 Unicode 码点上限；0 保留全部 |
+| zai | `recency` | `ZAI_RECENCY` | `noLimit` | `noLimit`、`oneDay`、`oneWeek`、`oneMonth`、`oneYear`；效果待实测 |
+| zai | `domainFilter` | `ZAI_DOMAIN_FILTER` | 留空 | 单个白名单域名；效果待实测 |
+| zhipu | `cacheTTL` | `ZHIPU_CACHE_TTL` | `600000` | 缓存时间（毫秒），≥ 0 |
+| zhipu | `timeout` | `ZHIPU_TIMEOUT` | `25000` | 超时时间（毫秒），≥ 0 |
+| zhipu | `maxResults` | `ZHIPU_MAX_RESULTS` | `10` | 1–50；本地上限；搜狗请求向上取档，夸克省略 count |
+| zhipu | `contentChars` | `ZHIPU_CONTENT_CHARS` | `4000` | 每条文本的 Unicode 码点上限；0 保留全部 |
+| zhipu | `recency` | `ZHIPU_RECENCY` | `noLimit` | `noLimit`、`oneDay`、`oneWeek`、`oneMonth`、`oneYear` |
+| zhipu | `domainFilter` | `ZHIPU_DOMAIN_FILTER` | 留空 | 单个白名单域名；夸克不支持 |
+| zhipu | `engine` | `ZHIPU_ENGINE` | `search_std` | `search_std`、`search_pro`、`search_pro_sogou`、`search_pro_quark` |
+| zhipu | `contentSize` | `ZHIPU_CONTENT_SIZE` | `medium` | `medium`、`high`；上游摘要长度 |
+
+表中的 `contentChars` 表示截断前保留的 Unicode 码点数，不是最终文本长度；截断时还会追加一个 `…`，因此实际长度可能多 1 个码点。
 
 环境变量在创建插件实例时读取，必须存在于 Magpie 进程的环境中。在另一个终端设置变量不会改变已经运行的桌面客户端；桌面使用建议优先配置插件选项。
 
@@ -291,7 +353,7 @@ magpie plugin options magpie-websearch '{"linkup":{"depth":"deep","maxResults":4
 
 | 过滤器设置 | 实际向 Magpie 注册的 API |
 |---|---|
-| 省略未设，或 `{}` | 全部 10 个 API 均注册 |
+| 省略未设，或 `{}` | 全部 12 个 API 均注册 |
 | `"enable": ["linkup", "querit"]` | 仅注册 Linkup 与 Querit |
 | `"disable": ["keenable"]` | 注册除 Keenable 外的其余 API |
 | `"enable": ["linkup", "querit"], "disable": ["querit"]` | 仅注册 Linkup（`disable` 优先级高于 `enable`） |
@@ -314,7 +376,7 @@ magpie plugin options magpie-websearch '{"disable":["keenable"],"linkup":{"depth
 magpie plugin options magpie-websearch off
 ```
 
-全部 10 个 API 会重新注册。供应商配置优先取环境变量，否则使用默认值。若只想移除过滤器，请保存包含所有需要保留的供应商配置的完整选项对象。
+全部 12 个 API 会重新注册。供应商配置优先取环境变量，否则使用默认值。若只想移除过滤器，请保存包含所有需要保留的供应商配置的完整选项对象。
 
 <a id="development"></a>
 
@@ -331,10 +393,10 @@ npm run smoke:magpie # 在独立沙箱中启动真实 Magpie 进程进行完整�
 
 Magpie 通过其管理的 **Bun** 运行插件。基于 Node 的开发命令要求 **Node.js 20.3.0 或更新版本**，依赖 `AbortSignal.any` 组合超时和取消信号；`check:bun` 直接在 Bun 下运行。本插件使用 Magpie 的 `search` hook；`package.json` 中的 `opencode` 关键词用于 Magpie 的 npm 插件发现。
 
-`npm run smoke:magpie` 测试脚本要求环境变量 PATH 中存在 `magpie` 可执行文件（或通过 `MAGPIE_BIN` 指定）。脚本创建独立的沙箱配置环境、隔离账户发现、在随机回环端口启动网关，验证插件加载、注册过滤、自定义 URL、超时中断、匿名 429 冷却与后备调度、Parallel 及 TinyFish 的 MCP／REST，以及 SerpApi 和 Moonshot 双站的带 Key 协议。Moonshot 用例还覆盖秒／毫秒重置头、超限值忽略与 Key 休眠排序。测试完成后自动清理沙箱，搜索请求只访问本地模拟服务并使用 dummy Key，不调用付费搜索；Magpie 自身启动时仍可能独立获取模型目录等公共资源。
+`npm run smoke:magpie` 测试脚本要求环境变量 PATH 中存在 `magpie` 可执行文件（或通过 `MAGPIE_BIN` 指定）。脚本创建独立的沙箱配置环境、隔离账户发现、在随机回环端口启动网关，验证插件加载、注册过滤、自定义 URL、超时中断、匿名 429 冷却与后备调度、Parallel 及 TinyFish 的 MCP／REST，以及 SerpApi、Moonshot 双站和 Zhipu／Z.ai 的带 Key 协议。Moonshot 用例覆盖秒／毫秒重置头、超限值忽略与 Key 休眠排序；Zhipu／Z.ai 用例覆盖搜狗档位、本地截断、业务错误、查询长度、Key 轮换和跨站后备凭证隔离。测试完成后自动清理沙箱，搜索请求只访问本地模拟服务并使用 dummy Key，不调用付费搜索；Magpie 自身启动时仍可能独立获取模型目录等公共资源。
 
 可用 `MAGPIE_PLUGIN_DIR` 指定解包后的 npm 插件目录，目录名应保持为 `magpie-websearch` 以维持 Vendor ID。`MAGPIE_SMOKE_ROOT` 可覆盖测试沙箱使用的系统临时目录。CI 分别运行 Node 22／24、Bun 检查和解包后的 npm 包 Magpie 验证，三个作业之间没有顺序依赖。
 
-2026-11-05 本地验证记录为 **Node.js 24.19.0** 和 **magpie 0.1.2964**。此前文档记录的 **magpie 0.1.2911／Bun 1.4.4** 属于历史验证；本轮环境未找到独立的 Bun 可执行文件，`check:bun` 未能运行，不能据历史记录声称当前改动已通过 Bun 全量测试。这些记录均不代表最低支持版本。
+2026-11-05 本地验证使用 **Node.js 24.19.0、Bun 1.4.4、magpie 0.1.2964**。Node 与 Bun 均通过 196 项测试，Magpie 沙箱验证通过。Bun 通过 `npm exec --yes --package=bun -- bun run check:bun` 从 npm 缓存临时运行，不增加项目依赖。此前 **magpie 0.1.2911** 的记录属于历史验证；这些记录均不代表最低支持版本。
 
 本地文件夹安装以文件夹名作为插件短名称。包名为 `@guotree/magpie-websearch`，文件夹名为 `magpie-websearch` 时，两种安装方式均使用 `magpie-websearch:*` ID。

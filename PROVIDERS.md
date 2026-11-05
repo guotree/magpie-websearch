@@ -19,13 +19,15 @@ standalone search API.
 | TinyFish (magpie-websearch) | `magpie-websearch:tinyfish` | [tinyfish.mjs](src/providers/tinyfish.mjs) | optional |
 | Moonshot (magpie-websearch) | `magpie-websearch:moonshot` | [moonshot.mjs](src/providers/moonshot.mjs) | required |
 | Moonshot CN (magpie-websearch) | `magpie-websearch:moonshot-cn` | [moonshot-cn.mjs](src/providers/moonshot-cn.mjs) | required |
+| Z.ai (magpie-websearch) | `magpie-websearch:zai` | [zai.mjs](src/providers/zai.mjs) | required |
+| Zhipu (magpie-websearch) | `magpie-websearch:zhipu` | [zhipu.mjs](src/providers/zhipu.mjs) | required |
 
 Every search definition's `name` must follow `<Provider> (magpie-websearch)`.
 This suffix identifies the plugin in magpie's GUI and CLI. Keep the short API ID
 and the namespaced vendor ID independent of the display name; suffix changes
 must not rename the IDs used by saved keys, switches, order or plugin options.
 
-All ten APIs are registered by default. `enable` and `disable` are optional
+All twelve APIs are registered by default. `enable` and `disable` are optional
 plugin options that filter this list by short ID (`linkup`, for example).
 `disable` takes precedence over `enable`; `enable: []` registers none, while
 `disable: []` excludes none. Provider settings such as `linkup.depth` do not
@@ -58,8 +60,8 @@ and other endpoints are independent of that cooldown. See
   `basic` and `advanced`. Non-`fast` modes require an API key and fail with a clear
   message if run anonymously.
 - Public search caps results at 20. The adapter caps requests to `sizeFor(count, maxResults, 20)`.
-- Excerpts are joined with `\n\n` and trimmed to `contentChars` (default 4000 code points,
-  0 keeps all). `publish_date` maps to `age`.
+- Excerpts are joined with `\n\n`; text retains up to `contentChars` code points
+  (default 4000, 0 keeps all) and appends `…` when truncated. `publish_date` maps to `age`.
 - Custom Base URLs are exact endpoints for either mode without automatic path rewriting.
 
 ### TinyFish protocol notes
@@ -95,8 +97,9 @@ and other endpoints are independent of that cooldown. See
 - The [Metaso Search API playground](https://metaso.cn/search-api/playground) documents
   authenticated POST search at `/api/v1/search`.
 - Metaso requires an API key (Bearer token). Anonymous access returns HTTP 401.
-- Results are read from `webpages` (or fallback `results`), mapping `link` to `url`,
-  `snippet` to `text`, and `date` to `age`.
+- Results are read from `webpages`, falling back to `results`, `papers`, `documents`
+  or `data`; `link` or `url` maps to `url`, `snippet` (or `content` when `snippet`
+  is absent) to `text`, and a string `date` to `age`.
 - Supports configurable search scope (`webpage`, `document`, `paper`, `image`, `video`, `podcast`).
 - Public search caps results at 50 (`sizeFor(count, maxResults, 50)`).
 
@@ -129,10 +132,55 @@ and other endpoints are independent of that cooldown. See
 - Both sites require an API key (`keyOptional: false`). Credentials and console accounts are independent; keys are configured separately and are not interchanged.
 - Basic search accepts `text_query` and `limit` (1–20, capped via `sizeFor(count, maxResults, 20)`). The initial release does not expose Pro search, responses API, formula API, or model-integrated search.
 - Response payloads must contain a `search_results` array. Results map `url` to `url`, non-empty `title` to `title` (fallback to URL), and string `date` to `age`.
-- Results default to snippet text (`content: "snippet"`). When `content: "full"` is selected, requests include `"include_content": true`, and nonblank string `text` is preferred over `snippet` while preserving whitespace and markdown indentation. Both modes cap text to `contentChars` (default 4000 code points, 0 disables local truncation; Magpie still applies its own text limit).
+- Results default to snippet text (`content: "snippet"`). When `content: "full"` is selected, requests include `"include_content": true`, and nonblank string `text` is preferred over `snippet` while preserving whitespace and markdown indentation. Both modes retain up to `contentChars` code points (default 4000, 0 disables local truncation) and append `…` when truncating; Magpie still applies its own text limit.
 - On HTTP 429, standard `Retry-After` takes precedence, including zero. The fallback `X-RateLimit-Reset` conversion accepts delays of 1–86400 seconds; invalid or excessive values are omitted for host defaults. Official timestamps use Unix seconds; plausible proxy millisecond timestamps are tolerated within the same window. This bound is a local defensive policy, not an upstream quota guarantee; see the [Moonshot reference](docs/technical-reference.en.md#moonshot-search) for conversion rules.
 - Official billing applies to HTTP 200 with a non-empty upstream `search_results` array ($0.002/search internationally before applicable taxes, ¥0.01/search domestically). Local filtering or truncation does not reduce that charge. Search rate limits are independent of model RPM/TPM limits.
 - Both adapters have passed dummy-key local simulations and Magpie host checks. Successful searches, full text, latency, rate limiting and search quality with real account keys have not been verified on either site.
+
+### Zhipu and Z.ai protocol notes
+
+- Standalone POST JSON search with Bearer authentication: domestic
+  `https://open.bigmodel.cn/api/paas/v4/web_search` and international
+  `https://api.z.ai/api/paas/v4/web_search`. Each site uses its own Standard API Key
+  from its console; Magpie manages keys. Both set `keyOptional: false`.
+- Domestic [OpenAPI](https://docs.bigmodel.cn/api-reference/工具-api/网络搜索)
+  specifies a 70-character query ceiling. Longer normalized queries fail locally
+  without truncation; international queries have no additional plugin length cap.
+- Domestic defaults to `search_std`; `search_pro`, `search_pro_sogou` and
+  `search_pro_quark` are selectable. Always send `search_intent: false` domestically.
+  International fixes `search-prime` and omits `search_intent` and `content_size`.
+  Explicit international `engine` or `contentSize` options warn and are ignored.
+- Size locally via `sizeFor(count, maxResults, 50)`. Sogou rounds upstream count
+  up to 10/20/30/40/50; Quark omits count. Filter invalid links before capping.
+  Sogou ignores count when both domain and recency filters are specified.
+  Quark's actual/default result count needs real-key verification; the local cap
+  cannot fill a short response. Quark warns and ignores a nonempty environment
+  domain filter, but under Quark an explicit nonempty `domainFilter` fails configuration.
+  Otherwise domain filters are trimmed and passed through without format
+  validation; use a single bare domain without a scheme, path, list or wildcard.
+- Both read `search_result`, mapping `link` to `url`, `content` to `text` and
+  string `publish_date` to `age`. Text defaults to 4000 code points plus an
+  appended `…` when truncated; 0 keeps all.
+  As a plugin validation policy, missing/null/non-array results and non-empty
+  lists without any usable links fail without caching. Explicit empty arrays
+  cache for at most 30 seconds. For proxy compatibility, `code` values `0`, `"0"`,
+  `200` and `"200"` and falsy `error` fields are tolerated, subject to result
+  validation. Business errors never become HTTP statuses.
+- The international [reference](https://docs.z.ai/api-reference/tools/web-search)
+  mentions `search_pro_jina` in filter/count descriptions despite enumerating
+  only `search-prime`. The adapter follows the official guide's count/domain/time
+  examples; their effects need real-key verification. No Jina engine is exposed.
+- HTTP refusals preserve numeric status and validated standard `Retry-After`.
+  429 can mean balance/quota exhaustion as well as rate limiting. Requests reject
+  redirects and custom URLs are exact endpoints. The site, endpoint, effective
+  request parameters, local limit, text budget and credential are hashed together
+  to form the cache identity; no raw credential is stored in the cache key.
+- Published REST prices: domestic ¥0.01/0.03/0.05/0.05 per use respectively;
+  international $0.01 per use. No promise of free empty or failed searches is made.
+  Coding Plan MCP is a separate access path and is not used by these adapters.
+- Dummy-key tests cover protocol behavior and host scheduling; successful searches,
+  filter effects, billing, real account limits and quality with real keys remain
+  unverified. See the [technical reference](docs/technical-reference.en.md#zhipu-search).
 
 ## Planned
 
@@ -148,15 +196,13 @@ endpoint details and available features must be verified before implementation.
 | Perplexity | `magpie-websearch:perplexity` |
 | Serper | `magpie-websearch:serper` |
 | StepFun (China) | `magpie-websearch:stepfun` |
-| Z.ai | `magpie-websearch:zai` |
-| Zhipu (China) | `magpie-websearch:zhipu` |
 
 The candidate list was checked on **2026-11-05** against magpie commit
-[`6abacd46`](https://github.com/yetone/magpie/tree/6abacd46c3433f811b32d72c3bfe7a49e78b3d87).
+[`47d58393`](https://github.com/yetone/magpie/tree/47d5839397b1141dbd0394d2080aa6e76753a439).
 None of the planned candidates appears in that revision's
-[built-in search APIs](https://github.com/yetone/magpie/blob/6abacd46c3433f811b32d72c3bfe7a49e78b3d87/internal/provider/search_api.go).
-Ollama, StepFun, Z.ai and Zhipu have
-[model provider presets](https://github.com/yetone/magpie/blob/6abacd46c3433f811b32d72c3bfe7a49e78b3d87/internal/provider/presets.go),
+[built-in search APIs](https://github.com/yetone/magpie/blob/47d5839397b1141dbd0394d2080aa6e76753a439/internal/provider/search_api.go).
+Ollama and StepFun have
+[model provider presets](https://github.com/yetone/magpie/blob/47d5839397b1141dbd0394d2080aa6e76753a439/internal/provider/presets.go),
 but their standalone search APIs remain candidates for evaluation.
 
 Exclude a candidate from the roadmap only when magpie already integrates the
@@ -179,7 +225,7 @@ A custom user-configured endpoint is not a built-in integration.
 4. Preserve `ctx.abort` and apply the configured request timeout. Throw errors
    with a numeric `status` for HTTP refusals and carry `retryAfter` on 429.
 5. Create settings and cache per plugin instance. Isolate cache entries by
-   final endpoint, key digest and all request parameters.
+   hashing the final endpoint, credential and all request parameters together.
 6. Add optional provider settings with environment fallback and document their
    defaults in both technical references. Follow the [configuration naming rules](#configuration-naming)
    below. magpie continues to own API keys.
