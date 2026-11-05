@@ -35,7 +35,8 @@ const upstream = createServer(async (req, res) => {
   const body = raw ? JSON.parse(raw) : undefined
   calls.push({ path: req.url, method: req.method, body, key: req.headers.authorization,
     apiKey: req.headers["x-api-key"], title: req.headers["x-keenable-title"],
-    accessMode: req.headers["x-tinyfish-access-mode"] })
+    accessMode: req.headers["x-tinyfish-access-mode"],
+    respondWith: req.headers["x-respond-with"] })
   const query = body?.search_query ?? body?.text_query ?? body?.params?.arguments?.query ?? body?.params?.arguments?.search_queries?.[0] ?? body?.search_queries?.[0] ?? body?.q ?? body?.query ?? target.searchParams.get("query") ?? target.searchParams.get("q")
   if (query === "rate limited") {
     res.writeHead(429, { "Retry-After": body?.q ? "30" : "120" }).end("slow down")
@@ -228,6 +229,94 @@ const upstream = createServer(async (req, res) => {
     res.end(JSON.stringify({ credits: 1, total: 1, webpages: [
       { title: "Metaso smoke page", link: "https://example.com/metaso", snippet: "Local Metaso result" },
     ] }))
+  } else if (target.pathname.startsWith("/jina/")) {
+    if (query === "jina refusal" || req.headers.authorization === "Bearer jina-resting-dummy-key") {
+      res.writeHead(429, { "Retry-After": "0007" })
+      res.end(JSON.stringify({ code: 429, status: 42900, message: "Jina rate limit reached" }))
+    } else if (req.headers.authorization === "Bearer jina-interrupted-dummy-key") {
+      res.writeHead(401)
+      res.flushHeaders()
+      res.write('{"error":')
+      setTimeout(() => res.destroy(), 30)
+    } else if (query === "jina empty") {
+      res.end(JSON.stringify({ code: 200, status: 20000, data: [] }))
+    } else if (query === "jina malformed") {
+      res.end(JSON.stringify({ code: 200, status: 20000, data: null }))
+    } else {
+      res.end(JSON.stringify({
+        code: 200,
+        status: 20000,
+        data: [
+          { title: "Missing URL", description: "Drop before applying cap" },
+          {
+            title: "Jina smoke page",
+            url: "https://example.com/jina",
+            description: "Jina snippet result",
+            content: "ABCDEFGHIJK",
+            publishedTime: "2026-10-01",
+          },
+          { url: "https://example.com/jina-extra", description: "Must be capped" },
+        ],
+      }))
+    }
+  } else if (target.pathname.startsWith("/kagi/")) {
+    if (query === "kagi refusal" || req.headers.authorization === "Bearer kagi-resting-dummy-key") {
+      res.writeHead(429, { "Retry-After": "0007" })
+      res.end(JSON.stringify({ error: [{ code: 429, msg: "Kagi rate limit reached" }] }))
+    } else if (req.headers.authorization === "Bearer kagi-interrupted-dummy-key") {
+      res.writeHead(401)
+      res.flushHeaders()
+      res.write('{"error":')
+      setTimeout(() => res.destroy(), 30)
+    } else if (query === "kagi empty") {
+      res.end(JSON.stringify({ meta: { id: "kagi-smoke" }, data: { search: [] } }))
+    } else if (query === "kagi malformed") {
+      res.end(JSON.stringify({ meta: { id: "kagi-smoke" }, data: { search: null } }))
+    } else {
+      res.end(JSON.stringify({
+        meta: { id: "kagi-smoke" },
+        data: {
+          search: [
+            { title: "Missing URL", snippet: "Drop before applying cap" },
+            {
+              title: "Kagi smoke page",
+              url: "https://example.com/kagi",
+              snippet: "Kagi snippet result",
+              time: "2026-05-15T10:00:00Z",
+            },
+            { url: "https://example.com/kagi-extra", snippet: "Must be capped" },
+          ],
+        },
+      }))
+    }
+  } else if (target.pathname.startsWith("/serper/")) {
+    if (query === "serper refusal" || req.headers["x-api-key"] === "serper-resting-dummy-key") {
+      res.writeHead(429, { "Retry-After": "0007" })
+      res.end(JSON.stringify({ message: "Serper rate limit reached" }))
+    } else if (req.headers["x-api-key"] === "serper-interrupted-dummy-key") {
+      res.writeHead(401)
+      res.flushHeaders()
+      res.write('{"error":')
+      setTimeout(() => res.destroy(), 30)
+    } else if (query === "serper empty") {
+      res.end(JSON.stringify({ searchParameters: { q: query }, organic: [] }))
+    } else if (query === "serper malformed") {
+      res.end(JSON.stringify({ searchParameters: { q: query }, organic: null }))
+    } else {
+      res.end(JSON.stringify({
+        searchParameters: { q: query },
+        organic: [
+          { title: "Missing URL", snippet: "Drop before applying cap" },
+          {
+            title: "Serper smoke page",
+            link: "https://example.com/serper",
+            snippet: "Serper snippet result",
+            date: "1 day ago",
+          },
+          { link: "https://example.com/serper-extra", snippet: "Must be capped" },
+        ],
+      }))
+    }
   } else {
     res.end(JSON.stringify({ results: [{ name: "Smoke page", url: "https://example.com/smoke", content: "Local smoke result" }] }))
   }
@@ -264,7 +353,7 @@ try {
   console.log("Loading the plugin in an isolated magpie configuration…")
   await run("plugin", "add", root)
   const definitions = await loadedSearches()
-  assert.deepEqual(definitions.map((entry) => entry.id).sort(), ["anysearch", "bocha", "keenable", "linkup", "metaso", "moonshot", "moonshot-cn", "ollama", "parallel", "perplexity", "querit", "serpapi", "stepfun", "tinyfish", "zai", "zhipu"])
+  assert.deepEqual(definitions.map((entry) => entry.id).sort(), ["anysearch", "bocha", "jina", "kagi", "keenable", "linkup", "metaso", "moonshot", "moonshot-cn", "ollama", "parallel", "perplexity", "querit", "serpapi", "serper", "stepfun", "tinyfish", "zai", "zhipu"])
   assert.deepEqual(definitions.filter((entry) => entry.keyOptional).map((entry) => entry.id).sort(), ["anysearch", "keenable", "parallel", "tinyfish"])
   await run("plugin", "options", root, JSON.stringify({ enable: ["moonshot", "moonshot-cn"], disable: ["moonshot-cn"] }))
   assert.deepEqual(await loadedIDs(), ["moonshot"])
@@ -280,7 +369,13 @@ try {
   assert.deepEqual(await loadedIDs(), ["perplexity"])
   await run("plugin", "options", root, JSON.stringify({ disable: ["perplexity"], perplexity: { searchType: "people" } }))
   assert.ok(!(await loadedIDs()).includes("perplexity"), "disabled Perplexity options are not initialized")
-  for (const [id, invalid] of [["bocha", { summary: "true" }], ["ollama", { contentChars: -1 }]]) {
+  for (const [id, invalid] of [
+    ["bocha", { summary: "true" }],
+    ["ollama", { contentChars: -1 }],
+    ["jina", { content: "invalid" }],
+    ["kagi", { recency: "year" }],
+    ["serper", { tbs: "qdr:z" }],
+  ]) {
     await run("plugin", "options", root, JSON.stringify({ enable: [id] }))
     assert.deepEqual(await loadedIDs(), [id])
     await run("plugin", "options", root, JSON.stringify({ disable: [id], [id]: invalid }))
@@ -303,6 +398,9 @@ try {
     tinyfish: { maxResults: 1, language: "zh", cacheTTL: 0, timeout: 500 },
     zhipu: { engine: "search_pro_sogou", contentSize: "high", recency: "oneWeek", maxResults: 1, cacheTTL: 0, timeout: 500 },
     zai: { maxResults: 1, cacheTTL: 0, timeout: 500 },
+    jina: { maxResults: 1, contentChars: 8, cacheTTL: 0, timeout: 500 },
+    kagi: { maxResults: 1, recency: "week", region: "cn", cacheTTL: 0, timeout: 500 },
+    serper: { maxResults: 1, gl: "cn", hl: "zh-cn", tbs: "qdr:w", cacheTTL: 0, timeout: 500 },
   }
   await run("plugin", "options", root, JSON.stringify(options))
   await run("search", "add", "magpie-websearch:linkup", "smoke-dummy-key", `url=http://127.0.0.1:${upstream.address().port}/proxy/v1/search`)
@@ -863,7 +961,158 @@ try {
   assert.deepEqual(calls.at(-1).body, { query: "bocha explicit generated summary smoke", count: 1, summary: true, freshness: "oneWeek" })
   assert.equal(calls.at(-1).key, "Bearer bocha-summary-dummy-key")
   await run("search", "rm", "magpie-websearch:bocha")
-  console.log("✓ magpie loads sixteen APIs; registration, options, custom URLs, timeouts, errors, anonymous cooldown, keyed rotation and fallback pass; Bocha summary/freshness and Ollama content limits pass")
+  console.log("Checking Jina, Kagi, Serper exact endpoints, text selection, refusals, fallback and key rotation…")
+  for (const id of ["jina", "kagi", "serper"]) {
+    const label = id === "jina" ? "Jina" : id === "kagi" ? "Kagi" : "Serper"
+    const searchURL = `http://127.0.0.1:${upstream.address().port}/${id}/proxy/search`
+    await run("search", "add", `magpie-websearch:${id}`, `${id}-dummy-key`, `url=${searchURL}`)
+    await run("search", "move", `magpie-websearch:${id}`, "1")
+    const before = calls.length
+    const result = await search(`${id} smoke 中文`)
+    assert.ok(result.includes(`https://example.com/${id}`), result)
+    assert.ok(!result.includes(`${id}-extra`), result)
+    assert.ok(result.includes(id === "jina" ? "Jina sni…" : `${label} snippet result`), result)
+    assert.equal(calls.length, before + 1)
+    const call = calls.at(-1)
+    assert.equal(call.path, `/${id}/proxy/search`)
+    assert.equal(call.method, "POST")
+    if (id === "serper") {
+      assert.equal(call.apiKey, "serper-dummy-key")
+      assert.equal(call.key, undefined)
+      assert.deepEqual(call.body, { q: "serper smoke 中文", num: 10, gl: "cn", hl: "zh-cn", tbs: "qdr:w" })
+    } else if (id === "jina") {
+      assert.equal(call.key, "Bearer jina-dummy-key")
+      assert.equal(call.respondWith, "no-content")
+      assert.deepEqual(call.body, { q: "jina smoke 中文", num: 1 })
+    } else {
+      assert.equal(call.key, "Bearer kagi-dummy-key")
+      assert.deepEqual(call.body, {
+        query: "kagi smoke 中文",
+        workflow: "search",
+        limit: 1,
+        lens: { time_relative: "week" },
+        filters: { region: "cn" },
+      })
+    }
+    assert.match(await failure(`${id} empty`), /found nothing/)
+    const malformed = await failure(`${id} malformed`)
+    const wantMalformed = id === "jina" ? "data must be an array" : id === "kagi" ? "data.search must be an array" : "organic must be an array"
+    assert.ok(malformed.includes(`Invalid ${label} response: ${wantMalformed}`), malformed)
+    assert.ok((await failure("timeout")).includes(`${label} search timed out after 500ms`))
+    const refusal = await failure(`${id} refusal`)
+    assert.match(refusal, /429/)
+    assert.match(refusal, /retry after 7s/)
+    await run("search", "on", "magpie-websearch:linkup")
+    const beforeFallback = calls.length
+    assert.match(await search(`${id} refusal`), /example\.com\/smoke/)
+    assert.equal(calls.length, beforeFallback + 2)
+    assert.equal(calls.at(-2).path, `/${id}/proxy/search`)
+    assert.equal(calls.at(-1).path, "/proxy/v1/search")
+    assert.equal(calls.at(-1).key, "Bearer smoke-dummy-key")
+    await run("search", "off", "magpie-websearch:linkup")
+    await run("search", "rm", `magpie-websearch:${id}`)
+    for (const refusedKey of [`${id}-resting-dummy-key`, `${id}-interrupted-dummy-key`]) {
+      await run("search", "add", `magpie-websearch:${id}`, `${refusedKey},${id}-good-dummy-key`, `url=${searchURL}`, "pick=order")
+      await run("search", "move", `magpie-websearch:${id}`, "1")
+      const beforeRotation = calls.length
+      assert.ok((await search(`${id} rotation ${refusedKey}`)).includes(`https://example.com/${id}`))
+      assert.equal(calls.length, beforeRotation + 2)
+      assert.equal(calls.at(-2).path, `/${id}/proxy/search`)
+      assert.equal(calls.at(-1).path, `/${id}/proxy/search`)
+      if (id === "serper") {
+        assert.equal(calls.at(-2).apiKey, refusedKey)
+        assert.equal(calls.at(-1).apiKey, "serper-good-dummy-key")
+      } else {
+        assert.equal(calls.at(-2).key, "Bearer " + refusedKey)
+        assert.equal(calls.at(-1).key, `Bearer ${id}-good-dummy-key`)
+      }
+      const beforeRest = calls.length
+      await search(`${id} healthy preference ${refusedKey}`)
+      assert.equal(calls.length, beforeRest + 1)
+      if (id === "serper") {
+        assert.equal(calls.at(-1).apiKey, "serper-good-dummy-key")
+      } else {
+        assert.equal(calls.at(-1).key, `Bearer ${id}-good-dummy-key`)
+      }
+      await run("search", "rm", `magpie-websearch:${id}`)
+    }
+  }
+  console.log("Checking Jina full mode, contentChars limit and no-content header omission…")
+  await run("plugin", "options", root, JSON.stringify({ ...options, jina: { ...options.jina, content: "full", contentChars: 8 } }))
+  assert.deepEqual(await loadedIDs(), definitions.map((entry) => entry.id).sort())
+  await run("search", "add", "magpie-websearch:jina", "jina-full-dummy-key", `url=http://127.0.0.1:${upstream.address().port}/jina/proxy/search`)
+  await run("search", "move", "magpie-websearch:jina", "1")
+  const beforeJinaFull = calls.length
+  const jinaFullResult = await search("jina full content smoke")
+  assert.ok(jinaFullResult.includes("ABCDEFGH…"), jinaFullResult)
+  assert.doesNotMatch(jinaFullResult, /Jina snippet result/)
+  assert.equal(calls.length, beforeJinaFull + 1)
+  assert.equal(calls.at(-1).respondWith, undefined, "no-content header must be omitted in full mode")
+  await run("search", "rm", "magpie-websearch:jina")
+
+  console.log("Checking Kagi lens priority over recency and clearing lens…")
+  await run("plugin", "options", root, JSON.stringify({ ...options, kagi: { ...options.kagi, lens: "programming", recency: "week", region: "cn" } }))
+  assert.deepEqual(await loadedIDs(), definitions.map((entry) => entry.id).sort())
+  await run("search", "add", "magpie-websearch:kagi", "kagi-lens-dummy-key", `url=http://127.0.0.1:${upstream.address().port}/kagi/proxy/search`)
+  await run("search", "move", "magpie-websearch:kagi", "1")
+  const beforeKagiLens = calls.length
+  await search("kagi lens override smoke")
+  assert.equal(calls.length, beforeKagiLens + 1)
+  assert.deepEqual(calls.at(-1).body, {
+    query: "kagi lens override smoke",
+    workflow: "search",
+    limit: 1,
+    lens_id: "programming",
+    filters: { region: "cn" },
+  })
+  // Clear lens, recover recency:
+  await run("plugin", "options", root, JSON.stringify({ ...options, kagi: { ...options.kagi, lens: "", recency: "week", region: "cn" } }))
+  assert.deepEqual(await loadedIDs(), definitions.map((entry) => entry.id).sort())
+  const beforeKagiCleared = calls.length
+  await search("kagi cleared lens smoke")
+  assert.equal(calls.length, beforeKagiCleared + 1)
+  assert.deepEqual(calls.at(-1).body, {
+    query: "kagi cleared lens smoke",
+    workflow: "search",
+    limit: 1,
+    lens: { time_relative: "week" },
+    filters: { region: "cn" },
+  })
+  await run("search", "rm", "magpie-websearch:kagi")
+
+  console.log("Checking Serper vs SerpApi key and endpoint isolation…")
+  await run("plugin", "options", root, JSON.stringify(options))
+  assert.deepEqual(await loadedIDs(), definitions.map((entry) => entry.id).sort())
+  await run("search", "add", "magpie-websearch:serper", "serper-iso-key", `url=http://127.0.0.1:${upstream.address().port}/serper/proxy/search`)
+  await run("search", "add", "magpie-websearch:serpapi", "serpapi-iso-key", `url=http://127.0.0.1:${upstream.address().port}/serpapi/search`)
+  // Serper first:
+  await run("search", "move", "magpie-websearch:serper", "1")
+  const beforeSerperIso = calls.length
+  const serperIsoResult = await search("serper isolation query")
+  assert.match(serperIsoResult, /example\.com\/serper/)
+  assert.equal(calls.length, beforeSerperIso + 1)
+  assert.equal(calls.at(-1).path, "/serper/proxy/search")
+  assert.equal(calls.at(-1).method, "POST")
+  assert.equal(calls.at(-1).apiKey, "serper-iso-key")
+  assert.equal(calls.at(-1).key, undefined)
+  assert.equal(new URL(calls.at(-1).path, "http://localhost").searchParams.has("api_key"), false)
+
+  // SerpApi first:
+  await run("search", "move", "magpie-websearch:serpapi", "1")
+  const beforeSerpapiIso = calls.length
+  const serpapiIsoResult = await search("serpapi isolation query")
+  assert.match(serpapiIsoResult, /example\.com\/serpapi/)
+  assert.equal(calls.length, beforeSerpapiIso + 1)
+  const serpapiIsoTarget = new URL(calls.at(-1).path, "http://localhost")
+  assert.equal(serpapiIsoTarget.pathname, "/serpapi/search")
+  assert.equal(calls.at(-1).method, "GET")
+  assert.equal(serpapiIsoTarget.searchParams.get("api_key"), "serpapi-iso-key")
+  assert.equal(calls.at(-1).apiKey, undefined)
+  assert.equal(calls.at(-1).key, undefined)
+
+  await run("search", "rm", "magpie-websearch:serper")
+  await run("search", "rm", "magpie-websearch:serpapi")
+  console.log("✓ magpie loads nineteen APIs; registration, options, custom URLs, timeouts, errors, anonymous cooldown, keyed rotation and fallback pass; Bocha summary/freshness, Ollama content limits, Jina/Kagi/Serper smoke and isolation pass")
 } catch (error) {
   console.error(gatewayLog)
   throw error
