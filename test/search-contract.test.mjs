@@ -3,9 +3,9 @@ import assert from "node:assert/strict"
 import { WebSearch } from "../index.mjs"
 import { resolveEndpoint } from "../src/core.mjs"
 import { context, json, stubFetch } from "./harness.mjs"
-import { ANYSEARCH_CASE, KEENABLE_CASE, LINKUP_CASE, METASO_CASE, MOONSHOT_CASE, MOONSHOT_CN_CASE, PARALLEL_CASE, PERPLEXITY_CASE, QUERIT_CASE, SERPAPI_CASE, STEPFUN_CASE, TINYFISH_CASE, ZAI_CASE, ZHIPU_CASE } from "./cases.mjs"
+import { ANYSEARCH_CASE, BOCHA_CASE, KEENABLE_CASE, LINKUP_CASE, METASO_CASE, MOONSHOT_CASE, MOONSHOT_CN_CASE, OLLAMA_CASE, PARALLEL_CASE, PERPLEXITY_CASE, QUERIT_CASE, SERPAPI_CASE, STEPFUN_CASE, TINYFISH_CASE, ZAI_CASE, ZHIPU_CASE } from "./cases.mjs"
 
-const fixtures = { anysearch: ANYSEARCH_CASE, keenable: KEENABLE_CASE, linkup: LINKUP_CASE, metaso: METASO_CASE, moonshot: MOONSHOT_CASE, "moonshot-cn": MOONSHOT_CN_CASE, parallel: PARALLEL_CASE, perplexity: PERPLEXITY_CASE, querit: QUERIT_CASE, serpapi: SERPAPI_CASE, stepfun: STEPFUN_CASE, tinyfish: TINYFISH_CASE, zai: ZAI_CASE, zhipu: ZHIPU_CASE }
+const fixtures = { anysearch: ANYSEARCH_CASE, bocha: BOCHA_CASE, keenable: KEENABLE_CASE, linkup: LINKUP_CASE, metaso: METASO_CASE, moonshot: MOONSHOT_CASE, "moonshot-cn": MOONSHOT_CN_CASE, ollama: OLLAMA_CASE, parallel: PARALLEL_CASE, perplexity: PERPLEXITY_CASE, querit: QUERIT_CASE, serpapi: SERPAPI_CASE, stepfun: STEPFUN_CASE, tinyfish: TINYFISH_CASE, zai: ZAI_CASE, zhipu: ZHIPU_CASE }
 
 test("custom Base URL uses the exact endpoint as given and validates HTTP(S)", () => {
   for (const [base, want] of [
@@ -126,6 +126,8 @@ test("invalid provider options fail loading and disabled providers are not initi
     { perplexity: { searchType: "people" } }, { perplexity: { recency: "decade" } },
     { perplexity: { country: "USA" } }, { perplexity: { language: "en-US" } },
     { perplexity: { maxResults: 0 } }, { perplexity: { maxResults: 21 } },
+    { bocha: { summary: "true" } }, { bocha: { freshness: 1 } }, { bocha: { maxResults: 51 } },
+    { ollama: { maxResults: 0 } }, { ollama: { maxResults: 11 } }, { ollama: { contentChars: -1 } },
   ]) await assert.rejects(WebSearch({}, options), TypeError)
   const { search } = await WebSearch({}, { disable: ["linkup"], linkup: { depth: "invalid" } })
   assert.equal(search.linkup, undefined)
@@ -143,6 +145,10 @@ test("invalid provider options fail loading and disabled providers are not initi
   assert.equal(disabledStepfun.search.stepfun, undefined)
   const disabledPerplexity = await WebSearch({}, { disable: ["perplexity"], perplexity: { searchType: "people" } })
   assert.equal(disabledPerplexity.search.perplexity, undefined)
+  const disabledBocha = await WebSearch({}, { disable: ["bocha"], bocha: { summary: "true" } })
+  assert.equal(disabledBocha.search.bocha, undefined)
+  const disabledOllama = await WebSearch({}, { disable: ["ollama"], ollama: { contentChars: -1 } })
+  assert.equal(disabledOllama.search.ollama, undefined)
 })
 
 test("timeouts and host cancellation abort the upstream request", async () => {

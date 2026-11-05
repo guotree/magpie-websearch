@@ -1,9 +1,11 @@
 import { createAnysearch } from "./src/providers/anysearch.mjs"
+import { createBocha } from "./src/providers/bocha.mjs"
 import { createKeenable } from "./src/providers/keenable.mjs"
 import { createLinkup } from "./src/providers/linkup.mjs"
 import { createMetaso } from "./src/providers/metaso.mjs"
 import { createMoonshot } from "./src/providers/moonshot.mjs"
 import { createMoonshotCN } from "./src/providers/moonshot-cn.mjs"
+import { createOllama } from "./src/providers/ollama.mjs"
 import { createParallel } from "./src/providers/parallel.mjs"
 import { createPerplexity } from "./src/providers/perplexity.mjs"
 import { createQuerit } from "./src/providers/querit.mjs"
@@ -16,11 +18,13 @@ import { optionGroup } from "./src/core.mjs"
 
 const PROVIDERS = [
   ["anysearch", createAnysearch],
+  ["bocha", createBocha],
   ["keenable", createKeenable],
   ["linkup", createLinkup],
   ["metaso", createMetaso],
   ["moonshot", createMoonshot],
   ["moonshot-cn", createMoonshotCN],
+  ["ollama", createOllama],
   ["parallel", createParallel],
   ["perplexity", createPerplexity],
   ["querit", createQuerit],

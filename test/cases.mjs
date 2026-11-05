@@ -2,6 +2,40 @@
 // at v4.6.1, with expected results in magpie's { title, url, text, age? } shape.
 // Cases cover full content, snippet fallback, missing URLs and image filtering.
 
+// Ollama official search contract read 2026-11-05; synthetic missing/nullable rows.
+// https://docs.ollama.com/capabilities/web-search.md
+// This fixture is not a real account response.
+export const OLLAMA_CASE = {
+  response: { results: [
+    { title: "Missing URL", content: "dropped" },
+    { title: "Ollama hit", url: "https://example.com/ollama", content: "Ollama content" },
+    { title: null, url: "https://example.com/ollama-bare", content: null },
+  ] },
+  expected: [
+    { title: "Ollama hit", url: "https://example.com/ollama", text: "Ollama content" },
+    { title: "https://example.com/ollama-bare", url: "https://example.com/ollama-bare", text: "" },
+  ],
+}
+
+// Bocha official MCP/wire schema read 2026-11-05; synthetic nullable and malformed rows.
+// https://github.com/BochaAI/bocha-search-mcp/blob/master/src/bocha_search_mcp/server.py
+// https://github.com/bocha-ai/dsh-web-search-bocha/blob/main/src/types.ts
+// This fixture is not a real account response.
+export const BOCHA_CASE = {
+  response: {
+    code: 200, msg: null, log_id: "bocha-fixture",
+    data: { webPages: { value: [
+      { name: "Missing URL", snippet: "dropped" },
+      { name: "Bocha hit", url: "https://example.com/bocha", snippet: "Bocha snippet", summary: "Bocha generated summary", datePublished: "2025-02-23T08:18:30+08:00", dateLastCrawled: "2020-01-01T00:00:00Z" },
+      { name: null, url: "https://example.com/bocha-bare", snippet: null, datePublished: null, dateLastCrawled: null },
+    ] } },
+  },
+  expected: [
+    { title: "Bocha hit", url: "https://example.com/bocha", text: "Bocha snippet", age: "2025-02-23T08:18:30+08:00" },
+    { title: "https://example.com/bocha-bare", url: "https://example.com/bocha-bare", text: "" },
+  ],
+}
+
 // Standalone search schemas read 2026-11-05; synthetic malformed rows exercise
 // filtering. These are not real account responses.
 // https://docs.bigmodel.cn/api-reference/工具-api/网络搜索

@@ -3,18 +3,20 @@ import assert from "node:assert/strict"
 
 import * as mod from "../index.mjs"
 
-test("index: exports one plugin function with fourteen search APIs", async () => {
+test("index: exports one plugin function with sixteen search APIs", async () => {
   const functions = Object.values(mod).filter((value) => typeof value === "function")
   assert.equal(functions.length, 1)
 
   const hooks = await mod.WebSearch({}, {})
   assert.deepEqual(Object.keys(hooks.search).sort(), [
     "anysearch",
+    "bocha",
     "keenable",
     "linkup",
     "metaso",
     "moonshot",
     "moonshot-cn",
+    "ollama",
     "parallel",
     "perplexity",
     "querit",
@@ -35,7 +37,7 @@ test("index: enable narrows the pool", async () => {
 
 test("index: disable removes a provider", async () => {
   const hooks = await mod.WebSearch({}, { disable: ["linkup"] })
-  assert.deepEqual(Object.keys(hooks.search).sort(), ["anysearch", "keenable", "metaso", "moonshot", "moonshot-cn", "parallel", "perplexity", "querit", "serpapi", "stepfun", "tinyfish", "zai", "zhipu"])
+  assert.deepEqual(Object.keys(hooks.search).sort(), ["anysearch", "bocha", "keenable", "metaso", "moonshot", "moonshot-cn", "ollama", "parallel", "perplexity", "querit", "serpapi", "stepfun", "tinyfish", "zai", "zhipu"])
 })
 
 test("index: disable wins over enable and is named", async () => {
