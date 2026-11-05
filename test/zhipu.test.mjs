@@ -301,8 +301,8 @@ test("zhipu: Quark ignores an environment domain filter without blocking plugin 
   try {
     process.env.ZHIPU_ENGINE = "search_pro_quark"
     process.env.ZHIPU_DOMAIN_FILTER = "example.com"
-    const { search } = await WebSearch({})
-    assert.equal(Object.keys(search).length, 12)
+    const { search } = await WebSearch({}, { enable: ["zhipu"] })
+    assert.deepEqual(Object.keys(search), ["zhipu"])
     assert.equal(warnings.length, 1)
     assert.match(warnings[0], /ZHIPU_DOMAIN_FILTER.*search_pro_quark.*ignoring/)
     await search.zhipu.execute({ query: "q", key: "k" }, context())
@@ -323,11 +323,13 @@ test("zhipu: Quark ignores an environment domain filter without blocking plugin 
 
     warnings.length = 0
     createZhipu({ domainFilter: "" })
-    const { search: disabled } = await WebSearch({}, { disable: ["zhipu"] })
+    const { search: disabled } = await WebSearch({}, { enable: ["zhipu"], disable: ["zhipu"] })
     assert.equal(disabled.zhipu, undefined)
-    assert.equal(Object.keys(disabled).length, 11)
-    assert.deepEqual(warnings, [])
+    assert.deepEqual(Object.keys(disabled), [])
+    assert.equal(warnings.length, 1)
+    assert.match(warnings[0], /disable overrides enable/)
 
+    warnings.length = 0
     delete process.env.ZHIPU_DOMAIN_FILTER
     createZhipu()
     assert.deepEqual(warnings, [])

@@ -1,6 +1,6 @@
 import {
   cacheKey, configInt, configStr, makeAnonymousCooldown, makeCache, normalizeQuery,
-  page, requestJSON, resolveEndpoint, sizeFor,
+  page, requestJSON, resolveEndpoint, sizeFor, truncateCodePoints,
 } from "../core.mjs"
 import { callMCPSearch } from "../mcp.mjs"
 
@@ -17,13 +17,6 @@ export function createParallel(options = {}) {
   const mode = configStr(options, "mode", "PARALLEL_MODE", "fast", ["turbo", "fast", "basic", "advanced"])
   const cache = makeCache(ttl)
   const cooldown = makeAnonymousCooldown("Parallel")
-
-  const trimContent = (text) => {
-    const value = String(text ?? "")
-    if (contentChars <= 0 || value.length <= contentChars) return value
-    const points = [...value]
-    return points.length <= contentChars ? value : points.slice(0, contentChars).join("") + "…"
-  }
 
   return {
     name: "Parallel (magpie-websearch)",
@@ -67,7 +60,7 @@ export function createParallel(options = {}) {
         const results = json.results
           .filter((item) => item && item.url)
           .slice(0, limit)
-          .map((item) => page(item.title, item.url, trimContent(extractText(item.excerpts)), item.publish_date))
+          .map((item) => page(item.title, item.url, truncateCodePoints(extractText(item.excerpts), contentChars), item.publish_date))
         cache.write(identity, results)
         return results
       }
@@ -85,7 +78,7 @@ export function createParallel(options = {}) {
       const results = json.results
         .filter((item) => item && item.url)
         .slice(0, limit)
-        .map((item) => page(item.title, item.url, trimContent(extractText(item.excerpts)), item.publish_date))
+        .map((item) => page(item.title, item.url, truncateCodePoints(extractText(item.excerpts), contentChars), item.publish_date))
       cache.write(identity, results)
       return results
     },

@@ -1,6 +1,6 @@
 import {
   cacheKey, configInt, configStr, list, makeCache, normalizeQuery,
-  page, requestJSON, resolveEndpoint, sizeFor,
+  page, requestJSON, resolveEndpoint, sizeFor, truncateCodePoints,
 } from "../core.mjs"
 
 export function createLinkup(options = {}) {
@@ -10,12 +10,6 @@ export function createLinkup(options = {}) {
   const contentChars = configInt(options, "contentChars", "LINKUP_CONTENT_CHARS", 4_000)
   const depth = configStr(options, "depth", "LINKUP_DEPTH", "fast", ["flash", "fast", "standard", "deep"])
   const cache = makeCache(ttl)
-  const trimContent = (text) => {
-    const value = String(text ?? "")
-    if (contentChars <= 0 || value.length <= contentChars) return value
-    const points = [...value]
-    return points.length <= contentChars ? value : points.slice(0, contentChars).join("") + "…"
-  }
 
   return {
     name: "Linkup (magpie-websearch)",
@@ -34,7 +28,7 @@ export function createLinkup(options = {}) {
       }, ctx, { label: "Linkup", timeout })
       const results = list(json.results)
         .filter((item) => item && item.url && item.type !== "image")
-        .map((item) => page(item.name, item.url, trimContent(item.content)))
+        .map((item) => page(item.name, item.url, truncateCodePoints(String(item.content ?? ""), contentChars)))
       cache.write(identity, results)
       return results
     },

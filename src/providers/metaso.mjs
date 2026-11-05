@@ -1,6 +1,6 @@
 import {
   cacheKey, configInt, configStr, list, makeCache, normalizeQuery,
-  page, requestJSON, resolveEndpoint, sizeFor,
+  page, requestJSON, resolveEndpoint, sizeFor, truncateCodePoints,
 } from "../core.mjs"
 
 export function createMetaso(options = {}) {
@@ -12,13 +12,6 @@ export function createMetaso(options = {}) {
     "webpage", "document", "paper", "image", "video", "podcast",
   ])
   const cache = makeCache(ttl)
-
-  const trimContent = (text) => {
-    const value = String(text ?? "")
-    if (contentChars <= 0 || value.length <= contentChars) return value
-    const points = [...value]
-    return points.length <= contentChars ? value : points.slice(0, contentChars).join("") + "…"
-  }
 
   return {
     name: "Metaso (magpie-websearch)",
@@ -51,7 +44,8 @@ export function createMetaso(options = {}) {
       const results = raw
         .filter((item) => item && (item.link || item.url))
         .slice(0, limit)
-        .map((item) => page(item.title, item.link || item.url, trimContent(item.snippet ?? item.content), item.date))
+        .map((item) => page(item.title, item.link || item.url,
+          truncateCodePoints(String(item.snippet ?? item.content ?? ""), contentChars), item.date))
 
       cache.write(identity, results)
       return results

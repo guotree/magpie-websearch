@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { cleanRetryAfter, configInt, configStr, makeCache, requestJSON, requestResponse } from "../src/core.mjs"
+import { cleanRetryAfter, configInt, configStr, makeCache, requestJSON, requestResponse, truncateCodePoints } from "../src/core.mjs"
 import { context, stubFetch, text } from "./harness.mjs"
 
 test("configuration helpers preserve legacy validation and error fields", () => {
@@ -138,6 +138,148 @@ test("cleanRetryAfter accepts delay-seconds and valid HTTP-dates, rejecting othe
   assert.equal(cleanRetryAfter("not a date or number"), undefined)
   assert.equal(cleanRetryAfter("12s"), undefined)
   assert.equal(cleanRetryAfter("-5"), undefined)
+})
+
+test("truncateCodePoints preserves text at the boundary, Unicode pairs and zero-limit behavior", () => {
+  for (const [value, limit, expected] of [
+    ["", 3, ""], ["abc", 3, "abc"], ["abcd", 3, "abc…"],
+    ["🙂🚀", 2, "🙂🚀"], ["🙂🚀x", 2, "🙂🚀…"],
+    ["a🙂b", 2, "a🙂…"], ["🙂a", 1, "🙂…"],
+    ["  a\nb  ", 5, "  a\nb…"], ["e\u0301x", 2, "e\u0301…"],
+    ["🙂".repeat(100_000), 3, "🙂🙂🙂…"], ["🙂🚀x", 0, "🙂🚀x"],
+  ]) assert.equal(truncateCodePoints(value, limit), expected)
+})
+
+test("withheld 402 bodies are cancelled without waiting or exposing cleanup failures", async () => {
+  for (const mode of ["stalled", "rejected", "broken"]) {
+    let cancelled = false
+    let formatted = false
+    const fake = stubFetch(() => new Response(new ReadableStream({
+      start(controller) { if (mode === "broken") controller.error(new Error("private body")) },
+      cancel() {
+        cancelled = true
+        return mode === "stalled" ? new Promise(() => {}) : Promise.reject(new Error("private cleanup"))
+      },
+    }), { status: 402, headers: { "Retry-After": "7" } }))
+    let deadline
+    try {
+      const outcome = await Promise.race([
+        requestJSON("https://example.com", {}, context(), {
+          timeout: 0, messages: { 402: "Top up credit" },
+          errorDetailFromBody() { formatted = true; return "private body" },
+        }).then(() => "unexpected success", (error) => error),
+        new Promise((resolve) => { deadline = setTimeout(() => resolve("cleanup blocked refusal"), 200) }),
+      ])
+      assert.equal(outcome.status, 402)
+      assert.equal(outcome.retryAfter, "7")
+      assert.equal(outcome.message, "Top up credit")
+      assert.equal(formatted, false)
+      if (mode !== "broken") assert.equal(cancelled, true)
+    } finally { clearTimeout(deadline); fake.restore() }
+  }
+})
+
+test("failed HTTP bodies retain every known refusal status and retry metadata", async () => {
+  for (const status of [400, 401, 403, 429, 451, 500, 503]) {
+    const fake = stubFetch(() => new Response(new ReadableStream({
+      start(controller) { controller.error(new Error("stream interrupted")) },
+    }), { status, headers: { "Retry-After": "7" } }))
+    try {
+      await assert.rejects(requestJSON("https://example.com", {}, context()), (error) => {
+        assert.equal(error.status, status)
+        assert.equal(error.retryAfter, "7")
+        assert.match(error.message, /response body unavailable/)
+        return true
+      })
+      await assert.rejects(requestJSON("https://example.com", {}, context(), {
+        messages: { [status]: "Custom refusal" },
+      }), { message: status === 429 ? "Custom refusal, retry after 7s" : "Custom refusal", status })
+    } finally { fake.restore() }
+  }
+})
+
+test("HTTP body timeouts keep status but explicit host cancellation takes precedence", async () => {
+  const keepAlive = setInterval(() => {}, 1000)
+  try {
+    for (const status of [401, 403, 429, 451]) {
+      for (const cancel of [false, true]) {
+        const controller = new AbortController()
+        let started
+        const reading = new Promise((resolve) => { started = resolve })
+        const fake = stubFetch(({ init }) => ({
+          ok: false, status, headers: new Headers({ "Retry-After": "7" }),
+          text: () => new Promise((_, reject) => {
+            started()
+            if (init.signal.aborted) return reject(init.signal.reason)
+            init.signal.addEventListener("abort", () => reject(init.signal.reason), { once: true })
+          }),
+        }))
+        try {
+          const pending = requestJSON("https://example.com", {}, { abort: controller.signal }, { timeout: cancel ? 0 : 10 })
+          if (cancel) { await reading; controller.abort() }
+          await assert.rejects(pending, (error) => {
+            assert.equal(error.status, cancel ? undefined : status)
+            assert.match(error.message, cancel ? /cancelled/ : /response body unavailable/)
+            return true
+          })
+        } finally { fake.restore() }
+      }
+    }
+  } finally { clearInterval(keepAlive) }
+})
+
+test("host cancellation before body consumption releases even immediate HTTP refusals", async () => {
+  for (const [status, options] of [[200, {}], [401, {}], [429, { sensitive: true }], [402, { messages: { 402: "Top up" } }]]) {
+    const controller = new AbortController()
+    let cancelled = false
+    const fake = stubFetch(() => {
+      controller.abort()
+      return new Response(new ReadableStream({ cancel() { cancelled = true } }), { status })
+    })
+    try {
+      await assert.rejects(requestJSON("https://example.com", {}, { abort: controller.signal }, options), (error) => {
+        assert.equal(error.status, undefined)
+        assert.match(error.message, /cancelled/)
+        return true
+      })
+      assert.equal(cancelled, true)
+    } finally { fake.restore() }
+  }
+})
+
+test("vendor error formatting runs before bounding and cannot override transport or privacy policy", async () => {
+  let calls = 0
+  const formatter = (raw, response) => {
+    calls++
+    assert.equal(response.status, 401)
+    assert.equal(raw, "upstream detail")
+    return "machine-code " + "🙂".repeat(500)
+  }
+  const fake = stubFetch(() => text("upstream detail", 401, { "Retry-After": "7" }))
+  try {
+    await assert.rejects(requestJSON("https://example.com", {}, context(), { errorDetailFromBody: formatter }), (error) => {
+      assert.equal(error.status, 401)
+      assert.equal(error.retryAfter, "7")
+      assert.match(error.message, /machine-code/)
+      assert.match(error.message, /\[truncated\]/)
+      assert.ok([...error.message].length < 400)
+      return true
+    })
+    for (const options of [{ sensitive: true }, { messages: { 401: "Fixed refusal" } }]) {
+      await assert.rejects(requestJSON("https://example.com", {}, context(), {
+        ...options, errorDetailFromBody: formatter,
+      }), (error) => error.status === 401 && !error.message.includes("machine-code"))
+    }
+    assert.equal(calls, 1)
+    for (const errorDetailFromBody of [() => { throw new Error("formatter crashed") }, () => undefined]) {
+      await assert.rejects(requestJSON("https://example.com", {}, context(), { errorDetailFromBody }), (error) => {
+        assert.equal(error.status, 401)
+        assert.match(error.message, /upstream detail/)
+        assert.doesNotMatch(error.message, /formatter crashed/)
+        return true
+      })
+    }
+  } finally { fake.restore() }
 })
 
 test("sensitive HTTP refusals never wait for failed or stalled body cleanup", async () => {

@@ -96,6 +96,20 @@ export function sizeFor(count, preferred, max) {
 // never UTF-16 units, so no surrogate pair is sliced in half.
 const ERROR_DETAIL_CHARS = 300
 
+// Inputs are strings and validated nonnegative integer limits. Iterate only
+// through the retained prefix plus one code point; never expand a full page.
+export function truncateCodePoints(text, limit) {
+  if (limit <= 0 || text.length <= limit) return text
+  let count = 0
+  let end = 0
+  for (const point of text) {
+    if (count === limit) return text.slice(0, end) + "…"
+    end += point.length
+    count++
+  }
+  return text
+}
+
 export function boundDetail(detail) {
   const text = String(detail ?? "")
   if (text.length <= ERROR_DETAIL_CHARS) return text
@@ -237,10 +251,18 @@ export function cleanRetryAfter(raw) {
   return undefined
 }
 
+function discardBody(response) {
+  // Refusals must not wait for cleanup, even if a transport stalls or rejects it.
+  try { response.body?.cancel().catch(() => {}) } catch {}
+}
+
 // A custom reader shares the HTTP errors and the deadline, including while
 // consuming a streaming response. JSON providers keep the default text reader.
 export async function requestResponse(input, init, ctx, options = {}, read) {
-  const { label = "search", timeout = 25_000, messages = {}, sensitive = false, retryAfterFromResponse } = options
+  const {
+    label = "search", timeout = 25_000, messages = {}, sensitive = false,
+    retryAfterFromResponse, errorDetailFromBody,
+  } = options
   const signal = signalFor(ctx, timeout)
 
   const extractRetry = (res) => {
@@ -262,10 +284,15 @@ export async function requestResponse(input, init, ctx, options = {}, read) {
     throw new Error(`${label} request failed: ${String(error)}`)
   }
 
+  if (ctx?.abort?.aborted) {
+    discardBody(response)
+    throw new Error(`${label} search cancelled`)
+  }
+
   if (!response.ok && sensitive) {
     // Cleanup must not delay a known refusal, even if a transport's cancel
     // promise never settles. Handle rejection without retaining its details.
-    try { response.body?.cancel().catch(() => {}) } catch {}
+    discardBody(response)
     const retry = extractRetry(response)
     const custom = messages[response.status]
     const defaultMsg = response.status === 400 ? "bad request"
@@ -283,6 +310,7 @@ export async function requestResponse(input, init, ctx, options = {}, read) {
   // A 402 body can carry freshly generated credentials (AnySearch does), so a
   // provider with a custom 402 message has its body withheld, not echoed.
   if (!response.ok && response.status === 402 && messages[402]) {
+    discardBody(response)
     throw apiError(402, messages[402], extractRetry(response))
   }
 
@@ -290,11 +318,14 @@ export async function requestResponse(input, init, ctx, options = {}, read) {
   try {
     raw = await (response.ok && read ? read(response, signal) : response.text())
   } catch (error) {
-    if (response.status === 429) {
-      const retry = extractRetry(response)
-      throw apiError(429, `${label} API error 429: response body unavailable${retryHint(retry)}`, retry)
-    }
     if (ctx?.abort?.aborted) throw new Error(`${label} search cancelled`)
+    if (!response.ok) {
+      discardBody(response)
+      const retry = extractRetry(response)
+      let message = messages[response.status] ?? `${label} API error ${response.status}: response body unavailable`
+      if (response.status === 429) message += retryHint(retry)
+      throw apiError(response.status, message, retry)
+    }
     if (timedOut(error, signal, ctx)) {
       throw new Error(`${label} search timed out after ${timeout}ms`)
     }
@@ -305,7 +336,16 @@ export async function requestResponse(input, init, ctx, options = {}, read) {
   if (!response.ok) {
     const retry = extractRetry(response)
     const custom = messages[response.status]
-    let message = custom ?? `${label} API error ${response.status}: ${boundDetail(raw)}`
+    let detail = raw
+    // Vendor formatting is optional and cannot hide a known HTTP refusal.
+    // Sensitive mode and the withheld 402 branch never invoke this callback.
+    if (custom === undefined && typeof errorDetailFromBody === "function") {
+      try {
+        const formatted = errorDetailFromBody(raw, response)
+        if (typeof formatted === "string") detail = formatted
+      } catch {}
+    }
+    let message = custom ?? `${label} API error ${response.status}: ${boundDetail(detail)}`
     if (response.status === 429) message += retryHint(retry)
     throw apiError(response.status, message, retry)
   }

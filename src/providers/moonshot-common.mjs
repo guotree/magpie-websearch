@@ -1,6 +1,6 @@
 import {
   cacheKey, cleanRetryAfter, configInt, configStr, makeCache,
-  normalizeQuery, page, requestJSON, resolveEndpoint, sizeFor,
+  normalizeQuery, page, requestJSON, resolveEndpoint, sizeFor, truncateCodePoints,
 } from "../core.mjs"
 
 // Local sanity limit for the reset header, not an upstream quota guarantee.
@@ -44,13 +44,6 @@ export function createMoonshotProvider(meta, options = {}) {
   const contentChars = configInt(options, "contentChars", `${envPrefix}CONTENT_CHARS`, 4_000, 0, Number.MAX_SAFE_INTEGER)
 
   const cache = makeCache(ttl)
-
-  const trimContent = (text) => {
-    const value = String(text ?? "")
-    if (contentChars <= 0 || value.length <= contentChars) return value
-    const points = [...value]
-    return points.length <= contentChars ? value : points.slice(0, contentChars).join("") + "…"
-  }
 
   return {
     name,
@@ -137,7 +130,7 @@ export function createMoonshotProvider(meta, options = {}) {
         const snippet = typeof item.snippet === "string" ? item.snippet : ""
         const text = typeof item.text === "string" ? item.text : ""
         const chosen = content === "full" && text.trim() ? text : snippet
-        const selectedText = trimContent(chosen)
+        const selectedText = truncateCodePoints(chosen, contentChars)
         const date = typeof item.date === "string" && item.date.trim() ? item.date.trim() : undefined
         return page(title, item.url.trim(), selectedText, date)
       })

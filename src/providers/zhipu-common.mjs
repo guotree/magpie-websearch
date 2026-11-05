@@ -1,6 +1,6 @@
 import {
   boundDetail, cacheKey, cleanRetryAfter, configInt, configStr, makeCache,
-  normalizeQuery, page, requestJSON, resolveEndpoint, sizeFor,
+  normalizeQuery, page, requestJSON, resolveEndpoint, sizeFor, truncateCodePoints,
 } from "../core.mjs"
 
 // Some proxies wrap successful responses in a conventional status envelope.
@@ -50,13 +50,6 @@ export function createZhipuProvider(meta, options = {}) {
     domainFilter = ""
   }
   const cache = makeCache(ttl)
-
-  const trimContent = (value) => {
-    const text = typeof value === "string" ? value : ""
-    if (contentChars <= 0 || text.length <= contentChars) return text
-    const points = [...text]
-    return points.length <= contentChars ? text : points.slice(0, contentChars).join("") + "…"
-  }
 
   return {
     name,
@@ -137,7 +130,7 @@ export function createZhipuProvider(meta, options = {}) {
       const results = valid.slice(0, limit).map((item) => page(
         typeof item.title === "string" && item.title.trim() ? item.title.trim() : undefined,
         item.link.trim(),
-        trimContent(item.content),
+        truncateCodePoints(typeof item.content === "string" ? item.content : "", contentChars),
         item.publish_date,
       ))
       cache.write(identity, results)
