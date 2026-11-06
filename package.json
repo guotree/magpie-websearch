@@ -1,6 +1,6 @@
 {
   "name": "@guotree/magpie-websearch",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Web search APIs for magpie: AnySearch, Keenable, Parallel and TinyFish with optional keys, plus Bocha, Jina, Kagi, Linkup, Metaso, Moonshot, Moonshot CN, Ollama, Perplexity, Querit, SerpApi, Serper, StepFun, Z.ai and Zhipu. Keys are managed by magpie.",
   "type": "module",
   "main": "./index.mjs",
