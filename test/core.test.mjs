@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { cleanRetryAfter, configInt, configStr, makeCache, requestJSON, requestResponse, truncateCodePoints } from "../src/core.mjs"
+import { cleanRetryAfter, configCountPolicy, configInt, configStr, makeCache, requestJSON, requestResponse, resolveResultCount, truncateCodePoints } from "../src/core.mjs"
 import { context, stubFetch, text } from "./harness.mjs"
 
 test("configuration helpers preserve legacy validation and error fields", () => {
@@ -98,6 +98,69 @@ for (const namespace of [undefined, "moonshot-cn"]) {
     }
   })
 }
+
+test("result limits follow host counts while preserving explicit caps and missing-count fallbacks", () => {
+  const env = "MAGPIE_TEST_RESULT_LIMIT"
+  const saved = process.env[env]
+  try {
+    for (const raw of [undefined, "", " ", "bad", "-1", "1.5", "9007199254740992"]) {
+      if (raw === undefined) delete process.env[env]
+      else process.env[env] = raw
+      const policy = configCountPolicy({}, env, 10, 50)
+      for (const [count, expected] of [[6, 6], [12, 12], [20, 20], [60, 50], [6.9, 6], [undefined, 10], [0, 10], [NaN, 10]]) {
+        assert.equal(resolveResultCount(count, policy), expected, `env=${raw}, count=${count}`)
+      }
+    }
+    for (const [raw, cap] of [["3", 3], [" 10 ", 10], ["0", 1], ["99", 50]]) {
+      process.env[env] = raw
+      assert.equal(resolveResultCount(20, configCountPolicy({}, env, 10, 50)), Math.min(20, cap))
+      assert.equal(resolveResultCount(undefined, configCountPolicy({}, env, 10, 50)), cap)
+      assert.equal(resolveResultCount(20, configCountPolicy({ resultLimit: 2 }, env, 10, 50)), 2)
+    }
+    assert.throws(() => configCountPolicy({ resultLimit: "3" }, env, 10, 50), TypeError)
+    delete process.env[env]
+    assert.equal(resolveResultCount(6, configCountPolicy({}, env, 5, 10)), 6)
+    assert.equal(resolveResultCount(undefined, configCountPolicy({}, env, 5, 10)), 5)
+    assert.deepEqual(configCountPolicy({}, env, 5, 10), { fallbackCount: 5, configuredLimit: undefined, providerMax: 10 })
+  } finally {
+    if (saved === undefined) delete process.env[env]
+    else process.env[env] = saved
+  }
+})
+
+test("resultLimit migration preserves aliases, precedence and actionable validation", () => {
+  const saved = { ...process.env }
+  const warn = console.warn
+  const warnings = []
+  console.warn = message => warnings.push(message)
+  const resolve = options => resolveResultCount(20, configCountPolicy(options, "COUNT_TEST_RESULT_LIMIT", 10, 50))
+  try {
+    delete process.env.COUNT_TEST_RESULT_LIMIT
+    delete process.env.COUNT_TEST_MAX_RESULTS
+    assert.equal(resolve({ maxResults: 5 }), 5)
+    assert.match(warnings.pop(), /count-test\.maxResults is deprecated; use count-test\.resultLimit/)
+    process.env.COUNT_TEST_MAX_RESULTS = "7"
+    assert.equal(resolve({}), 7)
+    assert.match(warnings.pop(), /COUNT_TEST_MAX_RESULTS is deprecated; use COUNT_TEST_RESULT_LIMIT/)
+    process.env.COUNT_TEST_RESULT_LIMIT = "9"
+    assert.equal(resolve({}), 9)
+    assert.equal(resolve({ maxResults: 5 }), 5, "explicit legacy option beats environment values")
+    assert.equal(resolve({ resultLimit: 3, maxResults: 5 }), 3)
+    assert.match(warnings.pop(), /resultLimit takes precedence/)
+    assert.equal(resolve({ resultLimit: 4, maxResults: "bad" }), 4, "ignored alias cannot reject a canonical option")
+    assert.throws(() => resolve({ resultLimit: "bad", maxResults: 5 }), /count-test\.resultLimit/)
+    assert.throws(() => resolve({ maxResults: "bad" }), /count-test\.maxResults/)
+    process.env.COUNT_TEST_RESULT_LIMIT = "bad"
+    assert.equal(resolve({}), 20, "an invalid canonical environment value does not resurrect its alias")
+    process.env.COUNT_TEST_RESULT_LIMIT = " "
+    assert.equal(resolve({}), 7, "blank canonical environment values are unset")
+    delete process.env.COUNT_TEST_RESULT_LIMIT
+    delete process.env.COUNT_TEST_MAX_RESULTS
+    const policy = configCountPolicy({ count: 8 }, "QUERIT_RESULT_LIMIT", 8, Number.MAX_SAFE_INTEGER, { legacyOption: "count", legacyEnv: "QUERIT_COUNT" })
+    assert.equal(resolveResultCount(20, policy), 8)
+    assert.match(warnings.pop(), /querit\.count is deprecated; use querit\.resultLimit/)
+  } finally { process.env = saved; console.warn = warn }
+})
 
 test("cache expires empty answers early and evicts least recently used entries", () => {
   const original = Date.now

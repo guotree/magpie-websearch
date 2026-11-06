@@ -1,6 +1,6 @@
 import {
-  boundDetail, cacheKey, cleanRetryAfter, configInt, configStr, makeCache,
-  normalizeQuery, page, requestJSON, resolveEndpoint, sizeFor, truncateCodePoints,
+  boundDetail, cacheKey, cleanRetryAfter, configCountPolicy, configInt, configStr, makeCache,
+  normalizeQuery, page, requestJSON, resolveEndpoint, resolveResultCount, truncateCodePoints,
 } from "../core.mjs"
 
 function parseSummary(options) {
@@ -38,7 +38,7 @@ function errorDetailFromBody(raw) {
 export function createBocha(options = {}) {
   const ttl = configInt(options, "cacheTTL", "BOCHA_CACHE_TTL", 600_000)
   const timeout = configInt(options, "timeout", "BOCHA_TIMEOUT", 25_000, 0, 2_147_483_647)
-  const maxResults = configInt(options, "maxResults", "BOCHA_MAX_RESULTS", 10, 1, 50)
+  const countPolicy = configCountPolicy(options, "BOCHA_RESULT_LIMIT", 10, 50)
   const freshness = configStr(options, "freshness", "BOCHA_FRESHNESS")
   const summary = parseSummary(options)
   const cache = makeCache(ttl)
@@ -53,7 +53,7 @@ export function createBocha(options = {}) {
       const q = normalizeQuery(query)
       if (!q) throw new Error("Bocha query must not be empty")
       const endpoint = resolveEndpoint(url, "https://api.bochaai.com/v1/web-search")
-      const limit = sizeFor(count, maxResults, 50)
+      const limit = resolveResultCount(count, countPolicy)
       const body = { query: q, count: limit, summary, ...(freshness ? { freshness } : {}) }
       const identity = cacheKey(endpoint, body, apiKey)
       const cached = cache.read(identity)

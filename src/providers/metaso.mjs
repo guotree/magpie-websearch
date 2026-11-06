@@ -1,12 +1,12 @@
 import {
-  cacheKey, configInt, configStr, list, makeCache, normalizeQuery,
-  page, requestJSON, resolveEndpoint, sizeFor, truncateCodePoints,
+  cacheKey, configCountPolicy, configInt, configStr, list, makeCache, normalizeQuery,
+  page, requestJSON, resolveEndpoint, resolveResultCount, truncateCodePoints,
 } from "../core.mjs"
 
 export function createMetaso(options = {}) {
   const ttl = configInt(options, "cacheTTL", "METASO_CACHE_TTL", 600_000)
   const timeout = configInt(options, "timeout", "METASO_TIMEOUT", 25_000, 0, 2_147_483_647)
-  const maxResults = configInt(options, "maxResults", "METASO_MAX_RESULTS", 10, 1, 50)
+  const countPolicy = configCountPolicy(options, "METASO_RESULT_LIMIT", 10, 50)
   const contentChars = configInt(options, "contentChars", "METASO_CONTENT_CHARS", 4_000)
   const scope = configStr(options, "scope", "METASO_SCOPE", "webpage", [
     "webpage", "document", "paper", "image", "video", "podcast",
@@ -19,7 +19,7 @@ export function createMetaso(options = {}) {
     async execute({ query, count, key, url }, ctx) {
       if (!key) throw new Error("Metaso needs a key: add one in magpie's Web search settings")
       const endpoint = resolveEndpoint(url, "https://metaso.cn/api/v1/search")
-      const limit = sizeFor(count, maxResults, 50)
+      const limit = resolveResultCount(count, countPolicy)
       const body = {
         q: normalizeQuery(query),
         scope,

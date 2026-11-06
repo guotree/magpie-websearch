@@ -66,7 +66,7 @@ and other endpoints are independent of that cooldown. See
 - Parallel defaults to `fast` mode on MCP and for agents. REST supports `fast`, `turbo`,
   `basic` and `advanced`. Non-`fast` modes require an API key and fail with a clear
   message if run anonymously.
-- Public search caps results at 20. The adapter caps requests to `sizeFor(count, maxResults, 20)`.
+- Public search caps results at 20. The adapter sizes requests with `resolveResultCount(count, countPolicy)`.
 - Excerpts are joined with `\n\n`; text retains up to `contentChars` code points
   (default 4000, 0 keeps all) and appends `…` when truncated. `publish_date` maps to `age`.
 - Custom Base URLs are exact endpoints for either mode without automatic path rewriting.
@@ -108,7 +108,7 @@ and other endpoints are independent of that cooldown. See
   or `data`; `link` or `url` maps to `url`, `snippet` (or `content` when `snippet`
   is absent) to `text`, and a string `date` to `age`.
 - Supports configurable search scope (`webpage`, `document`, `paper`, `image`, `video`, `podcast`).
-- Public search caps results at 50 (`sizeFor(count, maxResults, 50)`).
+- Public search caps results at 50 (`resolveResultCount(count, countPolicy)`).
 
 ### SerpApi protocol notes
 
@@ -120,7 +120,7 @@ and other endpoints are independent of that cooldown. See
   `snippet` to `text`, and string `date` to `age`. Other SERP blocks and hits lacking
   a valid link are ignored; malformed optional snippets become empty text.
 - Google deprecated the `num` parameter in September 2025; results are retrieved as returned
-  by upstream and locally capped (`sizeFor(count, maxResults, 10)`).
+  by upstream and locally capped (`resolveResultCount(count, countPolicy)`, at most 10).
 - An error-free empty array or `status: "Success"` with `organic_results_state:
   "Fully empty"` returns `[]` and is cached for at most 30 seconds. The latter may
   include SerpApi's empty-result error string. Unexplained errors, unknown statuses
@@ -137,7 +137,7 @@ and other endpoints are independent of that cooldown. See
 
 - The Moonshot Basic search API ([international](https://platform.kimi.ai/docs/api/tools-search.md), [domestic](https://platform.kimi.com/docs/api/tools-search.md)) documents standalone `POST /v1/tools/search` with Bearer authentication. Default endpoints are `https://api.moonshot.ai/v1/tools/search` and `https://api.moonshot.cn/v1/tools/search`.
 - Both sites require an API key (`keyOptional: false`). Credentials and console accounts are independent; keys are configured separately and are not interchanged.
-- Basic search accepts `text_query` and `limit` (1–20, capped via `sizeFor(count, maxResults, 20)`). The initial release does not expose Pro search, responses API, formula API, or model-integrated search.
+- Basic search accepts `text_query` and `limit` (1–20, sized via `resolveResultCount(count, countPolicy)`). The initial release does not expose Pro search, responses API, formula API, or model-integrated search.
 - Response payloads must contain a `search_results` array. Results map `url` to `url`, non-empty `title` to `title` (fallback to URL), and string `date` to `age`.
 - Results default to snippet text (`content: "snippet"`). When `content: "full"` is selected, requests include `"include_content": true`, and nonblank string `text` is preferred over `snippet` while preserving whitespace and markdown indentation. Both modes retain up to `contentChars` code points (default 4000, 0 disables local truncation) and append `…` when truncating; Magpie still applies its own text limit.
 - On HTTP 429, standard `Retry-After` takes precedence, including zero. The fallback `X-RateLimit-Reset` conversion accepts delays of 1–86400 seconds; invalid or excessive values are omitted for host defaults. Official timestamps use Unix seconds; plausible proxy millisecond timestamps are tolerated within the same window. This bound is a local defensive policy, not an upstream quota guarantee; see the [Moonshot reference](docs/technical-reference.en.md#moonshot-search) for conversion rules.
@@ -157,7 +157,7 @@ and other endpoints are independent of that cooldown. See
   `search_pro_quark` are selectable. Always send `search_intent: false` domestically.
   International fixes `search-prime` and omits `search_intent` and `content_size`.
   Explicit international `engine` or `contentSize` options warn and are ignored.
-- Size locally via `sizeFor(count, maxResults, 50)`. Sogou rounds upstream count
+- Size locally via `resolveResultCount(count, countPolicy)`, at most 50. Sogou rounds upstream count
   up to 10/20/30/40/50; Quark omits count. Filter invalid links before capping.
   Sogou ignores count when both domain and recency filters are specified.
   Quark's actual/default result count needs real-key verification; the local cap
@@ -196,7 +196,7 @@ and other endpoints are independent of that cooldown. See
   Magpie manages the key from `https://platform.stepfun.com/interface-key`;
   `keyOptional: false`. Custom URLs are exact endpoints and redirects are rejected.
 - Requests send a normalized nonempty `query`, `n` sized via
-  `sizeFor(count, maxResults, 20)`, and optional `category` (`programming`,
+  `resolveResultCount(count, countPolicy)` (at most 20), and optional `category` (`programming`,
   `research`, `gov`, `business`). The API publishes no query length ceiling,
   pagination, domain/recency filters or safe-search switch.
 - Results read `results`, retaining rows with a nonblank string `url` before
@@ -284,7 +284,7 @@ and other endpoints are independent of that cooldown. See
   required Feishu login during research; no fixed price, QPS or free-empty-result
   promise is asserted. Historical prices and a zero-valued unloaded purchase form
   are not current pricing evidence.
-- Dummy-key tests and real Magpie 0.1.3041 sandbox checks cover ordinary/generated
+- Dummy-key tests and real Magpie 0.1.3097 sandbox checks cover ordinary/generated
   summaries, freshness, exact URLs, empty/malformed results, timeouts, bounded
   business diagnostics, 429 Retry-After, Linkup fallback, and key rotation after
   429 or an interrupted 401 body. Real-key success, billing, quality and live rate
@@ -295,7 +295,8 @@ and other endpoints are independent of that cooldown. See
 - The [Web Search contract](https://docs.ollama.com/capabilities/web-search.md)
   specifies POST `https://ollama.com/api/web_search`, Bearer
   [account API key](https://ollama.com/settings/keys), and JSON `{ query, max_results }`.
-  Default `maxResults` is 5, range 1–10. This is cloud search; local Ollama, model
+  An explicit `resultLimit` is a cap of 1–10; otherwise follow the host count,
+  falling back to 5 only when it is missing or invalid. This is cloud search; local Ollama, model
   credentials, inference and `web_fetch` are not used. Free account keys are still
   required keys, not anonymous access.
 - Results map `title`/`url`/`content` after removing unusable rows and before
@@ -309,7 +310,7 @@ and other endpoints are independent of that cooldown. See
   verified; [model-plan pricing](https://ollama.com/pricing) does not establish
   search quotas. Real account search, billing, quality and live rate limits remain
   unverified.
-- Dummy-key tests and real Magpie 0.1.3041 sandbox checks cover exact POST URLs,
+- Dummy-key tests and real Magpie 0.1.3097 sandbox checks cover exact POST URLs,
   mandatory keys, content truncation, empty/malformed results, timeout, 429
   Retry-After, Linkup fallback and key rotation after 429 or interrupted 401 bodies.
   Both new providers normalize standard Retry-After (including zero), retain
@@ -323,7 +324,7 @@ and other endpoints are independent of that cooldown. See
 - POST `https://s.jina.ai/search`, Bearer key authentication.
 - Snippet mode (`content: "snippet"`, default) sends `X-Respond-With: no-content` and extracts `description`. Full mode (`content: "full"`) omits `X-Respond-With: no-content` and prioritizes `content`, falling back to `description`. `contentChars` (default 4000; 0 for full) bounds code points in both modes. Note: Jina search pricing is based on a fixed token charge per request from 10,000 tokens; snippet mode does not guarantee reduced billing.
 - `publishedTime` mapped directly to `age`; missing dates are omitted rather than guessed from text.
-- Validated via unit tests, dummy keys, and real Magpie 0.1.3041 host sandbox tests covering endpoint routing, headers, truncation, empty results, malformed data, timeouts, 429 Retry-After, Linkup fallback, and sequential key rotation. Real account search quality, billing, and live rate limits remain unverified without a user-provided API key.
+- Validated via unit tests, dummy keys, and real Magpie 0.1.3097 host sandbox tests covering endpoint routing, headers, truncation, empty results, malformed data, timeouts, 429 Retry-After, Linkup fallback, and sequential key rotation. Real account search quality, billing, and live rate limits remain unverified without a user-provided API key.
 
 ### Kagi protocol notes
 
@@ -332,15 +333,15 @@ and other endpoints are independent of that cooldown. See
 - POST `https://kagi.com/api/v1/search`, Bearer key authentication, `workflow: "search"`.
 - Supports `lens` (named or shared URL), `recency` (`day`, `week`, `month`), and `region` (filters.region). Lens takes priority over recency with a single factory warning. The expensive `extract` parameter is not requested.
 - `data.search` mapped to `{ title, url, snippet, age: time }`. Other collections (e.g. `news`, `images`) without `search` return an empty list `[]`.
-- Validated via unit tests, dummy keys, and real Magpie 0.1.3041 host sandbox tests. Real account access, billing, and live rate limits remain unverified without a user-provided API key.
+- Validated via unit tests, dummy keys, and real Magpie 0.1.3097 host sandbox tests. Real account access, billing, and live rate limits remain unverified without a user-provided API key.
 
 ### Serper protocol notes
 
 - Sourced from official [Serper documentation](https://serper.dev/) and current playground script read 2026-11-05.
 - POST `https://google.serper.dev/search` with an `X-API-KEY` header and no Bearer/`Authorization` header, independent from SerpApi (which uses a GET `api_key` query parameter, not Bearer auth).
-- Wire `num: 10` is fixed for standard single-page Google organic search; local capping via `maxResults` (1–10) and `count` bounds the returned results. Identity includes the local limit to isolate caches.
+- Wire `num: 10` is fixed for standard single-page Google organic search; local capping via `resultLimit` (1–10) and the host's `count` bounds the returned results. Identity includes the local limit to isolate caches.
 - Rich-media collections (`knowledgeGraph`, `answerBox`, `peopleAlsoAsk`, `relatedSearches`) without `organic` fall back to `[]`, while arbitrary objects missing `organic` throw invalid response.
-- Validated via unit tests, dummy keys, and real Magpie 0.1.3041 host sandbox tests covering endpoint routing, header isolation against SerpApi, empty results, malformed data, timeouts, 429 Retry-After, Linkup fallback, and key rotation. Real account search quality, billing, and live rate limits remain unverified without a user-provided API key.
+- Validated via unit tests, dummy keys, and real Magpie 0.1.3097 host sandbox tests covering endpoint routing, header isolation against SerpApi, empty results, malformed data, timeouts, 429 Retry-After, Linkup fallback, and key rotation. Real account search quality, billing, and live rate limits remain unverified without a user-provided API key.
 
 ## Planned
 
@@ -352,7 +353,10 @@ All third-batch planned standalone web search APIs (Jina, Kagi, Serper) have now
 2. Implement `execute({ query, count, key, url }, ctx)`. Use the supplied key,
    honor the custom Base URL (exact endpoint across all providers), and cap `count`
    according to the API's limits. If upstream has no count parameter, cap valid results
-   locally.
+   locally. Use `configCountPolicy` and `resolveResultCount` so an omitted `resultLimit` follows
+   the host count while explicit options and valid environment values remain caps.
+   Preserve the legacy fallback only when no valid host count is supplied. Filter
+   unusable rows before capping, even when the upstream ignores the requested count.
 3. Return `{ title, url, text, age? }` results. Drop entries without a URL and
    preserve the provider's date string when available.
 4. Preserve `ctx.abort` and apply the configured request timeout. Throw errors
@@ -360,8 +364,8 @@ All third-batch planned standalone web search APIs (Jina, Kagi, Serper) have now
 5. Create settings and cache per plugin instance. Isolate cache entries by
    hashing the final endpoint, credential and all request parameters together.
 6. Add optional provider settings with environment fallback and document their
-   defaults in both technical references. Follow the [configuration naming rules](#configuration-naming)
-   below. magpie continues to own API keys.
+   defaults and canonical names in both technical references. Follow the
+   [configuration naming rules](#configuration-naming) below. magpie continues to own API keys.
 7. For APIs that support anonymous requests, set `keyOptional: true`, omit empty
    authentication headers and select the documented anonymous endpoint. Keep an
    anonymous 429 cooldown per final endpoint because magpie does not rest empty
@@ -371,7 +375,10 @@ All third-batch planned standalone web search APIs (Jina, Kagi, Serper) have now
    registration checks. Set `name` to `<Provider> (magpie-websearch)` and keep
    vendor IDs stable. magpie owns request ordering and its own on/off switches.
 9. Add response fixtures and tests for request mapping, custom URLs, cache
-   isolation and errors. Run Node, Bun and the magpie host checks.
+   isolation and errors. Cover host counts above 6 and the `fallbackCount` with at
+   least 25 valid results, smaller explicit/environment caps, `providerMax` and
+   missing-count fallbacks. Exercise canonical `resultLimit` names and legacy
+   aliases. Run Node, Bun and the magpie host checks.
 10. Update the supported-provider table, README, package description and keywords.
 
 ### Configuration naming
@@ -390,13 +397,13 @@ option word boundaries to underscores and uppercase the option name:
 | Provider short ID | Option | Environment variable |
 |---|---|---|
 | `moonshot` | `timeout` | `MOONSHOT_TIMEOUT` |
-| `moonshot-cn` | `maxResults` | `MOONSHOT_CN_MAX_RESULTS` |
+| `moonshot-cn` | `resultLimit` | `MOONSHOT_CN_RESULT_LIMIT` |
 | `moonshot-cn` | `cacheTTL` | `MOONSHOT_CN_CACHE_TTL` |
 | `moonshot-cn` | `contentChars` | `MOONSHOT_CN_CONTENT_CHARS` |
 
 `configInt` and `configStr` strip the complete option suffix and convert the
 remaining prefix to a lowercase ID with hyphens. This produces error fields such
-as `moonshot-cn.maxResults` without changing the environment key used to read values.
+as `moonshot-cn.resultLimit` without changing the environment key used to read values.
 Do not prepend an application prefix or introduce an unrelated suffix for new settings.
 
 When retaining an existing environment alias or another naming scheme, explicitly
@@ -406,3 +413,11 @@ environment segment and may lose a multi-part provider ID. The namespace overrid
 only labels errors; it does not rename the environment variable or change configuration
 precedence. Add tests for the error field, environment fallback and explicit-option
 priority, and document defaults and environment mappings in both technical references.
+
+All search adapters use `resultLimit` / `*_RESULT_LIMIT` for the optional user cap.
+`configCountPolicy` returns separate `configuredLimit`, `fallbackCount` and
+`providerMax` fields. Declare compatibility aliases through `legacyOption` and
+`legacyEnv`: the default aliases are `maxResults` / `*_MAX_RESULTS`, while Querit
+uses `count` / `QUERIT_COUNT`. New options beat old options; either beats environment
+values, where the new nonblank name beats its alias. Keep protocol fields such as
+Linkup's `maxResults` and Querit's upstream `count` unchanged.

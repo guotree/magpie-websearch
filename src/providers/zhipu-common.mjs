@@ -1,6 +1,6 @@
 import {
-  boundDetail, cacheKey, cleanRetryAfter, configInt, configStr, makeCache,
-  normalizeQuery, page, requestJSON, resolveEndpoint, sizeFor, truncateCodePoints,
+  boundDetail, cacheKey, cleanRetryAfter, configCountPolicy, configInt, configStr, makeCache,
+  normalizeQuery, page, requestJSON, resolveEndpoint, resolveResultCount, truncateCodePoints,
 } from "../core.mjs"
 
 // Some proxies wrap successful responses in a conventional status envelope.
@@ -23,7 +23,7 @@ export function createZhipuProvider(meta, options = {}) {
   const label = name.replace(/ \(magpie-websearch\)$/, "")
   const ttl = configInt(options, "cacheTTL", `${envPrefix}CACHE_TTL`, 600_000)
   const timeout = configInt(options, "timeout", `${envPrefix}TIMEOUT`, 25_000, 0, 2_147_483_647)
-  const maxResults = configInt(options, "maxResults", `${envPrefix}MAX_RESULTS`, 10, 1, 50)
+  const countPolicy = configCountPolicy(options, `${envPrefix}RESULT_LIMIT`, 10, 50)
   const contentChars = configInt(options, "contentChars", `${envPrefix}CONTENT_CHARS`, 4_000)
   const recency = configStr(options, "recency", `${envPrefix}RECENCY`, "noLimit", [
     "noLimit", "oneDay", "oneWeek", "oneMonth", "oneYear",
@@ -63,7 +63,7 @@ export function createZhipuProvider(meta, options = {}) {
       if (china && [...q].length > 70) throw new Error("Zhipu query must contain 1–70 characters")
 
       const endpoint = resolveEndpoint(url, defaultEndpoint)
-      const limit = sizeFor(count, maxResults, 50)
+      const limit = resolveResultCount(count, countPolicy)
       // Sogou accepts tens only. Round up so the upstream size never falls
       // below the local cap. Quark does not document count support.
       const upstreamCount = engine === "search_pro_sogou" ? Math.ceil(limit / 10) * 10 : limit

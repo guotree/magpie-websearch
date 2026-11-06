@@ -1,6 +1,6 @@
 import {
-  boundDetail, cacheKey, cleanRetryAfter, configInt, configStr, makeCache,
-  normalizeQuery, page, requestJSON, resolveEndpoint, sizeFor,
+  boundDetail, cacheKey, cleanRetryAfter, configCountPolicy, configInt, configStr, makeCache,
+  normalizeQuery, page, requestJSON, resolveEndpoint, resolveResultCount,
 } from "../core.mjs"
 
 function describeKagiError(error) {
@@ -30,7 +30,7 @@ function errorDetailFromBody(raw) {
 export function createKagi(options = {}) {
   const ttl = configInt(options, "cacheTTL", "KAGI_CACHE_TTL", 600_000)
   const timeout = configInt(options, "timeout", "KAGI_TIMEOUT", 25_000, 0, 2_147_483_647)
-  const maxResults = configInt(options, "maxResults", "KAGI_MAX_RESULTS", 10, 1, 1024)
+  const countPolicy = configCountPolicy(options, "KAGI_RESULT_LIMIT", 10, 1024)
   const lens = configStr(options, "lens", "KAGI_LENS")
   const recency = configStr(options, "recency", "KAGI_RECENCY", "", ["", "day", "week", "month"])
   const region = configStr(options, "region", "KAGI_REGION")
@@ -52,7 +52,7 @@ export function createKagi(options = {}) {
       if (!q) throw new Error("Kagi query must not be empty")
 
       const endpoint = resolveEndpoint(url, "https://kagi.com/api/v1/search")
-      const limit = sizeFor(count, maxResults, 1024)
+      const limit = resolveResultCount(count, countPolicy)
       const body = {
         query: q,
         workflow: "search",

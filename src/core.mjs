@@ -35,6 +35,26 @@ export function configInt(options, name, env, fallback, min = 0, max = Number.MA
   return value
 }
 
+// Only an explicit option or a valid environment value limits the host's count.
+// Otherwise keep the old default solely for callers that supply no count.
+export function configCountPolicy(options, env, fallbackCount, providerMax = Number.MAX_SAFE_INTEGER, {
+  legacyOption = "maxResults", legacyEnv = env.replace(/_RESULT_LIMIT$/, "_MAX_RESULTS"),
+} = {}) {
+  const namespace = configNamespace("resultLimit", env)
+  const option = options.resultLimit !== undefined ? "resultLimit" : options[legacyOption] !== undefined ? legacyOption : undefined
+  const selectedEnv = envStr(env) !== "" ? env : legacyEnv
+  const value = configInt(options, option ?? "resultLimit", selectedEnv, fallbackCount, 1, providerMax, namespace)
+  const raw = envStr(selectedEnv)
+  const number = Number(raw)
+  const configured = option !== undefined || (raw !== "" && Number.isSafeInteger(number) && number >= 0)
+  if (options[legacyOption] !== undefined) {
+    console.warn(`[magpie-websearch] ${namespace}.${legacyOption} is deprecated; use ${namespace}.resultLimit${option === "resultLimit" ? " (resultLimit takes precedence)" : ""}`)
+  } else if (option === undefined && selectedEnv === legacyEnv && raw !== "") {
+    console.warn(`[magpie-websearch] ${legacyEnv} is deprecated; use ${env}`)
+  }
+  return { fallbackCount, configuredLimit: configured ? value : undefined, providerMax }
+}
+
 export function configStr(options, name, env, fallback = "", values, namespace) {
   const explicit = options[name] !== undefined
   const field = `${namespace ?? configNamespace(name, env)}.${name}`
@@ -83,11 +103,11 @@ export function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max)
 }
 
-// magpie asks for `count` pages (6 today). The configured number is a cap, so
-// a user who sets a smaller number keeps it; the API's own maximum still wins.
-export function sizeFor(count, preferred, max) {
-  const wanted = Number.isFinite(count) && count > 0 ? Math.floor(count) : preferred
-  return Math.max(1, Math.min(wanted, preferred, max))
+// Follow the host's count unless the user configured a cap. Magpie 0.1.3062+
+// accepts 1–20 (default 6); do not hard-code its range into provider policy.
+export function resolveResultCount(hostCount, { fallbackCount, configuredLimit, providerMax }) {
+  const requestedCount = Number.isFinite(hostCount) && hostCount > 0 ? Math.floor(hostCount) : configuredLimit ?? fallbackCount
+  return Math.max(1, Math.min(requestedCount, configuredLimit ?? providerMax, providerMax))
 }
 
 // An error body is diagnostic, not content: a WAF or CDN interposing an HTML

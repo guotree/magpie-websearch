@@ -1,12 +1,12 @@
 import {
-  cacheKey, configInt, configStr, makeCache, normalizeQuery,
-  page, requestJSON, resolveEndpoint, sizeFor,
+  cacheKey, configCountPolicy, configInt, configStr, makeCache, normalizeQuery,
+  page, requestJSON, resolveEndpoint, resolveResultCount,
 } from "../core.mjs"
 
 export function createSerpapi(options = {}) {
   const ttl = configInt(options, "cacheTTL", "SERPAPI_CACHE_TTL", 600_000)
   const timeout = configInt(options, "timeout", "SERPAPI_TIMEOUT", 25_000, 0, 2_147_483_647)
-  const maxResults = configInt(options, "maxResults", "SERPAPI_MAX_RESULTS", 10, 1, 10)
+  const countPolicy = configCountPolicy(options, "SERPAPI_RESULT_LIMIT", 10, 10)
   const location = configStr(options, "location", "SERPAPI_LOCATION")
   const gl = configStr(options, "gl", "SERPAPI_GL")
   const hl = configStr(options, "hl", "SERPAPI_HL")
@@ -28,7 +28,7 @@ export function createSerpapi(options = {}) {
       }
 
       const endpoint = resolveEndpoint(url, "https://serpapi.com/search")
-      const limit = sizeFor(count, maxResults, 10)
+      const limit = resolveResultCount(count, countPolicy)
       const identity = cacheKey(endpoint, {
         engine: "google",
         output: "json",

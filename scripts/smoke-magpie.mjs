@@ -44,7 +44,11 @@ const upstream = createServer(async (req, res) => {
   }
   if (query === "timeout") return
   res.setHeader("Content-Type", "application/json")
-  if (target.pathname.startsWith("/bocha/") || target.pathname.startsWith("/ollama/")) {
+  if (target.pathname === "/count/tinyfish") {
+    res.end(JSON.stringify({ results: Array.from({ length: 25 }, (_, i) => ({
+      title: `Count page ${i + 1}`, url: `https://example.com/count/${i + 1}`, snippet: `Count snippet ${i + 1}`,
+    })) }))
+  } else if (target.pathname.startsWith("/bocha/") || target.pathname.startsWith("/ollama/")) {
     const id = target.pathname.startsWith("/bocha/") ? "bocha" : "ollama"
     if (query === `${id} refusal` || req.headers.authorization === `Bearer ${id}-resting-dummy-key`) {
       res.writeHead(429, { "Retry-After": "0007" })
@@ -384,23 +388,23 @@ try {
   await run("plugin", "options", root, JSON.stringify({ enable: ["linkup", "querit"], disable: ["querit"] }))
   assert.deepEqual(await loadedIDs(), ["linkup"])
   const options = {
-    linkup: { depth: "deep", maxResults: 2, cacheTTL: 0, timeout: 500 },
+    linkup: { depth: "deep", resultLimit: 2, cacheTTL: 0, timeout: 500 },
     anysearch: { cacheTTL: 0 }, keenable: { cacheTTL: 0 },
-    bocha: { maxResults: 1, cacheTTL: 0, timeout: 500 },
-    metaso: { maxResults: 2, cacheTTL: 0, timeout: 500 },
-    moonshot: { maxResults: 1, content: "snippet", cacheTTL: 0, timeout: 500 },
-    "moonshot-cn": { maxResults: 1, content: "full", contentChars: 2000, cacheTTL: 0, timeout: 500 },
-    ollama: { maxResults: 1, contentChars: 8, cacheTTL: 0, timeout: 500 },
-    parallel: { maxResults: 1, mode: "fast", cacheTTL: 0, timeout: 500 },
-    perplexity: { searchType: "fast", recency: "week", country: "US", language: "en,zh", maxResults: 1, contentChars: 2000, cacheTTL: 0, timeout: 500 },
-    serpapi: { maxResults: 1, hl: "en", gl: "us", cacheTTL: 0, timeout: 500 },
-    stepfun: { maxResults: 1, category: "research", content: "full", contentChars: 2000, cacheTTL: 0, timeout: 500 },
-    tinyfish: { maxResults: 1, language: "zh", cacheTTL: 0, timeout: 500 },
-    zhipu: { engine: "search_pro_sogou", contentSize: "high", recency: "oneWeek", maxResults: 1, cacheTTL: 0, timeout: 500 },
-    zai: { maxResults: 1, cacheTTL: 0, timeout: 500 },
-    jina: { maxResults: 1, contentChars: 8, cacheTTL: 0, timeout: 500 },
-    kagi: { maxResults: 1, recency: "week", region: "cn", cacheTTL: 0, timeout: 500 },
-    serper: { maxResults: 1, gl: "cn", hl: "zh-cn", tbs: "qdr:w", cacheTTL: 0, timeout: 500 },
+    bocha: { resultLimit: 1, cacheTTL: 0, timeout: 500 },
+    metaso: { resultLimit: 2, cacheTTL: 0, timeout: 500 },
+    moonshot: { resultLimit: 1, content: "snippet", cacheTTL: 0, timeout: 500 },
+    "moonshot-cn": { resultLimit: 1, content: "full", contentChars: 2000, cacheTTL: 0, timeout: 500 },
+    ollama: { resultLimit: 1, contentChars: 8, cacheTTL: 0, timeout: 500 },
+    parallel: { resultLimit: 1, mode: "fast", cacheTTL: 0, timeout: 500 },
+    perplexity: { searchType: "fast", recency: "week", country: "US", language: "en,zh", resultLimit: 1, contentChars: 2000, cacheTTL: 0, timeout: 500 },
+    serpapi: { resultLimit: 1, hl: "en", gl: "us", cacheTTL: 0, timeout: 500 },
+    stepfun: { resultLimit: 1, category: "research", content: "full", contentChars: 2000, cacheTTL: 0, timeout: 500 },
+    tinyfish: { resultLimit: 1, language: "zh", cacheTTL: 0, timeout: 500 },
+    zhipu: { engine: "search_pro_sogou", contentSize: "high", recency: "oneWeek", resultLimit: 1, cacheTTL: 0, timeout: 500 },
+    zai: { resultLimit: 1, cacheTTL: 0, timeout: 500 },
+    jina: { resultLimit: 1, contentChars: 8, cacheTTL: 0, timeout: 500 },
+    kagi: { resultLimit: 1, recency: "week", region: "cn", cacheTTL: 0, timeout: 500 },
+    serper: { resultLimit: 1, gl: "cn", hl: "zh-cn", tbs: "qdr:w", cacheTTL: 0, timeout: 500 },
   }
   await run("plugin", "options", root, JSON.stringify(options))
   await run("search", "add", "magpie-websearch:linkup", "smoke-dummy-key", `url=http://127.0.0.1:${upstream.address().port}/proxy/v1/search`)
@@ -418,7 +422,7 @@ try {
   }
   assert.ok(ready, "isolated gateway started")
   console.log("Checking a search, timeout and key refusal against a local upstream…")
-  const search = (query) => run("tool", "web_search", query, "--json")
+  const search = (query, count) => run("tool", "web_search", query, ...(count === undefined ? [] : ["--count", String(count)]), "--json")
   const output = await search("smoke query")
   assert.match(output, /example\.com\/smoke/)
   assert.equal(calls[0].path, "/proxy/v1/search")
@@ -434,6 +438,23 @@ try {
   // The gateway's refusal carries Retry-After; a separate CLI process cannot
   // inspect its in-memory cooldown table.
   assert.match(gatewayLog, /429: slow down, retry after 30s/)
+  // New hosts expose count; old hosts can still run the existing default-count smoke.
+  if ((await run("tools", "web_search")).includes("--count")) {
+    console.log("Checking host count passthrough and explicit plugin caps…")
+    await run("search", "off", "magpie-websearch:linkup")
+    await run("search", "add", "magpie-websearch:tinyfish", "count-dummy-key", `url=http://127.0.0.1:${upstream.address().port}/count/tinyfish`)
+    await run("plugin", "options", root, JSON.stringify({ ...options, tinyfish: { cacheTTL: 0 } }))
+    const resultCount = (output) => (JSON.parse(output).content?.[0]?.text.match(/^\d+\. /gm) || []).length
+    for (const count of [undefined, 12, 20]) {
+      const before = calls.length
+      assert.equal(resultCount(await search("count passthrough", count)), count ?? 6)
+      assert.equal(calls.length, before + 1)
+    }
+    await run("plugin", "options", root, JSON.stringify({ ...options, tinyfish: { resultLimit: 3, cacheTTL: 0 } }))
+    assert.equal(resultCount(await search("count explicit cap", 20)), 3)
+    await run("search", "rm", "magpie-websearch:tinyfish")
+    await run("plugin", "options", root, JSON.stringify(options))
+  }
   console.log("Checking keyless registration, anonymous requests, cooldown and fallback…")
   await run("search", "off", "magpie-websearch:linkup")
   for (const id of ["anysearch", "keenable"]) {

@@ -1,12 +1,12 @@
 import {
-  boundDetail, cacheKey, cleanRetryAfter, configInt, makeCache,
-  normalizeQuery, page, requestJSON, resolveEndpoint, sizeFor, truncateCodePoints,
+  boundDetail, cacheKey, cleanRetryAfter, configCountPolicy, configInt, makeCache,
+  normalizeQuery, page, requestJSON, resolveEndpoint, resolveResultCount, truncateCodePoints,
 } from "../core.mjs"
 
 export function createOllama(options = {}) {
   const ttl = configInt(options, "cacheTTL", "OLLAMA_CACHE_TTL", 600_000)
   const timeout = configInt(options, "timeout", "OLLAMA_TIMEOUT", 25_000, 0, 2_147_483_647)
-  const maxResults = configInt(options, "maxResults", "OLLAMA_MAX_RESULTS", 5, 1, 10)
+  const countPolicy = configCountPolicy(options, "OLLAMA_RESULT_LIMIT", 5, 10)
   const contentChars = configInt(options, "contentChars", "OLLAMA_CONTENT_CHARS", 2_000)
   const cache = makeCache(ttl)
 
@@ -20,7 +20,7 @@ export function createOllama(options = {}) {
       const q = normalizeQuery(query)
       if (!q) throw new Error("Ollama query must not be empty")
       const endpoint = resolveEndpoint(url, "https://ollama.com/api/web_search")
-      const limit = sizeFor(count, maxResults, 10)
+      const limit = resolveResultCount(count, countPolicy)
       const body = { query: q, max_results: limit }
       const identity = cacheKey(endpoint, { ...body, contentChars }, apiKey)
       const cached = cache.read(identity)

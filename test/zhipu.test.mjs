@@ -310,7 +310,7 @@ test("zhipu: Quark ignores an environment domain filter without blocking plugin 
     assert.equal(fake.calls[0].body.search_engine, "search_pro_quark")
 
     warnings.length = 0
-    const provider = createZhipu({ engine: "search_pro_quark", maxResults: 50 })
+    const provider = createZhipu({ engine: "search_pro_quark", resultLimit: 50 })
     assert.equal(warnings.length, 1, "explicit engine also ignores an inherited domain filter")
     const result = await provider.execute({ query: "q", key: "k", count: 50 }, context())
     assert.equal(result.length, 10, "a local cap cannot fill a short upstream response")

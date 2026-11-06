@@ -1,6 +1,6 @@
 import {
-  boundDetail, cacheKey, cleanRetryAfter, configInt, configStr, makeCache,
-  normalizeQuery, page, requestJSON, resolveEndpoint, sizeFor, truncateCodePoints,
+  boundDetail, cacheKey, cleanRetryAfter, configCountPolicy, configInt, configStr, makeCache,
+  normalizeQuery, page, requestJSON, resolveEndpoint, resolveResultCount, truncateCodePoints,
 } from "../core.mjs"
 
 function parseCountry(options) {
@@ -50,7 +50,7 @@ function parseLanguage(options) {
 export function createPerplexity(options = {}) {
   const ttl = configInt(options, "cacheTTL", "PERPLEXITY_CACHE_TTL", 600_000)
   const timeout = configInt(options, "timeout", "PERPLEXITY_TIMEOUT", 25_000, 0, 2_147_483_647)
-  const maxResults = configInt(options, "maxResults", "PERPLEXITY_MAX_RESULTS", 10, 1, 20)
+  const countPolicy = configCountPolicy(options, "PERPLEXITY_RESULT_LIMIT", 10, 20)
   const searchType = configStr(options, "searchType", "PERPLEXITY_SEARCH_TYPE", "web", ["web", "fast"], "perplexity")
   const recency = configStr(options, "recency", "PERPLEXITY_RECENCY", "", [
     "", "hour", "day", "week", "month", "year",
@@ -71,7 +71,7 @@ export function createPerplexity(options = {}) {
       if (!q) throw new Error("Perplexity query must not be empty")
 
       const endpoint = resolveEndpoint(url, "https://api.perplexity.ai/search")
-      const limit = sizeFor(count, maxResults, 20)
+      const limit = resolveResultCount(count, countPolicy)
       const body = {
         query: q,
         max_results: limit,

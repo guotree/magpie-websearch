@@ -33,12 +33,20 @@ magpie search
 
 默认注册全部 19 个 API，无需设置插件选项。Magpie 的网页搜索设置决定实际使用哪些 API。
 
+Magpie v0.1.3062 起，Agent 可在调用 `web_search` 时指定 `count`（1–20，默认 6）；命令行示例：
+
+```sh
+magpie tool web_search "OpenAI API documentation" --count 20
+```
+
+插件未配置数量上限时跟随宿主 `count`，并遵守各供应商限制；所有供应商统一使用可选的 `resultLimit` 或 `*_RESULT_LIMIT` 环境变量设置用户上限。供应商可能返回更少结果，插件不追加请求补足条数。旧选项保留兼容，迁移与数量策略见[技术参考](docs/technical-reference.md#configuration)。
+
 使用官方服务时，将 **Base URL** 留空；自定义地址应填写完整端点，插件不会追加路径。详见[自定义 Base URL](docs/technical-reference.md#custom-base-url)。
 
 如需调整供应商参数，可在 **Plugins → Installed → Options** 配置，或运行：
 
 ```sh
-magpie plugin options magpie-websearch '{"linkup":{"depth":"deep","maxResults":4}}'
+magpie plugin options magpie-websearch '{"linkup":{"depth":"deep","resultLimit":4}}'
 ```
 
 每次命令会替换已保存的完整选项对象，需包含希望保留的所有选项。保存后插件宿主会自动重载。完整参数和注册过滤见[技术参考](docs/technical-reference.md#configuration)。

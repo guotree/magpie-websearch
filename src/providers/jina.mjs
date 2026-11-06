@@ -1,6 +1,6 @@
 import {
-  boundDetail, cacheKey, cleanRetryAfter, configInt, configStr, makeCache,
-  normalizeQuery, page, requestJSON, resolveEndpoint, sizeFor, truncateCodePoints,
+  boundDetail, cacheKey, cleanRetryAfter, configCountPolicy, configInt, configStr, makeCache,
+  normalizeQuery, page, requestJSON, resolveEndpoint, resolveResultCount, truncateCodePoints,
 } from "../core.mjs"
 
 function describeJinaError(json) {
@@ -29,7 +29,7 @@ export function createJina(options = {}) {
   const ttl = configInt(options, "cacheTTL", "JINA_CACHE_TTL", 600_000)
   const content = configStr(options, "content", "JINA_CONTENT", "snippet", ["snippet", "full"])
   const timeout = configInt(options, "timeout", "JINA_TIMEOUT", content === "full" ? 60_000 : 25_000, 0, 2_147_483_647)
-  const maxResults = configInt(options, "maxResults", "JINA_MAX_RESULTS", 10, 1, 20)
+  const countPolicy = configCountPolicy(options, "JINA_RESULT_LIMIT", 10, 20)
   const contentChars = configInt(options, "contentChars", "JINA_CONTENT_CHARS", 4_000, 0, Number.MAX_SAFE_INTEGER)
   const gl = configStr(options, "gl", "JINA_GL")
   const hl = configStr(options, "hl", "JINA_HL")
@@ -47,7 +47,7 @@ export function createJina(options = {}) {
       if (!q) throw new Error("Jina query must not be empty")
 
       const endpoint = resolveEndpoint(url, "https://s.jina.ai/search")
-      const limit = sizeFor(count, maxResults, 20)
+      const limit = resolveResultCount(count, countPolicy)
       const body = {
         q,
         num: limit,

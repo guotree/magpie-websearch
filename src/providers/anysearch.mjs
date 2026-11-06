@@ -1,12 +1,12 @@
 import {
-  cacheKey, configInt, configStr, list, makeAnonymousCooldown, makeCache, normalizeQuery,
-  page, requestJSON, resolveEndpoint, sizeFor,
+  cacheKey, configCountPolicy, configInt, configStr, list, makeAnonymousCooldown, makeCache, normalizeQuery,
+  page, requestJSON, resolveEndpoint, resolveResultCount,
 } from "../core.mjs"
 
 export function createAnysearch(options = {}) {
   const ttl = configInt(options, "cacheTTL", "ANYSEARCH_CACHE_TTL", 600_000)
   const timeout = configInt(options, "timeout", "ANYSEARCH_TIMEOUT", 25_000, 0, 2_147_483_647)
-  const maxResults = configInt(options, "maxResults", "ANYSEARCH_MAX_RESULTS", 10, 1, 10)
+  const countPolicy = configCountPolicy(options, "ANYSEARCH_RESULT_LIMIT", 10, 10)
   const tag = configStr(options, "tag", "ANYSEARCH_TAG")
   const zone = configStr(options, "zone", "ANYSEARCH_ZONE", "", ["", "cn", "intl"])
   const language = configStr(options, "language", "ANYSEARCH_LANGUAGE")
@@ -23,7 +23,7 @@ export function createAnysearch(options = {}) {
       const endpoint = resolveEndpoint(url, "https://api.anysearch.com/v1/search")
       const body = {
         query: normalizeQuery(query),
-        max_results: sizeFor(count, maxResults, 10),
+        max_results: resolveResultCount(count, countPolicy),
         ...(tag ? { tag } : {}),
         ...(zone ? { zone } : {}),
         ...(language ? { language } : {}),
@@ -52,6 +52,7 @@ export function createAnysearch(options = {}) {
       }
       const results = list(json.data?.results)
         .filter((item) => item && item.url)
+        .slice(0, body.max_results)
         .map((item) => page(item.title, item.url, item.content ?? item.snippet))
       cache.write(identity, results)
       return results

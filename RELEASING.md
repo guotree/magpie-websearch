@@ -42,6 +42,16 @@ Before bumping the version:
 
 - Run `npm run check`, `npm run check:bun` and `npm run smoke:magpie`.
 - Record the magpie version verified by the smoke test in the release notes.
+- Verify Magpie 0.1.3062+ `web_search` counts with a local upstream that returns
+  at least 25 results: omitted count keeps 6, requested 12/20 follows the host
+  without a configured cap, and explicit options/environment values still cap.
+  Check provider maxima and legacy missing-count fallbacks. This changes default
+  sizing for host requests above previous defaults; describe it in release notes
+  and preserve explicit user caps rather than raising every default to 20.
+- Use `resultLimit` / `*_RESULT_LIMIT` consistently for public configuration.
+  Verify migration warnings and precedence for legacy `maxResults` / `*_MAX_RESULTS`
+  and Querit's `count` / `QUERIT_COUNT`. Keep `countPolicy.configuredLimit`,
+  `fallbackCount` and `providerMax` distinct; do not rename upstream wire fields.
 - Keep the Chinese and English READMEs, both versions of the
   [configuration reference](docs/technical-reference.en.md#configuration), and the
   [provider checklist](PROVIDERS.md#adding-a-provider) in sync with any option changes.
@@ -99,10 +109,10 @@ Before bumping the version:
 - For Jina, verify `content` snippet/full: `X-Respond-With: no-content` only in
   snippet mode, full text preferring `content` over `description`, and
   `contentChars` truncation by Unicode code points (default 4000; `0` keeps all),
-  with `maxResults` 1–20 and the wire `num` capped at 20. For Kagi, verify `lens`
+  with `resultLimit` 1–20 and the wire `num` capped at 20. For Kagi, verify `lens`
   overriding `recency` (day/week/month) with a factory warning, `lens_id` versus
   `lens.time_relative`, `region` via `filters.region` and the 1024 local cap. For
-  Serper, keep the wire `num` fixed at 10 with a local cap of 10 (`maxResults` 1–10)
+  Serper, keep the wire `num` fixed at 10 with a local cap of 10 (`resultLimit` 1–10)
   and `gl`/`hl`/`tbs` in the body; keep SerpApi isolated as a separate GET
   `https://serpapi.com/search` with an `api_key` query parameter, its own key and
   cache, and no `X-API-KEY` or `api_key` cross-talk between the two.

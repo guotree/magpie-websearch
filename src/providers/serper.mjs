@@ -1,6 +1,6 @@
 import {
-  boundDetail, cacheKey, cleanRetryAfter, configInt, configStr, makeCache,
-  normalizeQuery, page, requestJSON, resolveEndpoint, sizeFor,
+  boundDetail, cacheKey, cleanRetryAfter, configCountPolicy, configInt, configStr, makeCache,
+  normalizeQuery, page, requestJSON, resolveEndpoint, resolveResultCount,
 } from "../core.mjs"
 
 function describeSerperError(json) {
@@ -31,7 +31,7 @@ function errorDetailFromBody(raw) {
 export function createSerper(options = {}) {
   const ttl = configInt(options, "cacheTTL", "SERPER_CACHE_TTL", 600_000)
   const timeout = configInt(options, "timeout", "SERPER_TIMEOUT", 25_000, 0, 2_147_483_647)
-  const maxResults = configInt(options, "maxResults", "SERPER_MAX_RESULTS", 10, 1, 10)
+  const countPolicy = configCountPolicy(options, "SERPER_RESULT_LIMIT", 10, 10)
   const gl = configStr(options, "gl", "SERPER_GL")
   const hl = configStr(options, "hl", "SERPER_HL")
   const tbs = configStr(options, "tbs", "SERPER_TBS", "", ["", "qdr:h", "qdr:d", "qdr:w", "qdr:m", "qdr:y"])
@@ -48,7 +48,7 @@ export function createSerper(options = {}) {
       if (!q) throw new Error("Serper query must not be empty")
 
       const endpoint = resolveEndpoint(url, "https://google.serper.dev/search")
-      const limit = sizeFor(count, maxResults, 10)
+      const limit = resolveResultCount(count, countPolicy)
       const body = {
         q,
         num: 10,

@@ -1,13 +1,13 @@
 import {
-  cacheKey, configInt, configStr, makeAnonymousCooldown, makeCache, normalizeQuery,
-  page, requestJSON, resolveEndpoint, sizeFor,
+  cacheKey, configCountPolicy, configInt, configStr, makeAnonymousCooldown, makeCache, normalizeQuery,
+  page, requestJSON, resolveEndpoint, resolveResultCount,
 } from "../core.mjs"
 import { callMCPSearch } from "../mcp.mjs"
 
 export function createTinyfish(options = {}) {
   const ttl = configInt(options, "cacheTTL", "TINYFISH_CACHE_TTL", 600_000)
   const timeout = configInt(options, "timeout", "TINYFISH_TIMEOUT", 25_000, 0, 2_147_483_647)
-  const maxResults = configInt(options, "maxResults", "TINYFISH_MAX_RESULTS", 10, 1)
+  const countPolicy = configCountPolicy(options, "TINYFISH_RESULT_LIMIT", 10)
   const domainType = configStr(options, "domainType", "TINYFISH_DOMAIN_TYPE", "web", ["web", "news", "research_paper"])
   const params = { domain_type: domainType }
   for (const [name, field, env] of [
@@ -34,7 +34,7 @@ export function createTinyfish(options = {}) {
       const args = { query: normalizeQuery(query), ...params }
       if (!args.query || [...args.query].length > 2000) throw new Error("TinyFish query must contain 1–2000 characters")
       // TinyFish has no count parameter. Keep the local cap in cache identity.
-      const limit = sizeFor(count, maxResults, maxResults)
+      const limit = resolveResultCount(count, countPolicy)
       const identity = cacheKey(endpoint, { mode: key ? "rest" : "mcp", ...args, limit }, key)
       const cached = cache.read(identity)
       if (cached) return cached

@@ -1,12 +1,12 @@
 import {
-  cacheKey, configInt, configStr, list, makeCache, normalizeQuery,
-  page, requestJSON, resolveEndpoint, sizeFor, truncateCodePoints,
+  cacheKey, configCountPolicy, configInt, configStr, list, makeCache, normalizeQuery,
+  page, requestJSON, resolveEndpoint, resolveResultCount, truncateCodePoints,
 } from "../core.mjs"
 
 export function createLinkup(options = {}) {
   const ttl = configInt(options, "cacheTTL", "LINKUP_CACHE_TTL", 600_000)
   const timeout = configInt(options, "timeout", "LINKUP_TIMEOUT", 25_000, 0, 2_147_483_647)
-  const maxResults = configInt(options, "maxResults", "LINKUP_MAX_RESULTS", 10, 1, 100)
+  const countPolicy = configCountPolicy(options, "LINKUP_RESULT_LIMIT", 10, 100)
   const contentChars = configInt(options, "contentChars", "LINKUP_CONTENT_CHARS", 4_000)
   const depth = configStr(options, "depth", "LINKUP_DEPTH", "fast", ["flash", "fast", "standard", "deep"])
   const cache = makeCache(ttl)
@@ -17,7 +17,7 @@ export function createLinkup(options = {}) {
     async execute({ query, count, key, url }, ctx) {
       if (!key) throw new Error("Linkup needs a key: add one in magpie's Web search settings")
       const endpoint = resolveEndpoint(url, "https://api.linkup.so/v1/search")
-      const body = { q: normalizeQuery(query), depth, outputType: "searchResults", maxResults: sizeFor(count, maxResults, 100) }
+      const body = { q: normalizeQuery(query), depth, outputType: "searchResults", maxResults: resolveResultCount(count, countPolicy) }
       const identity = cacheKey(endpoint, body, key)
       const cached = cache.read(identity)
       if (cached) return cached
@@ -28,6 +28,7 @@ export function createLinkup(options = {}) {
       }, ctx, { label: "Linkup", timeout })
       const results = list(json.results)
         .filter((item) => item && item.url && item.type !== "image")
+        .slice(0, body.maxResults)
         .map((item) => page(item.name, item.url, truncateCodePoints(String(item.content ?? ""), contentChars)))
       cache.write(identity, results)
       return results

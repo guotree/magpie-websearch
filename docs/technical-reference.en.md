@@ -184,7 +184,7 @@ are supported on REST.
 
 Parallel's public search caps results at 20. The plugin requests at most 20
 results on REST and caps valid results locally to magpie's count and
-`parallel.maxResults`. `text` joins `excerpts` with `\n\n`; it retains up to
+`parallel.resultLimit`. `text` joins `excerpts` with `\n\n`; it retains up to
 `parallel.contentChars` code points (default 4000, `0` keeps all returned text)
 and appends `…` when truncated. `publish_date` preserves the original date
 string as `age`.
@@ -213,7 +213,7 @@ then extracts the search JSON from structured content or a text content part.
 REST requests have no body. Both paths accept a normalized query of 1–2000
 characters. Neither sends a result-count parameter: TinyFish returns one page,
 then the plugin drops URL-less entries and caps valid results
-to magpie's requested count and `tinyfish.maxResults`. It does not fetch more pages
+to magpie's requested count and `tinyfish.resultLimit`. It does not fetch more pages
 to fill a short response. `text` is the search snippet; `age` preserves `date`,
 including human-readable dates. A paper's numeric `year` is not converted to a date.
 
@@ -227,7 +227,7 @@ filters, thumbnails and inline page fetching are not exposed as plugin options.
 For example, use Chinese-language news search with a local cap of four results:
 
 ```sh
-magpie plugin options magpie-websearch '{"tinyfish":{"language":"zh","domainType":"news","maxResults":4}}'
+magpie plugin options magpie-websearch '{"tinyfish":{"language":"zh","domainType":"news","resultLimit":4}}'
 ```
 
 Anonymous access was verified on **2026-11-04** against the official MCP endpoint:
@@ -261,11 +261,11 @@ SerpApi integrates with Google's search engine via SerpApi's Google Search API:
 
 - **Protocol**: GET requests to `https://serpapi.com/search` with URL-encoded query parameters and authentication via `api_key`.
 - **Sensitive Error Protection**: Network, HTTP, parsing and status errors use fixed descriptions and necessary status codes, without retaining original exceptions, response bodies, request URLs or an underlying `cause`. Requests do not follow redirects. This protects plugin-generated errors and diagnostics; it cannot control server or proxy logs and does not rewrite normal web result content.
-- **Organic Results & Local Capping**: Only `organic_results` items with valid links are retained. Because Google deprecated the `num` parameter in September 2025, results are retrieved per page and capped locally (`serpapi.maxResults`).
+- **Organic Results & Local Capping**: Only `organic_results` items with valid links are retained. Because Google deprecated the `num` parameter in September 2025, results are retrieved per page and capped locally (`serpapi.resultLimit`).
 - **Empty Result Handling**: An error-free empty array, or `status: "Success"` with `organic_results_state: "Fully empty"`, returns `[]`; the latter may contain SerpApi's empty-result error string. Null result fields, unknown statuses and unexplained errors fail without caching. Valid empty results are cached for at most 30 seconds; `cacheTTL: 0` disables plugin caching. When no other results are available, magpie reports `found nothing`.
 - **Optional Knobs**: Supports configuring country (`gl`), interface language (`hl`), location (`location`), Google domain (`googleDomain`), and safe search (`safe`) with environment variable fallbacks.
 
-`hl` controls interface language and `gl` is a country preference; neither strictly restricts result language or source country. The adapter fetches one page without automatic pagination. The 1–10 `maxResults` range is a local plugin cap, and fewer results may be returned. Disabling plugin caching does not disable SerpApi's server cache. Under the [official billing rules](https://serpapi.com/pricing), successful empty searches can count toward quota; reducing the local cap does not reduce the charge for a search.
+`hl` controls interface language and `gl` is a country preference; neither strictly restricts result language or source country. The adapter fetches one page without automatic pagination. The 1–10 `resultLimit` range is a local plugin cap, and fewer results may be returned. Disabling plugin caching does not disable SerpApi's server cache. Under the [official billing rules](https://serpapi.com/pricing), successful empty searches can count toward quota; reducing the local cap does not reduce the charge for a search.
 
 <a id="moonshot-search"></a>
 
@@ -278,7 +278,7 @@ Moonshot provides two independent Basic web search endpoints:
 | International | `moonshot` | `https://api.moonshot.ai/v1/tools/search` | `https://platform.kimi.ai/console/api-keys` |
 | Domestic (China) | `moonshot-cn` | `https://api.moonshot.cn/v1/tools/search` | `https://platform.kimi.com/console/api-keys` |
 
-- **Protocol and Request Constraints**: Standalone Basic search API over `POST` JSON with Bearer authentication and `redirect: "error"`. Snippet requests contain `text_query` and `limit` (1–20, sized via `sizeFor(count, maxResults, 20)`); full-text requests also send `include_content: true`. Pro search, standalone fetch, Responses API, Formula API and model-integrated search are not exposed; the server-side `timeout_seconds` parameter is omitted.
+- **Protocol and Request Constraints**: Standalone Basic search API over `POST` JSON with Bearer authentication and `redirect: "error"`. Snippet requests contain `text_query` and `limit` (1–20, sized via `resolveResultCount(count, countPolicy)`); full-text requests also send `include_content: true`. Pro search, standalone fetch, Responses API, Formula API and model-integrated search are not exposed; the server-side `timeout_seconds` parameter is omitted.
 - **Content Mode and Truncation**: Defaults to snippet mode (`content: "snippet"`), omitting `include_content` from the request and reading `snippet`. In full-text mode (`content: "full"`), requests include `"include_content": true`, and valid `text` is preferred over `snippet` while preserving whitespace and indentation. Both modes retain up to `contentChars` code points (default 4000, `0` disables local truncation) and append `…` when truncating, without splitting emoji surrogate pairs. Note that Magpie applies its own 1500-byte cap downstream.
 - **Result Processing**: Upstream must return an object with a `search_results` array. Entries lacking valid URLs or object shape are dropped; if upstream returns items but none are valid, a structural error is raised instead of caching an empty result. `title` falls back to the URL, and the original string `date` maps to `age`.
 - **Rate Limit Headers**: On HTTP 429, standard `Retry-After` (delay-seconds or HTTP-date) takes precedence, including a valid zero delay. If missing or invalid, `X-RateLimit-Reset` is interpreted as the official Unix timestamp in seconds, rounded up to a relative delay; only 1–86400 seconds is accepted. If the raw integer exceeds `1e11` and its seconds interpretation fails, the plugin also tries a proxy's integer millisecond timestamp within the same delay window. The 24-hour bound is a local defensive policy; millisecond tolerance is not an official protocol guarantee. Expired, malformed or excessive resets are omitted so host defaults apply, rather than capped to 24 hours. This bound applies only to the reset header and does not change standard `Retry-After` priority or handling.
@@ -324,12 +324,12 @@ and ignores it, including invalid values.
 | `search_pro_sogou` | 10/20/30/40/50 | Supported | Supported | 0.05 |
 | `search_pro_quark` | Count omitted; capped locally | Not listed as supported | Supported | 0.05 |
 
-The effective local cap is `sizeFor(count, maxResults, 50)`. Sogou rounds the
+The effective local cap is `resolveResultCount(count, countPolicy)`, at most 50. Sogou rounds the
 upstream count up to an accepted bucket: requesting 6 locally sends 10, and 24
 sends 30, while returning at most the local cap after filtering. Sogou ignores
 count when both domain and recency filters are supplied. The adapter does not
 make extra calls to fill a short response. Quark omits count, so the actual number
-of results is controlled by upstream; `maxResults` is only a local cap and does
+of results is controlled by upstream; `resultLimit` is only a local cap and does
 not guarantee 50 results. Quark's default and maximum counts need real-key
 verification. Cache identities include both upstream parameters and the local
 cap so Quark or shared Sogou count buckets cannot reuse a response trimmed to a
@@ -400,7 +400,7 @@ successful search, international filter effects, latency, billing, account
 limits or search quality.
 
 ```sh
-magpie plugin options magpie-websearch '{"zhipu":{"engine":"search_pro","contentSize":"high","maxResults":6},"zai":{"maxResults":6}}'
+magpie plugin options magpie-websearch '{"zhipu":{"engine":"search_pro","contentSize":"high","resultLimit":6},"zai":{"resultLimit":6}}'
 ```
 
 <a id="stepfun-search"></a>
@@ -415,7 +415,7 @@ without a model call. Magpie manages the required API key from
 
 Queries are whitespace-normalized and must be nonempty, without an invented
 length ceiling or silent truncation. Requests send `query`, `n` sized via
-`sizeFor(count, maxResults, 20)`, and optional `category`: `programming`, `research`,
+`resolveResultCount(count, countPolicy)` (at most 20), and optional `category`: `programming`, `research`,
 `gov` or `business`. The default omits category to search all scenarios. Invalid
 links are filtered before capping, preserving upstream order without extra calls
 to fill short results. Pagination, domain, recency, language and safe-search
@@ -476,7 +476,7 @@ does list a separate Step Plan MCP endpoint at
 key). Its protocol and subscription channel differ; it is not an automatic fallback.
 
 ```sh
-magpie plugin options magpie-websearch '{"stepfun":{"category":"research","content":"full","maxResults":6,"contentChars":4000}}'
+magpie plugin options magpie-websearch '{"stepfun":{"category":"research","content":"full","resultLimit":6,"contentChars":4000}}'
 ```
 
 Dummy-key local tests cover requests, snippet/full-text fallback, empty/malformed
@@ -501,7 +501,7 @@ Requests send `query`, `max_results` and `search_type`, plus configured filterin
 - `recency`: Maps to `search_recency_filter`, accepting `hour`, `day`, `week`, `month`, `year`; empty by default for no limit.
 - `country`: Maps to `country`; trims whitespace and uppercases before accepting an empty value or two ASCII letters (e.g. `us` becomes `US`). Explicit invalid values throw TypeError; invalid environment values warn and fall back to no filter. Assignment to an actual country is not checked.
 - `language`: Maps to `search_language_filter`; splits on commas, trims each item, removes empty items and lowercases before accepting at most 20 two-letter codes (e.g. `EN, zh` becomes `en,zh`). Explicit violations throw TypeError; invalid environment values warn and fall back to an empty array. Assignment to actual languages is not checked. An explicit empty string overrides environment configuration.
-- `maxResults`: 1–20 (default 10); caps Magpie's requested count.
+- `resultLimit`: an explicit cap of 1–20. Without a configured cap, follow Magpie's count; use 10 only when the host supplies no valid count.
 
 `snippet` contains query-relevant extracted text; original whitespace and indentation are preserved,
 and text is bounded by `contentChars` (default 4000 code points, 0 keeps all), appending `…` when truncated.
@@ -521,10 +521,10 @@ independently of Pro subscriptions; introductory credits ($10 for 60 days on sel
 form a permanent free tier.
 
 ```sh
-magpie plugin options magpie-websearch '{"perplexity":{"searchType":"fast","recency":"week","country":"US","language":"en,zh","maxResults":10}}'
+magpie plugin options magpie-websearch '{"perplexity":{"searchType":"fast","recency":"week","country":"US","language":"en,zh","resultLimit":10}}'
 ```
 
-Synthetic fixtures, Node/Bun unit tests and the real Magpie 0.1.3041 host sandbox
+Synthetic fixtures, Node/Bun unit tests and the real Magpie 0.1.3097 host sandbox
 verify request formatting, search modes and filters, empty/malformed results,
 timeouts, 429 Retry-After, key rotation and Linkup fallback dispatch. Real keys
 have not been verified, and live recall, latency and real 429 response headers
@@ -542,7 +542,7 @@ without a model call. Magpie manages the required API key from
 
 Queries are whitespace-normalized and must be nonempty, without an invented
 length ceiling or silent truncation. Requests send `query`, `count` sized via
-`sizeFor(count, maxResults, 50)` (1–50, default 10), and `summary: boolean`.
+`resolveResultCount(count, countPolicy)` (explicit `resultLimit` 1–50; otherwise follow the host, falling back to 10 only without a valid host count), and `summary: boolean`.
 `freshness` is an optional trimmed string filter passed through without local calendar
 or range validation (e.g. `noLimit`, `oneDay`, `oneWeek`, `oneMonth`, `oneYear`, `YYYY-MM-DD`,
 or `YYYY-MM-DD..YYYY-MM-DD`); unsupported expressions are rejected upstream by the API.
@@ -588,7 +588,7 @@ required Feishu login, so fixed prices, QPS and empty-result billing remain unve
 Custom URLs are exact endpoints; the adapter never automatically falls back to older domains.
 
 ```sh
-magpie plugin options magpie-websearch '{"bocha":{"summary":false,"freshness":"oneWeek","maxResults":10},"ollama":{"maxResults":5,"contentChars":2000}}'
+magpie plugin options magpie-websearch '{"bocha":{"summary":false,"freshness":"oneWeek","resultLimit":10},"ollama":{"resultLimit":5,"contentChars":2000}}'
 ```
 
 This replaces the complete options object; include any other settings you want to keep.
@@ -605,7 +605,7 @@ The adapter registers by default as `magpie-websearch:ollama`, displayed as
 `Ollama (magpie-websearch)`. This is a cloud search API requiring an Ollama account key;
 it does not connect to a local Ollama daemon (e.g. localhost:11434), call models, or run web_fetch.
 
-Requests send `query` and `max_results` sized via `sizeFor(count, maxResults, 10)` (1–10, default 5).
+Requests send `query` and `max_results` sized via `resolveResultCount(count, countPolicy)` (at most 10). An explicit `resultLimit` is a cap of 1–10; otherwise follow the host, falling back to 5 only without a valid host count.
 Queries are whitespace-normalized and must be nonempty. The response contains a `results` array of
 items with `title`, `url`, and `content`. Items without a valid nonblank string `url` are dropped
 before capping; nonempty arrays with no usable URLs fail. `title` falls back to the URL when
@@ -632,10 +632,10 @@ but fixed quotas, per-search pricing, and QPS are unverified; [current pricing p
 plans for cloud models do not constitute a search allowance.
 
 ```sh
-magpie plugin options magpie-websearch '{"ollama":{"maxResults":5,"contentChars":2000}}'
+magpie plugin options magpie-websearch '{"ollama":{"resultLimit":5,"contentChars":2000}}'
 ```
 
-Synthetic fixtures, Node/Bun unit tests and real Magpie 0.1.3041 sandbox tests cover both providers:
+Synthetic fixtures, Node/Bun unit tests and real Magpie 0.1.3097 sandbox tests cover both providers:
 Bocha ordinary/generated summaries, freshness and business diagnostics; Ollama content truncation;
 and exact endpoints, malformed/empty results, timeout, 429 Retry-After, Linkup fallback, ordered key
 rotation after 429 and interrupted 401 bodies, and healthy-key preference. Successful live searches,
@@ -645,49 +645,50 @@ billing, quality and rate limits remain explicitly recorded as "real Key unverif
 
 ## Jina search
 
-Uses the [Jina Search API](https://docs.jina.ai/api.md): POST `https://s.jina.ai/search` with JSON, `Authorization: Bearer <key>` and `Accept: application/json`. Magpie manages the required key from <https://jina.ai/?sui=apikey>. Requests send a normalized, nonempty `q` and `num` sized via `sizeFor(count, maxResults, 20)`. Optional `gl`, `hl` and `location` strings are trimmed and forwarded when nonempty.
+Uses the [Jina Search API](https://docs.jina.ai/api.md): POST `https://s.jina.ai/search` with JSON, `Authorization: Bearer <key>` and `Accept: application/json`. Magpie manages the required key from <https://jina.ai/?sui=apikey>. Requests send a normalized, nonempty `q` and `num` sized via `resolveResultCount(count, countPolicy)` (at most 20). Optional `gl`, `hl` and `location` strings are trimmed and forwarded when nonempty.
 
 The default `content: "snippet"` sends `X-Respond-With: no-content` and maps only string `description`. `content: "full"` omits that header and prefers nonblank string `content`, falling back to `description`. Both modes retain up to `contentChars` code points (4000 by default; 0 keeps all) and append `…` on truncation. The default timeout is 25000 ms for snippets or 60000 ms for full content; an explicit `timeout` or valid `JINA_TIMEOUT` overrides that mode default. These describe the adapter's request and mapping; a local dummy service does not establish live page-fetching behavior or billing.
 
 Responses read the `data` array, filtering rows without nonblank string URLs before capping. A nonempty array with no usable URLs fails. Missing/blank titles fall back to the URL; string `publishedTime` maps to `age` after trimming. A supplied `code` other than numeric 200 or a supplied `status` other than numeric 20000 raises a business error. An `error` field is tolerated only when absent, null, an empty string or an empty array; other values fail without inventing an HTTP status. Missing, null or non-array `data` fails.
 
 ```sh
-magpie plugin options magpie-websearch '{"jina":{"content":"full","contentChars":4000,"maxResults":6}}'
+magpie plugin options magpie-websearch '{"jina":{"content":"full","contentChars":4000,"resultLimit":6}}'
 ```
 
 <a id="kagi-search"></a>
 
 ## Kagi search
 
-Uses the [Kagi Search API](https://redocly-api-docs.kagi.com/api/docs/openapi/search/search.md): POST `https://kagi.com/api/v1/search` with JSON and `Authorization: Bearer <key>`. Magpie manages the required key from <https://kagi.com/api/keys>. Requests send a normalized, nonempty `query`, fixed `workflow: "search"` and `limit` sized via `sizeFor(count, maxResults, 1024)` (`maxResults` defaults to 10). This caps the returned count without guaranteeing that many results.
+Uses the [Kagi Search API](https://redocly-api-docs.kagi.com/api/docs/openapi/search/search.md): POST `https://kagi.com/api/v1/search` with JSON and `Authorization: Bearer <key>`. Magpie manages the required key from <https://kagi.com/api/keys>. Requests send a normalized, nonempty `query`, fixed `workflow: "search"` and `limit` sized via `resolveResultCount(count, countPolicy)` (at most 1024; follow the host unless a cap is configured; fall back to 10 only without a valid host count). This caps the returned count without guaranteeing that many results.
 
 A nonempty `lens` maps to `lens_id`, accepting a named Lens or shared Lens ID/URL. Otherwise, nonempty `recency` maps to `lens.time_relative` (`day`, `week`, `month`). When both are set, Lens wins and the factory warns. Explicit `lens: ""` clears an inherited environment value to restore recency filtering. `region` maps to `filters.region`. The adapter omits `extract` and does not request additional page extraction.
 
 Responses require an object `data`. Missing or empty-array `data.search` returns `[]`; other collections are not mapped to web results. Null/non-array search results or a nonempty array with no usable URLs fail. Valid rows are filtered before capping; missing/blank titles fall back to the URL, `snippet` maps to `text` and string `time` maps to `age`. There is no separate `contentChars` option. An `error` field is tolerated only when absent, null or an empty array; other values raise a business error without inventing an HTTP status.
 
 ```sh
-magpie plugin options magpie-websearch '{"kagi":{"recency":"week","region":"cn","maxResults":6}}'
+magpie plugin options magpie-websearch '{"kagi":{"recency":"week","region":"cn","resultLimit":6}}'
 ```
 
 <a id="serper-search"></a>
 
 ## Serper search
 
-Uses POST `https://google.serper.dev/search` with JSON and an `X-API-KEY` header. Magpie manages the required key from <https://serper.dev/>. Serper is independent of SerpApi, which uses GET and a URL `api_key` parameter. Requests send a normalized, nonempty `q`, fixed `num: 10` and optional `gl`, `hl`, `tbs`. `tbs` accepts `qdr:h`, `qdr:d`, `qdr:w`, `qdr:m`, `qdr:y`; the empty default is omitted. `maxResults` (1–10, default 10) and the host's `count` only cap results locally, without changing the wire `num`. One page is fetched without extra calls to fill short results.
+Uses POST `https://google.serper.dev/search` with JSON and an `X-API-KEY` header. Magpie manages the required key from <https://serper.dev/>. Serper is independent of SerpApi, which uses GET and a URL `api_key` parameter. Requests send a normalized, nonempty `q`, fixed `num: 10` and optional `gl`, `hl`, `tbs`. `tbs` accepts `qdr:h`, `qdr:d`, `qdr:w`, `qdr:m`, `qdr:y`; the empty default is omitted. An explicit `resultLimit` (1–10) and the host's `count` only cap results locally; without a configured cap, follow the host up to 10. This does not change the wire `num`. One page is fetched without extra calls to fill short results.
 
 Only `organic` is mapped: rows without nonblank string `link` are removed before capping; missing/blank titles fall back to the URL, string `snippet` maps to `text` and string `date` maps to `age`. Missing `organic` returns `[]` only when an object `knowledgeGraph`/`answerBox` or array `peopleAlsoAsk`/`relatedSearches` is present. Other missing, null/non-array, or nonempty but unusable organic results fail. A nonblank string `message` raises a business error. An `error` field is tolerated only when absent, null or an empty array; other values fail without inventing an HTTP status. There is no separate text-budget option; cache identities include the local count cap.
 
 ```sh
-magpie plugin options magpie-websearch '{"serper":{"gl":"cn","hl":"zh-cn","tbs":"qdr:w","maxResults":6}}'
+magpie plugin options magpie-websearch '{"serper":{"gl":"cn","hl":"zh-cn","tbs":"qdr:w","resultLimit":6}}'
 ```
 
-All three reject redirects and use custom Base URLs as exact endpoints. HTTP refusals retain numeric `status` and validated standard `Retry-After`. Settings, caches and credentials are isolated per plugin instance; valid empty results cache for at most 30 seconds. The commands above replace the complete options object, so include other settings you want to keep. Synthetic fixtures, unit tests and the Magpie 0.1.3041 local sandbox cover requests, mapping, timeouts, 429, key rotation and Linkup fallback. Live real-key searches, billing, quality and rate limits remain unverified. Magpie still applies its final 1500-byte cap to each result's `text`.
+All three reject redirects and use custom Base URLs as exact endpoints. HTTP refusals retain numeric `status` and validated standard `Retry-After`. Settings, caches and credentials are isolated per plugin instance; valid empty results cache for at most 30 seconds. The commands above replace the complete options object, so include other settings you want to keep. Synthetic fixtures, unit tests and the Magpie 0.1.3097 local sandbox cover requests, mapping, timeouts, 429, key rotation and Linkup fallback. Live real-key searches, billing, quality and rate limits remain unverified. Magpie still applies its final 1500-byte cap to each result's `text`.
 
 <a id="result-processing"></a>
 
 ## What magpie does with a result
 
-- `count` is 6: adapters request the needed count and cap locally. Sogou must request at least 10 because of its upstream buckets; Serper always sends `num: 10`; APIs without a configurable count are capped locally. magpie keeps at most 6.
+- Since Magpie v0.1.3062, the built-in `web_search` accepts an optional `count` (default 6, range 1–20); older built-in MCP versions pass 6. Adapters follow the supplied count, then apply explicit configured caps and provider limits. The host's current maximum of 20 is not hard-coded as a plugin limit.
+- Sogou must request at least 10 because of its upstream buckets; Serper always sends `num: 10`; APIs without a configurable count are capped locally. Filter unusable results before capping; no extra pages or requests are made to fill short results.
 - `text` is stripped of tags, unescaped, whitespace-collapsed, and cut to 1500 bytes.
 - `age` preserves the vendor's date-string format after trimming surrounding whitespace. Blank or non-string values are omitted, without guessing dates or converting time zones. StepFun supplies index time.
 - A hit without a URL is dropped.
@@ -701,13 +702,15 @@ All three reject redirects and use custom Base URLs as exact endpoints. HTTP ref
 
 All plugin options are optional, including provider objects, their fields, and
 the top-level `enable` and `disable` filters. Omitted provider fields fall back
-to the environment variable or the default listed below.
+to the environment variable or the default listed below. The `resultLimit`
+default is "unset": it follows the host's `count` instead of imposing a fixed
+count.
 
 Use **Plugins → Installed → Options**, or pass a JSON object on the command line.
 For example, change search parameters while keeping all nineteen APIs registered:
 
 ```sh
-magpie plugin options magpie-websearch '{"linkup":{"depth":"deep","maxResults":4,"timeout":25000,"cacheTTL":600000},"anysearch":{"zone":"cn","language":"zh-CN"}}'
+magpie plugin options magpie-websearch '{"linkup":{"depth":"deep","resultLimit":4,"timeout":25000,"cacheTTL":600000},"anysearch":{"zone":"cn","language":"zh-CN"}}'
 ```
 
 Each command replaces the saved options object, so include every option you want
@@ -715,16 +718,30 @@ to keep. Saving options reloads the plugin host. Each plugin instance gets its
 own settings and caches.
 
 Values are selected in this order: **explicit provider option → environment
-variable → default**. Invalid explicit values for known fields of registered
+variable → default**; result-limit aliases have the extra precedence described
+below. Invalid explicit values for known fields of registered
 providers fail plugin loading with a field error; unrecognized fields are ignored.
 Explicit numeric options must be JSON safe integers within the documented range
 (no greater than 9,007,199,254,740,991), not numeric strings. String options are
 trimmed before validation.
 
-Environment variables retain fallback behavior: blank values are unset; values
-that cannot be parsed as nonnegative safe integers use the default, and valid
-numbers are then clamped to the field's range. Invalid enum strings produce a
-warning and use the default. `timeout` and `cacheTTL` are milliseconds (`timeout`
+Every provider uses the optional `resultLimit` for a user cap; unset means follow the host. Internally, `countPolicy` separates `configuredLimit` (user cap), `fallbackCount` (when the host supplies no count), and `providerMax` (adapter limit):
+
+- Without an option or a valid environment value, follow the host's valid `count`, subject to provider/adapter limits.
+- An explicit option or valid environment value is a cap: take the smallest of the host count, user cap and provider maximum. Options override environment values; smaller user caps still apply.
+- Only when the host supplies no valid positive `count`, use the fallback: 10 for most providers, 5 for Ollama, 8 for Querit, or the configured value when present. Blank/invalid environment values impose no additional cap; valid environment numbers retain the existing range clamping.
+
+The result-limit defaults below are "unset": they impose no additional cap on the host's `count`, without guaranteeing that many results. Existing saved values such as 10 or 5 remain caps. To restore automatic sizing, remove the field from the complete options object and unset its environment variable.
+
+Legacy names remain compatible and emit migration warnings: `maxResults` → `resultLimit`, `*_MAX_RESULTS` → `*_RESULT_LIMIT`; for Querit, `count` → `resultLimit` and `QUERIT_COUNT` → `QUERIT_RESULT_LIMIT`. Precedence is new option → legacy option → new environment variable → legacy environment variable. An invalid nonblank new environment value imposes no cap and does not fall back to the legacy variable; a blank new environment value is unset and reads the legacy variable instead. Upstream protocol fields stay unchanged: Linkup still sends `maxResults`, and Querit's request body and the host tool still use `count`.
+
+Environment variables keep their own fallback rules: blank values are unset;
+numeric fields such as `timeout` and `cacheTTL` use the default when the value
+cannot be parsed as a nonnegative safe integer, and valid numbers are then
+clamped to the field's range. Invalid enum strings produce a warning and use the
+default. Result limits are the exception: a nonblank but invalid
+`*_RESULT_LIMIT` imposes no user cap and uses `fallbackCount` only when the host
+supplies no valid `count`. `timeout` and `cacheTTL` are milliseconds (`timeout`
 is at most 2,147,483,647 ms). A zero timeout removes the plugin's own deadline,
 while the host's cancellation signal and deadline still apply; a zero cache TTL
 disables caching.
@@ -738,7 +755,7 @@ The table lists fields inside each provider's object (`linkup.depth`, for exampl
 | Provider | Option | Environment variable | Default | Values / meaning |
 |---|---|---|---|---|
 | anysearch | `cacheTTL` | `ANYSEARCH_CACHE_TTL` | `600000` | ≥ 0 |
-| anysearch | `maxResults` | `ANYSEARCH_MAX_RESULTS` | `10` | 1–10; cap on magpie's requested count |
+| anysearch | `resultLimit` | `ANYSEARCH_RESULT_LIMIT` | unset | 1–10; explicit cap on magpie's requested count |
 | anysearch | `tag` | `ANYSEARCH_TAG` | empty | Intent tag, e.g. `code.snippet` |
 | anysearch | `zone` | `ANYSEARCH_ZONE` | empty | empty, `cn`, `intl` |
 | anysearch | `language` | `ANYSEARCH_LANGUAGE` | empty | e.g. `zh-CN` |
@@ -746,71 +763,71 @@ The table lists fields inside each provider's object (`linkup.depth`, for exampl
 | anysearch | `timeout` | `ANYSEARCH_TIMEOUT` | `25000` | ≥ 0 |
 | bocha | `cacheTTL` | `BOCHA_CACHE_TTL` | `600000` | ≥ 0; milliseconds |
 | bocha | `timeout` | `BOCHA_TIMEOUT` | `25000` | 0–2147483647 ms; 0 disables plugin timeout, preserving host cancellation |
-| bocha | `maxResults` | `BOCHA_MAX_RESULTS` | `10` | 1–50; cap on magpie's requested count |
+| bocha | `resultLimit` | `BOCHA_RESULT_LIMIT` | unset | 1–50; explicit upstream and local cap |
 | bocha | `freshness` | `BOCHA_FRESHNESS` | empty | empty, `noLimit`, `oneDay`, `oneWeek`, `oneMonth`, `oneYear`, or date/date-range |
 | bocha | `summary` | `BOCHA_SUMMARY` | `false` | JSON boolean; `false` snippet only, `true` generated summary with snippet fallback |
 | jina | `cacheTTL` | `JINA_CACHE_TTL` | `600000` | ≥ 0; milliseconds |
 | jina | `content` | `JINA_CONTENT` | `snippet` | `snippet`, `full` |
 | jina | `timeout` | `JINA_TIMEOUT` | snippet `25000`; full `60000` | 0–2147483647 ms; 0 disables plugin timeout, preserving host cancellation; overrides mode default |
-| jina | `maxResults` | `JINA_MAX_RESULTS` | `10` | 1–20; cap on magpie's requested count |
+| jina | `resultLimit` | `JINA_RESULT_LIMIT` | unset | 1–20; explicit upstream and local cap |
 | jina | `contentChars` | `JINA_CONTENT_CHARS` | `4000` | Code points per text; 0 keeps all |
 | jina | `gl` | `JINA_GL` | empty | Country code, e.g. `us` |
 | jina | `hl` | `JINA_HL` | empty | Language code, e.g. `zh-cn` |
 | jina | `location` | `JINA_LOCATION` | empty | City or geographic location string |
 | kagi | `cacheTTL` | `KAGI_CACHE_TTL` | `600000` | ≥ 0; milliseconds |
 | kagi | `timeout` | `KAGI_TIMEOUT` | `25000` | 0–2147483647 ms; 0 disables plugin timeout, preserving host cancellation |
-| kagi | `maxResults` | `KAGI_MAX_RESULTS` | `10` | 1–1024; cap on magpie's requested count |
+| kagi | `resultLimit` | `KAGI_RESULT_LIMIT` | unset | 1–1024; explicit upstream and local cap |
 | kagi | `lens` | `KAGI_LENS` | empty | Named or shared Lens ID / URL; overrides `recency` |
 | kagi | `recency` | `KAGI_RECENCY` | empty | empty, `day`, `week`, `month`; effective when lens is empty |
 | kagi | `region` | `KAGI_REGION` | empty | Country code, e.g. `cn`, `us`; maps to `filters.region` |
 | keenable | `cacheTTL` | `KEENABLE_CACHE_TTL` | `600000` | ≥ 0 |
-| keenable | `maxResults` | `KEENABLE_MAX_RESULTS` | `10` | 1–50 |
+| keenable | `resultLimit` | `KEENABLE_RESULT_LIMIT` | unset | 1–50; explicit cap |
 | keenable | `mode` | `KEENABLE_MODE` | empty | empty, `pro`, `realtime` |
 | keenable | `title` | `KEENABLE_TITLE` | `magpie-websearch` | `X-Keenable-Title`, at most 256 characters |
 | keenable | `timeout` | `KEENABLE_TIMEOUT` | `25000` | ≥ 0 |
 | linkup | `cacheTTL` | `LINKUP_CACHE_TTL` | `600000` | ≥ 0 |
 | linkup | `depth` | `LINKUP_DEPTH` | `fast` | `flash`, `fast`, `standard`, `deep` |
-| linkup | `maxResults` | `LINKUP_MAX_RESULTS` | `10` | 1–100; upstream limits also apply |
+| linkup | `resultLimit` | `LINKUP_RESULT_LIMIT` | unset | 1–100; explicit cap, upstream limits also apply |
 | linkup | `contentChars` | `LINKUP_CONTENT_CHARS` | `4000` | Code points per excerpt (`0` keeps all) |
 | linkup | `timeout` | `LINKUP_TIMEOUT` | `25000` | ≥ 0 |
 | metaso | `cacheTTL` | `METASO_CACHE_TTL` | `600000` | ≥ 0 |
 | metaso | `scope` | `METASO_SCOPE` | `webpage` | `webpage`, `document`, `paper`, `image`, `video`, `podcast` |
-| metaso | `maxResults` | `METASO_MAX_RESULTS` | `10` | 1–50; cap on magpie's requested count |
+| metaso | `resultLimit` | `METASO_RESULT_LIMIT` | unset | 1–50; explicit cap |
 | metaso | `contentChars` | `METASO_CONTENT_CHARS` | `4000` | Code points per excerpt (`0` keeps all) |
 | metaso | `timeout` | `METASO_TIMEOUT` | `25000` | ≥ 0 |
 | moonshot | `cacheTTL` | `MOONSHOT_CACHE_TTL` | `600000` | ≥ 0 |
 | moonshot | `timeout` | `MOONSHOT_TIMEOUT` | `25000` | ≥ 0 |
-| moonshot | `maxResults` | `MOONSHOT_MAX_RESULTS` | `10` | 1–20; cap on magpie's requested count |
+| moonshot | `resultLimit` | `MOONSHOT_RESULT_LIMIT` | unset | 1–20; explicit cap |
 | moonshot | `content` | `MOONSHOT_CONTENT` | `snippet` | `snippet`, `full` |
 | moonshot | `contentChars` | `MOONSHOT_CONTENT_CHARS` | `4000` | Code points per text (`0` keeps all) |
 | moonshot-cn | `cacheTTL` | `MOONSHOT_CN_CACHE_TTL` | `600000` | ≥ 0 |
 | moonshot-cn | `timeout` | `MOONSHOT_CN_TIMEOUT` | `25000` | ≥ 0 |
-| moonshot-cn | `maxResults` | `MOONSHOT_CN_MAX_RESULTS` | `10` | 1–20; cap on magpie's requested count |
+| moonshot-cn | `resultLimit` | `MOONSHOT_CN_RESULT_LIMIT` | unset | 1–20; explicit cap |
 | moonshot-cn | `content` | `MOONSHOT_CN_CONTENT` | `snippet` | `snippet`, `full` |
 | moonshot-cn | `contentChars` | `MOONSHOT_CN_CONTENT_CHARS` | `4000` | Code points per text (`0` keeps all) |
 | ollama | `cacheTTL` | `OLLAMA_CACHE_TTL` | `600000` | ≥ 0; milliseconds |
 | ollama | `timeout` | `OLLAMA_TIMEOUT` | `25000` | 0–2147483647 ms; 0 disables plugin timeout, preserving host cancellation |
-| ollama | `maxResults` | `OLLAMA_MAX_RESULTS` | `5` | 1–10; cap on magpie's requested count |
+| ollama | `resultLimit` | `OLLAMA_RESULT_LIMIT` | unset | 1–10; explicit upstream and local cap |
 | ollama | `contentChars` | `OLLAMA_CONTENT_CHARS` | `2000` | Code points per content text; 0 keeps all |
 | parallel | `cacheTTL` | `PARALLEL_CACHE_TTL` | `600000` | ≥ 0 |
 | parallel | `timeout` | `PARALLEL_TIMEOUT` | `25000` | ≥ 0; includes reading the MCP stream |
-| parallel | `maxResults` | `PARALLEL_MAX_RESULTS` | `10` | 1–20; cap on magpie's requested count |
+| parallel | `resultLimit` | `PARALLEL_RESULT_LIMIT` | unset | 1–20; explicit cap |
 | parallel | `contentChars` | `PARALLEL_CONTENT_CHARS` | `4000` | Code points per joined excerpt (`0` keeps all) |
 | parallel | `mode` | `PARALLEL_MODE` | `fast` | `fast`, `turbo`, `basic`, `advanced`; non-fast modes require a key |
 | perplexity | `cacheTTL` | `PERPLEXITY_CACHE_TTL` | `600000` | ≥ 0; milliseconds |
 | perplexity | `timeout` | `PERPLEXITY_TIMEOUT` | `25000` | 0–2147483647 ms; 0 disables plugin timeout, preserving host cancellation |
-| perplexity | `maxResults` | `PERPLEXITY_MAX_RESULTS` | `10` | 1–20; upstream and local cap |
+| perplexity | `resultLimit` | `PERPLEXITY_RESULT_LIMIT` | unset | 1–20; explicit upstream and local cap |
 | perplexity | `searchType` | `PERPLEXITY_SEARCH_TYPE` | `web` | `web`, `fast`; `people` excluded from initial release |
 | perplexity | `recency` | `PERPLEXITY_RECENCY` | empty | empty, `hour`, `day`, `week`, `month`, `year`; maps to `search_recency_filter` |
 | perplexity | `country` | `PERPLEXITY_COUNTRY` | empty | Trimmed, uppercased and checked for 2 ASCII letters, e.g. `us` → `US` |
 | perplexity | `language` | `PERPLEXITY_LANGUAGE` | empty | Comma-separated, trimmed, empty items removed and lowercased; at most 20 two-letter codes, e.g. `EN, zh` → `en,zh` |
 | perplexity | `contentChars` | `PERPLEXITY_CONTENT_CHARS` | `4000` | Code points per snippet; 0 keeps all |
 | querit | `cacheTTL` | `QUERIT_CACHE_TTL` | `600000` | ≥ 0 |
-| querit | `count` | `QUERIT_COUNT` | `8` | ≥ 1; cap on magpie's count, Querit's own limit applies |
+| querit | `resultLimit` | `QUERIT_RESULT_LIMIT` | unset | ≥ 1; explicit cap, Querit's own limit applies |
 | querit | `timeout` | `QUERIT_TIMEOUT` | `25000` | ≥ 0 |
 | serpapi | `cacheTTL` | `SERPAPI_CACHE_TTL` | `600000` | ≥ 0 |
 | serpapi | `timeout` | `SERPAPI_TIMEOUT` | `25000` | ≥ 0 |
-| serpapi | `maxResults` | `SERPAPI_MAX_RESULTS` | `10` | 1–10; local cap on magpie's requested count |
+| serpapi | `resultLimit` | `SERPAPI_RESULT_LIMIT` | unset | 1–10; explicit local cap |
 | serpapi | `location` | `SERPAPI_LOCATION` | empty | Geographic origin, e.g. `Austin, Texas, United States` |
 | serpapi | `gl` | `SERPAPI_GL` | empty | Country code, e.g. `us` |
 | serpapi | `hl` | `SERPAPI_HL` | empty | Interface language code, e.g. `zh-cn` |
@@ -818,19 +835,19 @@ The table lists fields inside each provider's object (`linkup.depth`, for exampl
 | serpapi | `safe` | `SERPAPI_SAFE` | empty | empty, `active`, `off` |
 | serper | `cacheTTL` | `SERPER_CACHE_TTL` | `600000` | ≥ 0; milliseconds |
 | serper | `timeout` | `SERPER_TIMEOUT` | `25000` | 0–2147483647 ms; 0 disables plugin timeout, preserving host cancellation |
-| serper | `maxResults` | `SERPER_MAX_RESULTS` | `10` | 1–10; local cap on magpie's requested count (wire fixed at 10) |
+| serper | `resultLimit` | `SERPER_RESULT_LIMIT` | unset | 1–10; explicit local cap (wire fixed at 10) |
 | serper | `gl` | `SERPER_GL` | empty | Country code, e.g. `cn`, `us` |
 | serper | `hl` | `SERPER_HL` | empty | Interface language code, e.g. `zh-cn`, `en` |
 | serper | `tbs` | `SERPER_TBS` | empty | empty, `qdr:h`, `qdr:d`, `qdr:w`, `qdr:m`, `qdr:y` |
 | stepfun | `cacheTTL` | `STEPFUN_CACHE_TTL` | `600000` | ≥ 0; milliseconds |
 | stepfun | `timeout` | `STEPFUN_TIMEOUT` | `25000` | 0–2147483647 ms; 0 disables the plugin timeout, preserving host cancellation |
-| stepfun | `maxResults` | `STEPFUN_MAX_RESULTS` | `10` | 1–20; upstream and local cap |
+| stepfun | `resultLimit` | `STEPFUN_RESULT_LIMIT` | unset | 1–20; explicit upstream and local cap |
 | stepfun | `category` | `STEPFUN_CATEGORY` | empty | empty, `programming`, `research`, `gov`, `business` |
 | stepfun | `content` | `STEPFUN_CONTENT` | `snippet` | `snippet`, `full`; local text selection only |
 | stepfun | `contentChars` | `STEPFUN_CONTENT_CHARS` | `4000` | Code points per text; 0 keeps all |
 | tinyfish | `cacheTTL` | `TINYFISH_CACHE_TTL` | `600000` | ≥ 0 |
 | tinyfish | `timeout` | `TINYFISH_TIMEOUT` | `25000` | ≥ 0; includes reading the MCP stream |
-| tinyfish | `maxResults` | `TINYFISH_MAX_RESULTS` | `10` | ≥ 1; local cap, not an upstream page-size guarantee |
+| tinyfish | `resultLimit` | `TINYFISH_RESULT_LIMIT` | unset | ≥ 1; explicit local cap, not an upstream page-size guarantee |
 | tinyfish | `location` | `TINYFISH_LOCATION` | empty | Country code, e.g. `US`; omitted when empty |
 | tinyfish | `language` | `TINYFISH_LANGUAGE` | empty | Language code, e.g. `zh`; omitted when empty |
 | tinyfish | `domainType` | `TINYFISH_DOMAIN_TYPE` | `web` | `web`, `news`, `research_paper`; papers require a key at execution time |
@@ -838,13 +855,13 @@ The table lists fields inside each provider's object (`linkup.depth`, for exampl
 | tinyfish | `excludeDomains` | `TINYFISH_EXCLUDE_DOMAINS` | empty | Comma-separated domains; maps to `exclude_domains` |
 | zai | `cacheTTL` | `ZAI_CACHE_TTL` | `600000` | ≥ 0; milliseconds |
 | zai | `timeout` | `ZAI_TIMEOUT` | `25000` | ≥ 0; milliseconds |
-| zai | `maxResults` | `ZAI_MAX_RESULTS` | `10` | 1–50; local cap |
+| zai | `resultLimit` | `ZAI_RESULT_LIMIT` | unset | 1–50; explicit local cap |
 | zai | `contentChars` | `ZAI_CONTENT_CHARS` | `4000` | Code points per text; 0 keeps all |
 | zai | `recency` | `ZAI_RECENCY` | `noLimit` | `noLimit`, `oneDay`, `oneWeek`, `oneMonth`, `oneYear`; effects unverified |
 | zai | `domainFilter` | `ZAI_DOMAIN_FILTER` | empty | Single whitelist domain; effects unverified |
 | zhipu | `cacheTTL` | `ZHIPU_CACHE_TTL` | `600000` | ≥ 0; milliseconds |
 | zhipu | `timeout` | `ZHIPU_TIMEOUT` | `25000` | ≥ 0; milliseconds |
-| zhipu | `maxResults` | `ZHIPU_MAX_RESULTS` | `10` | 1–50; local cap; Sogou rounds upstream up, Quark omits count |
+| zhipu | `resultLimit` | `ZHIPU_RESULT_LIMIT` | unset | 1–50; explicit local cap; Sogou rounds upstream up, Quark omits count |
 | zhipu | `contentChars` | `ZHIPU_CONTENT_CHARS` | `4000` | Code points per text; 0 keeps all |
 | zhipu | `recency` | `ZHIPU_RECENCY` | `noLimit` | `noLimit`, `oneDay`, `oneWeek`, `oneMonth`, `oneYear` |
 | zhipu | `domainFilter` | `ZHIPU_DOMAIN_FILTER` | empty | Single whitelist domain; unsupported on Quark |
@@ -880,7 +897,7 @@ plugin registers. Entries use short IDs: `anysearch`, `bocha`, `jina`, `kagi`, `
 Combine filters with provider settings when needed:
 
 ```sh
-magpie plugin options magpie-websearch '{"disable":["keenable"],"linkup":{"depth":"deep","maxResults":4}}'
+magpie plugin options magpie-websearch '{"disable":["keenable"],"linkup":{"depth":"deep","resultLimit":4}}'
 ```
 
 An unknown ID is logged and ignored. An explicit `enable` list containing no
@@ -908,11 +925,12 @@ save a complete options object containing the provider settings you want to keep
 
 For new provider settings, name environment variables as the uppercase underscore
 form of the provider short ID, followed by `_` and the uppercase underscore form of
-the option name. For example, `moonshot-cn.maxResults` maps to
-`MOONSHOT_CN_MAX_RESULTS`, and `cacheTTL` maps to the `CACHE_TTL` suffix. Option names
-must be strings in camelCase; adapters define these names locally. The shared helpers
-strip the complete option suffix to label configuration errors. For retained aliases
-or other naming schemes, pass the provider short ID as the final `namespace` argument.
+the option name. For example, `moonshot-cn.resultLimit` maps to
+`MOONSHOT_CN_RESULT_LIMIT`, and `cacheTTL` maps to the `CACHE_TTL` suffix. Option names
+must be strings in camelCase; adapters define these names locally. Parse result limits
+with `configCountPolicy`; declare their compatibility names through `legacyOption`
+and `legacyEnv`. Other shared helpers strip the complete option suffix to label errors;
+for retained environment aliases, pass the provider short ID as `namespace`.
 See the [provider integration rules](../PROVIDERS.md#configuration-naming) for details.
 
 Reuse `truncateCodePoints(text, limit)` for text budgets. Callers supply a string
@@ -947,7 +965,8 @@ deadlines and cancellation); `check:bun` runs directly on Bun. This plugin uses 
 The smoke script requires `magpie` on PATH (`MAGPIE_BIN` can name its executable).
 It creates a temporary HOME/config/cache, disables account discovery, starts a
 gateway on a free loopback port, and tests registration, options, custom URL,
-timeout, anonymous search, 429 cooldown and fallback against a local fake API.
+host `count` passthrough and explicit `resultLimit` caps, timeout, anonymous
+search, 429 cooldown and fallback against a local fake API.
 It covers Parallel and TinyFish MCP/REST, SerpApi, Perplexity, StepFun, Bocha, Ollama, Jina, Kagi, Serper, both Moonshot adapters, and Zhipu/Z.ai.
 Moonshot cases also check seconds/milliseconds reset headers, excessive resets
 and resting-key preference. Zhipu/Z.ai cases check Sogou count buckets, local caps,
@@ -966,14 +985,16 @@ IDs). `MAGPIE_SMOKE_ROOT` can override the system temporary directory used for
 the sandbox. CI runs separate jobs for Node 22/24, Bun, and Magpie testing of the
 unpacked npm package; the three jobs have no ordering dependency.
 
-Local verification on **2026-11-05** used **Node.js 24.19.0, Bun 1.4.4 and magpie
-0.1.3041**. Node and Bun each passed 300 tests across 22 test files. The complete
-Magpie sandbox checks passed, including the new Jina, Kagi and Serper cases.
+Local verification on **2026-11-06** used **Node.js 24.19.0, Bun 1.4.4 and magpie
+0.1.3097**. Node and Bun each passed 305 tests across 22 test files, covering
+host `count` passthrough, explicit `resultLimit` caps and legacy-name migration.
+The complete Magpie sandbox checks passed, including host `count` passthrough,
+explicit `resultLimit` caps, and the Jina, Kagi and Serper cases.
 Bun ran temporarily via `npm exec --yes --package=bun@1.4.4 -- bun run check:bun`,
 without adding a project dependency or lockfile. On Windows, `MAGPIE_BIN` can name
 the executable; otherwise the script uses `magpie` on PATH. These checks use
 local fake services and dummy keys, not live account search, quality or billing.
-Earlier **magpie 0.1.2911/0.1.2964/0.1.3026/0.1.3035** records are historical and do
+Earlier **magpie 0.1.2911/0.1.2964/0.1.3026/0.1.3035/0.1.3041** records are historical and do
 not establish minimum supported versions.
 
 Local folder installs use the folder name as the short name. Because the package is `@guotree/magpie-websearch` and the folder is `magpie-websearch`, both installs give the same `magpie-websearch:*` IDs.

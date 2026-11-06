@@ -1,6 +1,6 @@
 import {
-  cacheKey, configInt, configStr, makeAnonymousCooldown, makeCache, normalizeQuery,
-  page, requestJSON, resolveEndpoint, sizeFor, truncateCodePoints,
+  cacheKey, configCountPolicy, configInt, configStr, makeAnonymousCooldown, makeCache, normalizeQuery,
+  page, requestJSON, resolveEndpoint, resolveResultCount, truncateCodePoints,
 } from "../core.mjs"
 import { callMCPSearch } from "../mcp.mjs"
 
@@ -12,7 +12,7 @@ function extractText(excerpts) {
 export function createParallel(options = {}) {
   const ttl = configInt(options, "cacheTTL", "PARALLEL_CACHE_TTL", 600_000)
   const timeout = configInt(options, "timeout", "PARALLEL_TIMEOUT", 25_000, 0, 2_147_483_647)
-  const maxResults = configInt(options, "maxResults", "PARALLEL_MAX_RESULTS", 10, 1, 20)
+  const countPolicy = configCountPolicy(options, "PARALLEL_RESULT_LIMIT", 10, 20)
   const contentChars = configInt(options, "contentChars", "PARALLEL_CONTENT_CHARS", 4_000)
   const mode = configStr(options, "mode", "PARALLEL_MODE", "fast", ["turbo", "fast", "basic", "advanced"])
   const cache = makeCache(ttl)
@@ -32,7 +32,7 @@ export function createParallel(options = {}) {
         throw new Error(`Parallel ${mode} search needs a key: add one in magpie's Web search settings`)
       }
 
-      const limit = sizeFor(count, maxResults, 20)
+      const limit = resolveResultCount(count, countPolicy)
       const endpoint = resolveEndpoint(url, key ? "https://api.parallel.ai/v1/search" : "https://mcp.parallel.ai/mcp")
 
       if (key) {

@@ -7,6 +7,100 @@ import { ANYSEARCH_CASE, BOCHA_CASE, JINA_CASE, KAGI_CASE, KEENABLE_CASE, LINKUP
 
 const fixtures = { anysearch: ANYSEARCH_CASE, bocha: BOCHA_CASE, jina: JINA_CASE, kagi: KAGI_CASE, keenable: KEENABLE_CASE, linkup: LINKUP_CASE, metaso: METASO_CASE, moonshot: MOONSHOT_CASE, "moonshot-cn": MOONSHOT_CN_CASE, ollama: OLLAMA_CASE, parallel: PARALLEL_CASE, perplexity: PERPLEXITY_CASE, querit: QUERIT_CASE, serpapi: SERPAPI_CASE, serper: SERPER_CASE, stepfun: STEPFUN_CASE, tinyfish: TINYFISH_CASE, zai: ZAI_CASE, zhipu: ZHIPU_CASE }
 
+const resultPaths = {
+  anysearch: ["data", "results"], bocha: ["data", "webPages", "value"], jina: ["data"], kagi: ["data", "search"],
+  keenable: ["results"], linkup: ["results"], metaso: ["webpages"], moonshot: ["search_results"], "moonshot-cn": ["search_results"],
+  ollama: ["results"], parallel: ["results"], perplexity: ["results"], querit: ["results", "result"],
+  serpapi: ["organic_results"], serper: ["organic"], stepfun: ["results"], tinyfish: ["results"], zai: ["search_result"], zhipu: ["search_result"],
+}
+
+const countFields = {
+  anysearch: "max_results", bocha: "count", jina: "num", kagi: "limit", keenable: "max_results", linkup: "maxResults",
+  metaso: "size", moonshot: "limit", "moonshot-cn": "limit", ollama: "max_results", perplexity: "max_results",
+  querit: "count", stepfun: "n", zai: "count", zhipu: "count",
+}
+
+function assertRequestedCount(id, call, count) {
+  if (countFields[id]) assert.equal(call.body[countFields[id]], count, `${id}: upstream count`)
+  else if (id === "parallel") assert.equal(call.body.advanced_settings.max_results, count)
+  else if (id === "serper") assert.equal(call.body.num, 10, "Serper keeps its fixed page size")
+  else assert.equal(new URL(call.url).searchParams.has("count"), false, `${id}: no invented upstream count`)
+}
+
+function manyResults(id) {
+  const response = structuredClone(fixtures[id].response)
+  const path = resultPaths[id]
+  const parent = path.slice(0, -1).reduce((value, key) => value[key], response)
+  const field = path.at(-1)
+  const example = parent[field].find((row) => row && (row.url || row.link) && row.type !== "image")
+  parent[field] = [{ title: "No URL" }, ...Array.from({ length: 25 }, (_, i) => ({
+    ...example,
+    ...(example.url ? { url: `https://example.com/${id}/${i}` } : {}),
+    ...(example.link ? { link: `https://example.com/${id}/${i}` } : {}),
+  }))]
+  return response
+}
+
+test("all APIs follow host count unless an explicit limit or provider maximum applies", async () => {
+  const saved = { ...process.env }
+  const maxima = { anysearch: 10, ollama: 10, serpapi: 10, serper: 10, jina: 20, moonshot: 20, "moonshot-cn": 20, parallel: 20, perplexity: 20, stepfun: 20 }
+  const fake = stubFetch((call) => json(manyResults(new URL(call.url).pathname.slice(1))))
+  try {
+    for (const id of Object.keys(fixtures)) {
+      const env = id.toUpperCase().replaceAll("-", "_") + "_RESULT_LIMIT"
+      const field = "resultLimit"
+      delete process.env[env]
+      const { search } = await WebSearch({}, { enable: [id] })
+      const args = { query: "host count", key: "k", url: `https://local.example/${id}` }
+      for (const count of [1, 6, 12, 20]) {
+        const before = fake.calls.length
+        const pages = await search[id].execute({ ...args, query: `host count ${count}`, count }, context())
+        assert.equal(pages.length, Math.min(count, maxima[id] ?? 25), `${id}, count=${count}`)
+        assert.equal(fake.calls.length, before + 1, "one request, without pagination")
+        assertRequestedCount(id, fake.calls.at(-1), Math.min(count, maxima[id] ?? count))
+      }
+      const fallback = id === "ollama" ? 5 : id === "querit" ? 8 : 10
+      assert.equal((await search[id].execute(args, context())).length, fallback, `${id}: missing count keeps its old fallback`)
+      process.env[env] = "7"
+      const fromEnv = await WebSearch({}, { enable: [id] })
+      assert.equal((await fromEnv.search[id].execute({ ...args, count: 20 }, context())).length, 7, `${id}: explicit env cap`)
+      assertRequestedCount(id, fake.calls.at(-1), 7)
+      const explicit = await WebSearch({}, { enable: [id], [id]: { [field]: 3 } })
+      assert.equal((await explicit.search[id].execute({ ...args, count: 20 }, context())).length, 3, `${id}: options override env`)
+      assertRequestedCount(id, fake.calls.at(-1), 3)
+      await assert.rejects(WebSearch({}, { enable: [id], [id]: { resultLimit: "3" } }), new RegExp(`${id}\\.resultLimit`))
+      delete process.env[env]
+    }
+  } finally { process.env = saved; fake.restore() }
+})
+
+test("anonymous MCP follows larger host counts without inventing upstream count parameters", async () => {
+  for (const id of ["parallel", "tinyfish"]) {
+    const { search } = await WebSearch({}, { enable: [id] })
+    const fake = stubFetch(() => json({ jsonrpc: "2.0", id: 1, result: { structuredContent: manyResults(id) } }))
+    try {
+      for (const count of [20, 6]) {
+        assert.equal((await search[id].execute({ query: "anonymous count", count }, context())).length, count)
+        const args = fake.calls.at(-1).body.params.arguments
+        assert.equal(Object.hasOwn(args, "count"), false)
+        assert.equal(Object.hasOwn(args, "max_results"), false)
+      }
+      assert.equal(fake.calls.length, 2, `${id}: one request per count, no handshake or pagination`)
+    } finally { fake.restore() }
+  }
+})
+
+test("changing host count never reuses a previously truncated TinyFish result", async () => {
+  const { search } = await WebSearch({}, { enable: ["tinyfish"] })
+  const fake = stubFetch(() => json(manyResults("tinyfish")))
+  const args = { query: "same query", key: "k" }
+  try {
+    for (const count of [6, 20, 6]) assert.equal((await search.tinyfish.execute({ ...args, count }, context())).length, count)
+    assert.equal(fake.calls.length, 2)
+    assert.equal(new URL(fake.calls[0].url).searchParams.has("count"), false)
+  } finally { fake.restore() }
+})
+
 test("custom Base URL uses the exact endpoint as given and validates HTTP(S)", () => {
   for (const [base, want] of [
     ["https://custom.example", "https://custom.example/"],

@@ -1,6 +1,6 @@
 import {
-  cacheKey, cleanRetryAfter, configInt, configStr, makeCache,
-  normalizeQuery, page, requestJSON, resolveEndpoint, sizeFor, truncateCodePoints,
+  cacheKey, cleanRetryAfter, configCountPolicy, configInt, configStr, makeCache,
+  normalizeQuery, page, requestJSON, resolveEndpoint, resolveResultCount, truncateCodePoints,
 } from "../core.mjs"
 
 // Local sanity limit for the reset header, not an upstream quota guarantee.
@@ -39,7 +39,7 @@ export function createMoonshotProvider(meta, options = {}) {
 
   const ttl = configInt(options, "cacheTTL", `${envPrefix}CACHE_TTL`, 600_000, 0, Number.MAX_SAFE_INTEGER)
   const timeout = configInt(options, "timeout", `${envPrefix}TIMEOUT`, 25_000, 0, 2_147_483_647)
-  const maxResults = configInt(options, "maxResults", `${envPrefix}MAX_RESULTS`, 10, 1, 20)
+  const countPolicy = configCountPolicy(options, `${envPrefix}RESULT_LIMIT`, 10, 20)
   const content = configStr(options, "content", `${envPrefix}CONTENT`, "snippet", ["snippet", "full"])
   const contentChars = configInt(options, "contentChars", `${envPrefix}CONTENT_CHARS`, 4_000, 0, Number.MAX_SAFE_INTEGER)
 
@@ -61,7 +61,7 @@ export function createMoonshotProvider(meta, options = {}) {
       }
 
       const endpoint = resolveEndpoint(url, defaultEndpoint)
-      const limit = sizeFor(count, maxResults, 20)
+      const limit = resolveResultCount(count, countPolicy)
       const body = {
         text_query: q,
         limit,

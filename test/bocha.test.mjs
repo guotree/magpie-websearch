@@ -221,19 +221,19 @@ test("bocha: explicit options validate fields and override clamped or invalid en
   console.warn = (...values) => warnings.push(values.join(" "))
   const fake = stubFetch(() => json(BOCHA_CASE.response))
   try {
-    Object.assign(process.env, { BOCHA_MAX_RESULTS: "99", BOCHA_FRESHNESS: "oneWeek", BOCHA_SUMMARY: " true ", BOCHA_CACHE_TTL: "0" })
+    Object.assign(process.env, { BOCHA_RESULT_LIMIT: "99", BOCHA_FRESHNESS: "oneWeek", BOCHA_SUMMARY: " true ", BOCHA_CACHE_TTL: "0" })
     const env = createBocha()
     await env.execute(args, context())
     await env.execute(args, context())
     assert.equal(fake.calls.length, 2)
     assert.deepEqual(fake.calls.at(-1).body, { query: "q", count: 50, summary: true, freshness: "oneWeek" })
-    const explicit = createBocha({ maxResults: 1, freshness: "", summary: false, cacheTTL: 600_000, timeout: 0 })
+    const explicit = createBocha({ resultLimit: 1, freshness: "", summary: false, cacheTTL: 600_000, timeout: 0 })
     assert.deepEqual(await explicit.execute(args, context()), BOCHA_CASE.expected.slice(0, 1))
     await explicit.execute(args, context())
     assert.equal(fake.calls.length, 3)
     assert.deepEqual(fake.calls.at(-1).body, { query: "q", count: 1, summary: false })
     for (const summary of ["false", "", "TRUE"]) {
-      Object.assign(process.env, { BOCHA_MAX_RESULTS: "bad", BOCHA_SUMMARY: summary, BOCHA_TIMEOUT: "invalid" })
+      Object.assign(process.env, { BOCHA_RESULT_LIMIT: "bad", BOCHA_SUMMARY: summary, BOCHA_TIMEOUT: "invalid" })
       await createBocha().execute(args, context())
       assert.deepEqual(fake.calls.at(-1).body, { query: "q", count: 10, summary: false, freshness: "oneWeek" })
     }

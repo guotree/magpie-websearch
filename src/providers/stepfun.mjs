@@ -1,6 +1,6 @@
 import {
-  boundDetail, cacheKey, cleanRetryAfter, configInt, configStr, makeCache,
-  normalizeQuery, page, requestJSON, resolveEndpoint, sizeFor, truncateCodePoints,
+  boundDetail, cacheKey, cleanRetryAfter, configCountPolicy, configInt, configStr, makeCache,
+  normalizeQuery, page, requestJSON, resolveEndpoint, resolveResultCount, truncateCodePoints,
 } from "../core.mjs"
 
 function describeFailure(value) {
@@ -30,7 +30,7 @@ function errorDetailFromBody(raw) {
 export function createStepfun(options = {}) {
   const ttl = configInt(options, "cacheTTL", "STEPFUN_CACHE_TTL", 600_000)
   const timeout = configInt(options, "timeout", "STEPFUN_TIMEOUT", 25_000, 0, 2_147_483_647)
-  const maxResults = configInt(options, "maxResults", "STEPFUN_MAX_RESULTS", 10, 1, 20)
+  const countPolicy = configCountPolicy(options, "STEPFUN_RESULT_LIMIT", 10, 20)
   const category = configStr(options, "category", "STEPFUN_CATEGORY", "", [
     "", "programming", "research", "gov", "business",
   ])
@@ -49,7 +49,7 @@ export function createStepfun(options = {}) {
       if (!q) throw new Error("StepFun query must not be empty")
 
       const endpoint = resolveEndpoint(url, "https://api.stepfun.com/v1/search")
-      const limit = sizeFor(count, maxResults, 20)
+      const limit = resolveResultCount(count, countPolicy)
       const body = { query: q, n: limit, ...(category ? { category } : {}) }
       // Content selection is local: the API documents no include_content switch.
       const identity = cacheKey(endpoint, { ...body, content, contentChars }, apiKey)

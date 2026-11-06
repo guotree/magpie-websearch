@@ -7,7 +7,7 @@ import { context, json, stubFetch, text } from "./harness.mjs"
 
 const args = { query: "q", key: "k" }
 
-test("ollama: cloud POST, Bearer account key, normalized query and default five-result cap", async () => {
+test("ollama: cloud POST, Bearer account key, normalized query and host result count", async () => {
   const provider = createOllama()
   assert.equal(provider.name, "Ollama (magpie-websearch)")
   assert.equal(provider.keysURL, "https://ollama.com/settings/keys")
@@ -20,7 +20,7 @@ test("ollama: cloud POST, Bearer account key, normalized query and default five-
     assert.equal(call.init.method, "POST")
     assert.equal(call.init.redirect, "error")
     assert.deepEqual(call.init.headers, { Accept: "application/json", "Content-Type": "application/json", Authorization: "Bearer key" })
-    assert.deepEqual(call.body, { query: "中文 search", max_results: 5 })
+    assert.deepEqual(call.body, { query: "中文 search", max_results: 6 })
   } finally { fake.restore() }
 })
 

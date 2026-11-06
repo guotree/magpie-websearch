@@ -33,12 +33,20 @@ magpie search
 
 All nineteen APIs are registered by default without plugin options. Magpie's Web search settings determine which APIs are used.
 
+Since Magpie v0.1.3062, agents can specify `count` when calling `web_search` (1–20, default 6). From the terminal:
+
+```sh
+magpie tool web_search "OpenAI API documentation" --count 20
+```
+
+Without a configured result limit, the plugin follows the host's `count`, subject to each provider's limits. All providers use the optional `resultLimit` or `*_RESULT_LIMIT` environment variable for a user cap. Providers may return fewer results; the plugin makes no extra requests to fill them. Legacy names remain compatible; see [migration and count policy](docs/technical-reference.en.md#configuration).
+
 Leave **Base URL** empty for official services. A custom address must be the complete endpoint; the plugin does not append paths. See [Custom Base URL](docs/technical-reference.en.md#custom-base-url).
 
 To adjust provider parameters, use **Plugins → Installed → Options**, or run:
 
 ```sh
-magpie plugin options magpie-websearch '{"linkup":{"depth":"deep","maxResults":4}}'
+magpie plugin options magpie-websearch '{"linkup":{"depth":"deep","resultLimit":4}}'
 ```
 
 Each command replaces the complete saved options object, so include every option you want to keep. Saving reloads the plugin host. See the [technical reference](docs/technical-reference.en.md#configuration) for all parameters and registration filters.
