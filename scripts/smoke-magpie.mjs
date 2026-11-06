@@ -27,6 +27,8 @@ const env = {
 }
 delete env.MAGPIE_GATEWAY
 const calls = []
+const mcpSessions = new Map()
+let mcpSessionNumber = 0
 const sockets = new Set()
 const upstream = createServer(async (req, res) => {
   let raw = ""
@@ -35,16 +37,60 @@ const upstream = createServer(async (req, res) => {
   const body = raw ? JSON.parse(raw) : undefined
   calls.push({ path: req.url, method: req.method, body, key: req.headers.authorization,
     apiKey: req.headers["x-api-key"], title: req.headers["x-keenable-title"],
+    session: req.headers["mcp-session-id"], protocol: req.headers["mcp-protocol-version"],
     accessMode: req.headers["x-tinyfish-access-mode"],
     respondWith: req.headers["x-respond-with"] })
-  const query = body?.search_query ?? body?.text_query ?? body?.params?.arguments?.query ?? body?.params?.arguments?.search_queries?.[0] ?? body?.search_queries?.[0] ?? body?.q ?? body?.query ?? target.searchParams.get("query") ?? target.searchParams.get("q")
+  const query = body?.search_query ?? body?.text_query ?? body?.params?.arguments?.search_query ?? body?.params?.arguments?.query ?? body?.params?.arguments?.search_queries?.[0] ?? body?.search_queries?.[0] ?? body?.q ?? body?.query ?? target.searchParams.get("query") ?? target.searchParams.get("q")
   if (query === "rate limited") {
     res.writeHead(429, { "Retry-After": body?.q ? "30" : "120" }).end("slow down")
     return
   }
   if (query === "timeout") return
   res.setHeader("Content-Type", "application/json")
-  if (target.pathname === "/count/tinyfish") {
+  if (["/zhipu-coding/mcp", "/zai-coding/mcp"].includes(target.pathname)) {
+    const id = target.pathname.slice(1, -4)
+    const rpc = body?.method
+    if (req.method === "DELETE") {
+      assert.equal(mcpSessions.get(req.headers["mcp-session-id"]), id)
+      mcpSessions.delete(req.headers["mcp-session-id"])
+      res.writeHead(204).end()
+    } else if (rpc === "initialize") {
+      if (req.headers.authorization === `Bearer ${id}-resting-dummy-key`) {
+        res.writeHead(401).end(JSON.stringify({ error: "invalid Coding Plan key" }))
+        return
+      }
+      const session = `${id}-session-${++mcpSessionNumber}`
+      mcpSessions.set(session, id)
+      res.setHeader("Mcp-Session-Id", session)
+      res.end(JSON.stringify({ jsonrpc: "2.0", id: body.id, result: {
+        protocolVersion: "2024-11-05", capabilities: {}, serverInfo: { name: id, version: "1" },
+      } }))
+    } else {
+      assert.equal(mcpSessions.get(req.headers["mcp-session-id"]), id)
+      assert.equal(req.headers["mcp-protocol-version"], "2024-11-05")
+      if (rpc === "notifications/initialized") res.writeHead(202).end()
+      else if (rpc === "tools/list") res.end(JSON.stringify({ jsonrpc: "2.0", id: body.id, result: { tools: [{
+        name: "web_search_prime",
+        inputSchema: { type: "object", properties: { search_query: {}, count: {}, search_recency_filter: {}, search_domain_filter: {}, content_size: {} } },
+      }] } }))
+      else if (rpc === "tools/call") {
+        if (query === `${id} refusal`) {
+          res.writeHead(429, { "Retry-After": "0007" }).end(JSON.stringify({ error: "Coding Plan credits exhausted" }))
+          return
+        }
+        const result = { content: [{ type: "text", text: JSON.stringify([
+          { title: "Missing URL", content: "Drop before applying cap" },
+          { title: `${id} smoke page`, link: `https://example.com/${id}`, content: `${id} snippet result`, publish_date: "2026-11-06" },
+          { title: "Over the local cap", link: `https://example.com/${id}-extra`, content: "Must be capped" },
+        ]) }] }
+        const response = { jsonrpc: "2.0", id: body.id, result }
+        if (id === "zai-coding") {
+          res.setHeader("Content-Type", "text/event-stream")
+          res.end(`data: ${JSON.stringify(response)}\n\n`)
+        } else res.end(JSON.stringify(response))
+      } else throw new Error(`Unexpected ${id} MCP method: ${rpc}`)
+    }
+  } else if (target.pathname === "/count/tinyfish") {
     res.end(JSON.stringify({ results: Array.from({ length: 25 }, (_, i) => ({
       title: `Count page ${i + 1}`, url: `https://example.com/count/${i + 1}`, snippet: `Count snippet ${i + 1}`,
     })) }))
@@ -334,7 +380,7 @@ const listen = (server) => new Promise((resolve, reject) => {
   server.listen(0, "127.0.0.1", resolve)
 })
 const run = async (...args) => {
-  const { stdout } = await exec(binary, args, { cwd: root, env, timeout: 120_000, maxBuffer: 2 << 20 })
+  const { stdout } = await exec(binary, args, { cwd: root, env, timeout: 300_000, maxBuffer: 2 << 20 })
   return stdout.trim()
 }
 const loadedSearches = async () => {
@@ -357,7 +403,7 @@ try {
   console.log("Loading the plugin in an isolated magpie configuration…")
   await run("plugin", "add", root)
   const definitions = await loadedSearches()
-  assert.deepEqual(definitions.map((entry) => entry.id).sort(), ["anysearch", "bocha", "jina", "kagi", "keenable", "linkup", "metaso", "moonshot", "moonshot-cn", "ollama", "parallel", "perplexity", "querit", "serpapi", "serper", "stepfun", "tinyfish", "zai", "zhipu"])
+  assert.deepEqual(definitions.map((entry) => entry.id).sort(), ["anysearch", "bocha", "jina", "kagi", "keenable", "linkup", "metaso", "moonshot", "moonshot-cn", "ollama", "parallel", "perplexity", "querit", "serpapi", "serper", "stepfun", "tinyfish", "zai", "zai-coding", "zhipu", "zhipu-coding"])
   assert.deepEqual(definitions.filter((entry) => entry.keyOptional).map((entry) => entry.id).sort(), ["anysearch", "keenable", "parallel", "tinyfish"])
   await run("plugin", "options", root, JSON.stringify({ enable: ["moonshot", "moonshot-cn"], disable: ["moonshot-cn"] }))
   assert.deepEqual(await loadedIDs(), ["moonshot"])
@@ -402,6 +448,8 @@ try {
     tinyfish: { resultLimit: 1, language: "zh", cacheTTL: 0, timeout: 500 },
     zhipu: { engine: "search_pro_sogou", contentSize: "high", recency: "oneWeek", resultLimit: 1, cacheTTL: 0, timeout: 500 },
     zai: { resultLimit: 1, cacheTTL: 0, timeout: 500 },
+    "zhipu-coding": { resultLimit: 1, recency: "oneWeek", contentSize: "high", cacheTTL: 0, timeout: 500 },
+    "zai-coding": { resultLimit: 1, cacheTTL: 0, timeout: 500 },
     jina: { resultLimit: 1, contentChars: 8, cacheTTL: 0, timeout: 500 },
     kagi: { resultLimit: 1, recency: "week", region: "cn", cacheTTL: 0, timeout: 500 },
     serper: { resultLimit: 1, gl: "cn", hl: "zh-cn", tbs: "qdr:w", cacheTTL: 0, timeout: 500 },
@@ -813,6 +861,63 @@ try {
   assert.equal(calls.at(-1).key, "Bearer intl-only-dummy-key")
   await run("search", "rm", "magpie-websearch:zhipu")
   await run("search", "rm", "magpie-websearch:zai")
+  console.log("Checking Zhipu/Z.ai Coding Plan Streamable MCP lifecycle, SSE, rotation and fallback…")
+  for (const id of ["zhipu-coding", "zai-coding"]) {
+    const mcpURL = `http://127.0.0.1:${upstream.address().port}/${id}/mcp`
+    await run("search", "add", `magpie-websearch:${id}`, `${id}-dummy-key`, `url=${mcpURL}`)
+    await run("search", "move", `magpie-websearch:${id}`, "1")
+    const before = calls.length
+    const result = await search(`${id} smoke 中文`)
+    assert.match(result, new RegExp(`example\\.com/${id}`))
+    assert.doesNotMatch(result, new RegExp(`${id}-extra`))
+    assert.equal(calls.length, before + 5)
+    const lifecycle = calls.slice(before)
+    assert.deepEqual(lifecycle.map((call) => call.method === "DELETE" ? "DELETE" : call.body.method), [
+      "initialize", "notifications/initialized", "tools/list", "tools/call", "DELETE",
+    ])
+    assert.equal(lifecycle.every((call) => call.path === `/${id}/mcp`), true, "custom MCP endpoint is exact")
+    assert.equal(lifecycle.every((call) => call.key === `Bearer ${id}-dummy-key`), true)
+    assert.match(lifecycle[1].session, new RegExp(`^${id}-session-\\d+$`))
+    assert.equal(lifecycle[2].protocol, "2024-11-05")
+    assert.equal(lifecycle[3].body.params.name, "web_search_prime")
+    assert.deepEqual(lifecycle[3].body.params.arguments, id === "zhipu-coding"
+      ? { search_query: `${id} smoke 中文`, count: 1, search_recency_filter: "oneWeek", content_size: "high" }
+      : { search_query: `${id} smoke 中文`, count: 1 })
+    assert.equal(mcpSessions.size, 0)
+
+    const beforeTimeout = calls.length
+    assert.match(await failure("timeout"), /timed out after 500ms|no answer|failed|error/i)
+    assert.equal(calls.length, beforeTimeout + 5, "timeout still attempts session cleanup")
+    assert.equal(mcpSessions.size, 0)
+
+    const refused = await failure(`${id} refusal`)
+    assert.match(refused, /429/)
+    assert.match(refused, /retry after 7s/)
+    assert.equal(mcpSessions.size, 0)
+    await run("search", "rm", `magpie-websearch:${id}`)
+    await run("search", "add", `magpie-websearch:${id}`, `${id}-fallback-dummy-key`, `url=${mcpURL}`)
+    await run("search", "move", `magpie-websearch:${id}`, "1")
+    await run("search", "on", "magpie-websearch:linkup")
+    const beforeFallback = calls.length
+    assert.match(await search(`${id} refusal`), /example\.com\/smoke/)
+    assert.equal(calls.length, beforeFallback + 6, "failed MCP lifecycle then one explicit fallback request")
+    assert.equal(calls.slice(beforeFallback, -1).every((call) => call.path === `/${id}/mcp`), true)
+    assert.equal(calls.at(-1).path, "/proxy/v1/search")
+    assert.equal(calls.slice(beforeFallback, -1).some((call) => call.path === `/${id.replace("-coding", "")}/search`), false)
+    await run("search", "off", "magpie-websearch:linkup")
+    await run("search", "rm", `magpie-websearch:${id}`)
+
+    await run("search", "add", `magpie-websearch:${id}`,
+      `${id}-resting-dummy-key,${id}-good-dummy-key`, `url=${mcpURL}`, "pick=order")
+    await run("search", "move", `magpie-websearch:${id}`, "1")
+    const beforeRotation = calls.length
+    assert.match(await search(`${id} rotation`), new RegExp(`example\\.com/${id}`))
+    assert.equal(calls.length, beforeRotation + 6)
+    assert.equal(calls[beforeRotation].key, `Bearer ${id}-resting-dummy-key`)
+    assert.equal(calls.slice(beforeRotation + 1).every((call) => call.key === `Bearer ${id}-good-dummy-key`), true)
+    assert.equal(mcpSessions.size, 0)
+    await run("search", "rm", `magpie-websearch:${id}`)
+  }
   console.log("Checking StepFun domestic REST, category, full text, moderation, Credit refusal and rotation…")
   const stepfunURL = `http://127.0.0.1:${upstream.address().port}/stepfun/proxy/search`
   await run("search", "add", "magpie-websearch:stepfun", "stepfun-dummy-key", `url=${stepfunURL}`)
@@ -1133,7 +1238,7 @@ try {
 
   await run("search", "rm", "magpie-websearch:serper")
   await run("search", "rm", "magpie-websearch:serpapi")
-  console.log("✓ magpie loads nineteen APIs; registration, options, custom URLs, timeouts, errors, anonymous cooldown, keyed rotation and fallback pass; Bocha summary/freshness, Ollama content limits, Jina/Kagi/Serper smoke and isolation pass")
+  console.log("✓ magpie loads twenty-one APIs; registration, options, custom URLs, timeouts, errors, anonymous cooldown, keyed rotation and fallback pass; Coding Plan MCP lifecycle and site isolation pass")
 } catch (error) {
   console.error(gatewayLog)
   throw error

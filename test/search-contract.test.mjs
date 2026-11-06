@@ -90,6 +90,65 @@ test("anonymous MCP follows larger host counts without inventing upstream count 
   }
 })
 
+test("Coding Plan MCP providers follow host counts through a complete session", async () => {
+  const saved = { ...process.env }
+  const sessions = new Set()
+  let sessionNumber = 0
+  const fake = stubFetch((call) => {
+    if (call.init.method === "DELETE") {
+      sessions.delete(call.init.headers["Mcp-Session-Id"])
+      return new Response(null, { status: 204 })
+    }
+    if (call.body.method === "initialize") {
+      const session = `contract-${++sessionNumber}`
+      sessions.add(session)
+      return json({ jsonrpc: "2.0", id: call.body.id, result: { protocolVersion: "2024-11-05" } }, 200, { "Mcp-Session-Id": session })
+    }
+    assert.ok(sessions.has(call.init.headers["Mcp-Session-Id"]), "session header is returned")
+    if (call.body.method === "notifications/initialized") return new Response(null, { status: 202 })
+    if (call.body.method === "tools/list") return json({
+      jsonrpc: "2.0", id: call.body.id, result: { tools: [{
+        name: "web_search_prime", inputSchema: { type: "object", properties: { search_query: {}, count: {} } },
+      }] },
+    })
+    if (call.body.method === "tools/call") return json({
+      jsonrpc: "2.0", id: call.body.id, result: { structuredContent: { results: Array.from({ length: 25 }, (_, i) => ({
+        title: `Coding ${i}`, link: `https://example.com/coding/${i}`, content: "result",
+      })) } },
+    })
+    throw new Error("unexpected request")
+  })
+  try {
+    for (const id of ["zhipu-coding", "zai-coding"]) {
+      const env = id.toUpperCase().replaceAll("-", "_") + "_RESULT_LIMIT"
+      delete process.env[env]
+      let hooks = await WebSearch({}, { enable: [id], [id]: { cacheTTL: 0 } })
+      const args = { query: "coding contract", key: id + "-key", url: `https://local.example/${id}/mcp` }
+      for (const count of [1, 6, 12, 20]) {
+        const before = fake.calls.length
+        const pages = await hooks.search[id].execute({ ...args, query: `coding ${count}`, count }, context())
+        assert.equal(pages.length, count)
+        assert.equal(fake.calls.length, before + 5, "one complete session per cache miss")
+        assert.equal(fake.calls.at(-2).body.params.arguments.count, count)
+        assert.equal(fake.calls.at(-2).url, `https://local.example/${id}/mcp`)
+      }
+      assert.equal((await hooks.search[id].execute(args, context())).length, 10)
+      process.env[env] = "7"
+      hooks = await WebSearch({}, { enable: [id], [id]: { cacheTTL: 0 } })
+      assert.equal((await hooks.search[id].execute({ ...args, count: 20 }, context())).length, 7)
+      assert.equal(fake.calls.at(-2).body.params.arguments.count, 7)
+      hooks = await WebSearch({}, { enable: [id], [id]: { resultLimit: 3, cacheTTL: 0 } })
+      assert.equal((await hooks.search[id].execute({ ...args, count: 20 }, context())).length, 3)
+      assert.equal(fake.calls.at(-2).body.params.arguments.count, 3)
+      delete process.env[env]
+    }
+    assert.equal(sessions.size, 0, "all sessions are deleted")
+  } finally {
+    process.env = saved
+    fake.restore()
+  }
+})
+
 test("changing host count never reuses a previously truncated TinyFish result", async () => {
   const { search } = await WebSearch({}, { enable: ["tinyfish"] })
   const fake = stubFetch(() => json(manyResults("tinyfish")))
@@ -225,6 +284,8 @@ test("invalid provider options fail loading and disabled providers are not initi
     { jina: { content: "invalid" } }, { jina: { maxResults: 21 } },
     { kagi: { recency: "year" } }, { kagi: { maxResults: 1025 } },
     { serper: { tbs: "qdr:z" } }, { serper: { maxResults: 11 } },
+    { "zhipu-coding": { resultLimit: 0 } }, { "zhipu-coding": { contentSize: "full" } },
+    { "zai-coding": { timeout: -1 } }, { "zai-coding": { domainFilter: [] } },
   ]) await assert.rejects(WebSearch({}, options), TypeError)
   const { search } = await WebSearch({}, { disable: ["linkup"], linkup: { depth: "invalid" } })
   assert.equal(search.linkup, undefined)
@@ -252,6 +313,10 @@ test("invalid provider options fail loading and disabled providers are not initi
   assert.equal(disabledKagi.search.kagi, undefined)
   const disabledSerper = await WebSearch({}, { disable: ["serper"], serper: { tbs: "qdr:z" } })
   assert.equal(disabledSerper.search.serper, undefined)
+  const disabledZhipuCoding = await WebSearch({}, { disable: ["zhipu-coding"], "zhipu-coding": { contentSize: "full" } })
+  assert.equal(disabledZhipuCoding.search["zhipu-coding"], undefined)
+  const disabledZaiCoding = await WebSearch({}, { disable: ["zai-coding"], "zai-coding": { timeout: -1 } })
+  assert.equal(disabledZaiCoding.search["zai-coding"], undefined)
 })
 
 test("timeouts and host cancellation abort the upstream request", async () => {

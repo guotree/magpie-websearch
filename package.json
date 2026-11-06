@@ -1,7 +1,7 @@
 {
   "name": "@guotree/magpie-websearch",
   "version": "0.6.1",
-  "description": "Web search APIs for magpie: AnySearch, Keenable, Parallel and TinyFish with optional keys, plus Bocha, Jina, Kagi, Linkup, Metaso, Moonshot, Moonshot CN, Ollama, Perplexity, Querit, SerpApi, Serper, StepFun, Z.ai and Zhipu. Keys are managed by magpie.",
+  "description": "Web search APIs for magpie: 21 REST and MCP providers including Zhipu and Z.ai Standard API and Coding Plan search. Keys are managed by magpie.",
   "type": "module",
   "main": "./index.mjs",
   "files": [
@@ -40,7 +40,9 @@
     "stepfun",
     "tinyfish",
     "zai",
-    "zhipu"
+    "zai-coding",
+    "zhipu",
+    "zhipu-coding"
   ],
   "license": "MIT",
   "publishConfig": {
@@ -62,7 +64,7 @@
     "icon": "https://raw.githubusercontent.com/guotree/magpie-websearch/main/assets/icon-128.png"
   },
   "scripts": {
-    "test": "node --test test/anysearch.test.mjs test/bocha.test.mjs test/jina.test.mjs test/kagi.test.mjs test/keenable.test.mjs test/linkup.test.mjs test/metaso.test.mjs test/moonshot.test.mjs test/ollama.test.mjs test/parallel.test.mjs test/perplexity.test.mjs test/querit.test.mjs test/serpapi.test.mjs test/serper.test.mjs test/stepfun.test.mjs test/tinyfish.test.mjs test/zhipu.test.mjs test/mcp-response.test.mjs test/mcp-search-results.test.mjs test/mcp-stateless.test.mjs test/mcp-session.test.mjs test/index.test.mjs test/search-contract.test.mjs test/core.test.mjs test/anonymous.test.mjs",
+    "test": "node --test test/anysearch.test.mjs test/bocha.test.mjs test/jina.test.mjs test/kagi.test.mjs test/keenable.test.mjs test/linkup.test.mjs test/metaso.test.mjs test/moonshot.test.mjs test/ollama.test.mjs test/parallel.test.mjs test/perplexity.test.mjs test/querit.test.mjs test/serpapi.test.mjs test/serper.test.mjs test/stepfun.test.mjs test/tinyfish.test.mjs test/zhipu.test.mjs test/zhipu-coding.test.mjs test/mcp-response.test.mjs test/mcp-search-results.test.mjs test/mcp-stateless.test.mjs test/mcp-session.test.mjs test/index.test.mjs test/search-contract.test.mjs test/core.test.mjs test/anonymous.test.mjs",
     "check": "node scripts/check.mjs && npm test",
     "check:bun": "bun scripts/check.mjs && bun test ./test/*.test.mjs",
     "smoke:magpie": "node scripts/smoke-magpie.mjs"

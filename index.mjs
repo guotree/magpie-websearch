@@ -16,7 +16,9 @@ import { createSerper } from "./src/providers/serper.mjs"
 import { createStepfun } from "./src/providers/stepfun.mjs"
 import { createTinyfish } from "./src/providers/tinyfish.mjs"
 import { createZai } from "./src/providers/zai.mjs"
+import { createZaiCoding } from "./src/providers/zai-coding.mjs"
 import { createZhipu } from "./src/providers/zhipu.mjs"
+import { createZhipuCoding } from "./src/providers/zhipu-coding.mjs"
 import { optionGroup } from "./src/core.mjs"
 
 const PROVIDERS = [
@@ -38,7 +40,9 @@ const PROVIDERS = [
   ["stepfun", createStepfun],
   ["tinyfish", createTinyfish],
   ["zai", createZai],
+  ["zai-coding", createZaiCoding],
   ["zhipu", createZhipu],
+  ["zhipu-coding", createZhipuCoding],
 ]
 const KNOWN = new Set(PROVIDERS.map(([id]) => id))
 const WARNING = "[magpie-websearch]"
