@@ -24,9 +24,9 @@ checks. See the [README](../README.en.md) for installation and quick start, and
 
 In the app: **Settings › Models › Web search**, add each API you want, switch it
 on, and order it. Leave the key empty for anonymous AnySearch, Keenable, Parallel
-or TinyFish, or provide a key to use your account. Bocha, Jina, Kagi, Linkup, Metaso, Moonshot, Moonshot CN, Ollama, Perplexity, Querit, SerpApi, Serper, StepFun, Z.ai and Zhipu require a key.
+or TinyFish, or provide a key to use your account. Bocha, Jina, Kagi, Linkup, Metaso, Moonshot, Moonshot CN, Ollama, Perplexity, Querit, SerpApi, Serper, StepFun, and both the Standard REST and Coding Plan MCP channels for Z.ai and Zhipu require the key for that product.
 
-No plugin options are required. With no registration filters, all nineteen APIs are
+No plugin options are required. With no registration filters, all twenty-one APIs are
 registered; magpie's Web search settings decide which are configured and used.
 
 <a id="custom-base-url"></a>
@@ -106,6 +106,10 @@ magpie search add magpie-websearch:stepfun <china-key>
 # Zhipu (China) and Z.ai (international): each site's own Standard API Key
 magpie search add magpie-websearch:zhipu <china-key>
 magpie search add magpie-websearch:zai <international-key>
+
+# Coding Plan MCP: use the corresponding site's individual/team Coding Plan key
+magpie search add magpie-websearch:zhipu-coding <china-coding-plan-key>
+magpie search add magpie-websearch:zai-coding <international-coding-plan-key>
 
 # A compatible endpoint of your own
 magpie search add magpie-websearch:linkup <key> url=https://search.example.com/proxy/v1/search
@@ -385,22 +389,76 @@ data respectively. Magpie handles key rest, rotation and fallback; adapters add
 no sleeps or automatic retries. Cancellation and timeout cover requests and body
 consumption. `timeout: 0` still preserves `ctx.abort`.
 
-These adapters use standard REST only. Coding Plan's `webSearchPrime` MCP is a
-separate access path with different credentials and billing. Both sites' current
-plan documents use credits; old fixed monthly call allowances should not be
-reused or described as anonymous free access. See the
+Coding Plan search is implemented as two separate providers and is never mixed
+with the REST channels:
+
+| Site | Adapter ID | Streamable HTTP MCP endpoint | Key type |
+|---|---|---|---|
+| China | `zhipu-coding` | `https://open.bigmodel.cn/api/mcp/web_search_prime/mcp` | Individual/team Coding Plan key |
+| International | `zai-coding` | `https://api.z.ai/api/mcp/web_search_prime/mcp` | Individual/team Coding Plan key |
+
+Every search creates one session: `initialize`, `notifications/initialized`,
+`tools/list`, `tools/call`, and a best-effort `DELETE`. Initialization, discovery,
+and the tool call share one `timeout` budget (25,000 ms by default); cleanup has a
+separate 1,000 ms budget. `timeout: 0` removes only the provider deadline and still
+honors host cancellation. The client accepts JSON and SSE, returns the session and
+negotiated protocol headers, and rejects redirects. HTTP refusal bodies are withheld
+so a proxy cannot reflect a key or session ID into adapter errors.
+
+MCP modules live in `src/mcp/` and separate lifecycle strategies:
+[stateless.mjs](../src/mcp/stateless.mjs) calls a tool directly, while
+[session.mjs](../src/mcp/session.mjs) manages an initialized session.
+Both depend on [response.mjs](../src/mcp/response.mjs)
+for JSON/SSE decoding, RPC ID matching and JSON-RPC validation. The shared reader
+does not interpret tool results; each `tools/call` boundary checks `isError`.
+Authentication headers and session initialization are independent choices.
+
+[search-results.mjs](../src/mcp/search-results.mjs) extracts search content
+independently of HTTP or session state. The stateless `callMCPSearch()` combines
+a direct tool call with this extractor. Coding Plan providers use it after the
+session call, explicitly enabling the `search_result` alias, structured-string
+decoding and up to three JSON decoding layers. Defaults retain Parallel/TinyFish's
+`results` and single-layer text JSON policy. The extractor preserves envelope
+metadata and normalizes aliases to the preferred array field. Providers still
+own URL filtering, row mapping, text limits and caching.
+
+The live `tools/list` response controls discovery. The adapter prefers the observed
+`web_search_prime` name and accepts the documented `webSearchPrime` spelling. It
+always sends `search_query`; `count`, recency, domain, and content-size fields are
+sent only when present in the current `inputSchema.properties`. Missing `count`
+falls back to local truncation. An explicitly configured unsupported filter fails
+before `tools/call` instead of being silently ignored.
+
+Results may come from `structuredContent` or text content containing a top-level
+array, `results`, or `search_result`, including up to three JSON string-decode
+layers. `link`/`url`, `content`/`snippet`, and `publish_date` map to Magpie fields.
+Rows without URLs are removed before the local cap. Valid empty arrays receive the
+short empty-result cache; malformed or wholly unusable nonempty payloads do not.
+
+Coding Plan and Standard API keys are not interchangeable. China/international
+credentials, endpoints, discovery metadata, and caches are isolated. An MCP failure
+never calls metered REST and never retries against the other site. Current plan
+documentation uses shared credits; the Web Search MCP coefficient published when
+this integration was implemented is 1.2 credits per call. It is neither anonymous
+nor unlimited. The official Remote MCP pages describe compatible clients but do
+not list Magpie as officially supported, so these providers are experimental pending
+confirmation under the latest Usage Policy; this project makes no official-support claim.
+
+See the
 [domestic REST reference](https://docs.bigmodel.cn/api-reference/工具-api/网络搜索),
 [domestic MCP](https://docs.bigmodel.cn/cn/coding-plan/mcp/search-mcp-server) and
-[international MCP](https://docs.z.ai/devpack/mcp/search-mcp-server).
+[international MCP](https://docs.z.ai/devpack/mcp/search-mcp-server), plus the
+[MCP Streamable HTTP specification](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports).
 
-Dummy-key local tests cover both sites' requests, domestic engine differences,
-mapping, count/text caps, caches, malformed responses, timeouts, 429, key rotation
-and host fallback. Neither site has been verified with real account keys for
-successful search, international filter effects, latency, billing, account
-limits or search quality.
+Dummy-key local tests cover both REST sites, domestic engine differences, and the
+two Coding Plan providers' complete MCP lifecycle, JSON/SSE responses, mapping,
+count/text caps, caches, malformed responses, timeouts, 429, key rotation and
+explicit host fallback. Magpie 0.1.3141 host checks use no real account. Neither
+site has been verified with a real Standard or Coding Plan key for successful
+search, international filter effects, latency, billing, account limits or quality.
 
 ```sh
-magpie plugin options magpie-websearch '{"zhipu":{"engine":"search_pro","contentSize":"high","resultLimit":6},"zai":{"resultLimit":6}}'
+magpie plugin options magpie-websearch '{"zhipu":{"engine":"search_pro","contentSize":"high","resultLimit":6},"zai":{"resultLimit":6},"zhipu-coding":{"resultLimit":6},"zai-coding":{"resultLimit":6}}'
 ```
 
 <a id="stepfun-search"></a>
@@ -707,7 +765,7 @@ default is "unset": it follows the host's `count` instead of imposing a fixed
 count.
 
 Use **Plugins → Installed → Options**, or pass a JSON object on the command line.
-For example, change search parameters while keeping all nineteen APIs registered:
+For example, change search parameters while keeping all twenty-one APIs registered:
 
 ```sh
 magpie plugin options magpie-websearch '{"linkup":{"depth":"deep","resultLimit":4,"timeout":25000,"cacheTTL":600000},"anysearch":{"zone":"cn","language":"zh-CN"}}'
@@ -859,6 +917,13 @@ The table lists fields inside each provider's object (`linkup.depth`, for exampl
 | zai | `contentChars` | `ZAI_CONTENT_CHARS` | `4000` | Code points per text; 0 keeps all |
 | zai | `recency` | `ZAI_RECENCY` | `noLimit` | `noLimit`, `oneDay`, `oneWeek`, `oneMonth`, `oneYear`; effects unverified |
 | zai | `domainFilter` | `ZAI_DOMAIN_FILTER` | empty | Single whitelist domain; effects unverified |
+| zai-coding | `cacheTTL` | `ZAI_CODING_CACHE_TTL` | `600000` | ≥ 0; milliseconds |
+| zai-coding | `timeout` | `ZAI_CODING_TIMEOUT` | `25000` | Total MCP lifecycle timeout; 0 keeps host cancellation only |
+| zai-coding | `resultLimit` | `ZAI_CODING_RESULT_LIMIT` | unset | ≥ 1; sends `count` when supported, otherwise caps locally |
+| zai-coding | `contentChars` | `ZAI_CODING_CONTENT_CHARS` | `4000` | Code points per text; 0 keeps all |
+| zai-coding | `recency` | `ZAI_CODING_RECENCY` | `noLimit` | `noLimit`, `oneDay`, `oneWeek`, `oneMonth`, `oneYear`; live-schema dependent |
+| zai-coding | `domainFilter` | `ZAI_CODING_DOMAIN_FILTER` | empty | Single domain; sent only when supported by the live schema |
+| zai-coding | `contentSize` | `ZAI_CODING_CONTENT_SIZE` | empty | empty, `medium`, `high`; sent only when supported by the live schema |
 | zhipu | `cacheTTL` | `ZHIPU_CACHE_TTL` | `600000` | ≥ 0; milliseconds |
 | zhipu | `timeout` | `ZHIPU_TIMEOUT` | `25000` | ≥ 0; milliseconds |
 | zhipu | `resultLimit` | `ZHIPU_RESULT_LIMIT` | unset | 1–50; explicit local cap; Sogou rounds upstream up, Quark omits count |
@@ -867,6 +932,13 @@ The table lists fields inside each provider's object (`linkup.depth`, for exampl
 | zhipu | `domainFilter` | `ZHIPU_DOMAIN_FILTER` | empty | Single whitelist domain; unsupported on Quark |
 | zhipu | `engine` | `ZHIPU_ENGINE` | `search_std` | `search_std`, `search_pro`, `search_pro_sogou`, `search_pro_quark` |
 | zhipu | `contentSize` | `ZHIPU_CONTENT_SIZE` | `medium` | `medium`, `high`; upstream excerpt size |
+| zhipu-coding | `cacheTTL` | `ZHIPU_CODING_CACHE_TTL` | `600000` | ≥ 0; milliseconds |
+| zhipu-coding | `timeout` | `ZHIPU_CODING_TIMEOUT` | `25000` | Total MCP lifecycle timeout; 0 keeps host cancellation only |
+| zhipu-coding | `resultLimit` | `ZHIPU_CODING_RESULT_LIMIT` | unset | ≥ 1; sends `count` when supported, otherwise caps locally |
+| zhipu-coding | `contentChars` | `ZHIPU_CODING_CONTENT_CHARS` | `4000` | Code points per text; 0 keeps all |
+| zhipu-coding | `recency` | `ZHIPU_CODING_RECENCY` | `noLimit` | `noLimit`, `oneDay`, `oneWeek`, `oneMonth`, `oneYear`; live-schema dependent |
+| zhipu-coding | `domainFilter` | `ZHIPU_CODING_DOMAIN_FILTER` | empty | Single domain; sent only when supported by the live schema |
+| zhipu-coding | `contentSize` | `ZHIPU_CODING_CONTENT_SIZE` | empty | empty, `medium`, `high`; sent only when supported by the live schema |
 
 In the table, `contentChars` is the number of Unicode code points retained before
 truncation, not the final text length; truncation appends one `…`, so the result
@@ -883,11 +955,11 @@ for desktop use.
 
 The optional top-level `enable` and `disable` arrays control which APIs the
 plugin registers. Entries use short IDs: `anysearch`, `bocha`, `jina`, `kagi`, `keenable`, `linkup`,
-`metaso`, `moonshot`, `moonshot-cn`, `ollama`, `parallel`, `perplexity`, `querit`, `serpapi`, `serper`, `stepfun`, `tinyfish`, `zai`, `zhipu` (without the `magpie-websearch:` prefix).
+`metaso`, `moonshot`, `moonshot-cn`, `ollama`, `parallel`, `perplexity`, `querit`, `serpapi`, `serper`, `stepfun`, `tinyfish`, `zai`, `zai-coding`, `zhipu`, `zhipu-coding` (without the `magpie-websearch:` prefix).
 
 | Filters | APIs registered |
 |---|---|
-| Both omitted, or `{}` | All nineteen APIs |
+| Both omitted, or `{}` | All twenty-one APIs |
 | `"enable": ["linkup", "querit"]` | Linkup and Querit only |
 | `"disable": ["keenable"]` | All except Keenable |
 | `"enable": ["linkup", "querit"], "disable": ["querit"]` | Linkup only; `disable` wins |
@@ -915,7 +987,7 @@ To remove all saved plugin options, including provider overrides and filters:
 magpie plugin options magpie-websearch off
 ```
 
-All nineteen APIs are registered again. Provider settings use environment
+All twenty-one APIs are registered again. Provider settings use environment
 values when present, otherwise their defaults. To remove only the filters,
 save a complete options object containing the provider settings you want to keep.
 
@@ -969,8 +1041,10 @@ host `count` passthrough and explicit `resultLimit` caps, timeout, anonymous
 search, 429 cooldown and fallback against a local fake API.
 It covers Parallel and TinyFish MCP/REST, SerpApi, Perplexity, StepFun, Bocha, Ollama, Jina, Kagi, Serper, both Moonshot adapters, and Zhipu/Z.ai.
 Moonshot cases also check seconds/milliseconds reset headers, excessive resets
-and resting-key preference. Zhipu/Z.ai cases check Sogou count buckets, local caps,
-business errors, query length, key rotation and separate credentials on fallback.
+and resting-key preference. Zhipu/Z.ai REST cases check Sogou count buckets, local
+caps, business errors, query length, key rotation and separate credentials on
+fallback. Coding Plan cases cover both sites' complete MCP sessions, JSON/SSE,
+the total timeout, 401 rotation, 429 handling and no implicit REST downgrade.
 StepFun cases check category, full text, malformed results, Credit 429, 451 and key rotation.
 Perplexity cases check fast mode, filter parameters, errors, timeout, 429 Retry-After, key rotation and fallback dispatch.
 Bocha cases check snippet vs generated summary opt-in, freshness filters, business errors with code and log_id, malformed results and key rotation.
@@ -986,15 +1060,19 @@ the sandbox. CI runs separate jobs for Node 22/24, Bun, and Magpie testing of th
 unpacked npm package; the three jobs have no ordering dependency.
 
 Local verification on **2026-11-06** used **Node.js 24.19.0, Bun 1.4.4 and magpie
-0.1.3097**. Node and Bun each passed 305 tests across 22 test files, covering
-host `count` passthrough, explicit `resultLimit` caps and legacy-name migration.
-The complete Magpie sandbox checks passed, including host `count` passthrough,
-explicit `resultLimit` caps, and the Jina, Kagi and Serper cases.
+0.1.3141**. Node and Bun each passed 329 tests across 26 test files, covering
+host `count` passthrough, explicit `resultLimit` caps, legacy-name migration, and
+Coding Plan MCP lifecycle, JSON/SSE, schema-gated fields, timeout/cancellation,
+error redaction and site/cache isolation. Independent MCP reader and search
+extraction tests verify tool-level error separation, explicit aliases, decoding
+depth, empty-array priority and metadata preservation. The complete Magpie sandbox passed,
+including both MCP sites' key rotation, 429 handling, explicit fallback and the
+absence of implicit REST downgrade.
 Bun ran temporarily via `npm exec --yes --package=bun@1.4.4 -- bun run check:bun`,
 without adding a project dependency or lockfile. On Windows, `MAGPIE_BIN` can name
 the executable; otherwise the script uses `magpie` on PATH. These checks use
 local fake services and dummy keys, not live account search, quality or billing.
-Earlier **magpie 0.1.2911/0.1.2964/0.1.3026/0.1.3035/0.1.3041** records are historical and do
+Earlier **magpie 0.1.2911/0.1.2964/0.1.3026/0.1.3035/0.1.3041/0.1.3097** records are historical and do
 not establish minimum supported versions.
 
 Local folder installs use the folder name as the short name. Because the package is `@guotree/magpie-websearch` and the folder is `magpie-websearch`, both installs give the same `magpie-websearch:*` IDs.

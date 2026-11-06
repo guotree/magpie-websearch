@@ -23,9 +23,9 @@
 在 Magpie 桌面客户端中：前往 **设置 › 模型 › 网页搜索**（Settings › Models › Web search），添加你需要的搜索引擎，开启开关并调整优先级顺序。
 
 - 对于 AnySearch、Keenable、Parallel、TinyFish，留空 Key 即可使用匿名免 Key 搜索；填写 Key 则使用你的私人账户额度。
-- 对于 Bocha、Jina、Kagi、Linkup、Metaso、Moonshot、Moonshot CN、Ollama、Perplexity、Querit、SerpApi、Serper、StepFun、Z.ai、Zhipu，必须填写对应的 API Key。
+- 对于 Bocha、Jina、Kagi、Linkup、Metaso、Moonshot、Moonshot CN、Ollama、Perplexity、Querit、SerpApi、Serper、StepFun，以及 Z.ai／Zhipu 的标准 REST 与 Coding Plan MCP，必须填写对应产品的 Key。
 
-无需强制配置插件选项。在未配置过滤选项时，默认注册全部 19 个搜索 API，由 Magpie 的网页搜索设置界面决定启用哪些和使用顺序。
+无需强制配置插件选项。在未配置过滤选项时，默认注册全部 21 个搜索 API，由 Magpie 的网页搜索设置界面决定启用哪些和使用顺序。
 
 <a id="custom-base-url"></a>
 
@@ -96,6 +96,10 @@ magpie search add magpie-websearch:stepfun <china-key>
 # Zhipu 国内站、Z.ai 国际站：分别提供本站的 Standard API Key
 magpie search add magpie-websearch:zhipu <china-key>
 magpie search add magpie-websearch:zai <international-key>
+
+# Coding Plan MCP：必须使用对应站点的个人／团队 Coding Plan Key
+magpie search add magpie-websearch:zhipu-coding <china-coding-plan-key>
+magpie search add magpie-websearch:zai-coding <international-coding-plan-key>
 
 # 使用自定义端点代理
 magpie search add magpie-websearch:linkup <key> url=https://search.example.com/proxy/v1/search
@@ -246,12 +250,31 @@ Moonshot 提供国际站与国内站两个独立的 Basic 网页搜索服务：
 
 HTTP 拒绝保留数值 `status`、有界的上游诊断及校验后的标准 `Retry-After`（整数秒数或标准 HTTP 日期，包括 0）。429 可能表示限流、余额不足或额度耗尽，不能一概解释为并发上限；业务码 1701／1702／1703 分别指国内搜索并发达限／无可用引擎／无有效数据。Key 休眠、轮换和后备调度交给 Magpie，不增加插件内睡眠或自动重试。超时与宿主取消覆盖请求及正文读取，`timeout: 0` 仍保留 `ctx.abort`。
 
-首版只接入标准 REST。Coding Plan 的 `webSearchPrime` MCP 是另一个访问方式，凭证与计费不能与 REST 混用；两站当前套餐文档采用积分抵扣，不应沿用旧固定月次数或视为匿名免费搜索。协议说明见[国内 REST 参考](https://docs.bigmodel.cn/api-reference/工具-api/网络搜索)、[国内 MCP](https://docs.bigmodel.cn/cn/coding-plan/mcp/search-mcp-server)和[国际 MCP](https://docs.z.ai/devpack/mcp/search-mcp-server)。
+Coding Plan 搜索现作为两个独立 provider 接入，绝不与上述 REST 通道混用：
 
-本地验证使用 dummy Key 和模拟服务，覆盖两站请求、国内引擎差异、结果映射、数量及文本限制、缓存、异常响应、超时、429、Key 轮换与后备调度。尚未使用真实账户 Key 验证搜索成功、国际过滤效果、延迟、实际扣费、账户限流或检索质量。
+| 站点 | 适配器 ID | Streamable HTTP MCP 端点 | Key 类型 |
+|---|---|---|---|
+| 国内站 | `zhipu-coding` | `https://open.bigmodel.cn/api/mcp/web_search_prime/mcp` | 个人／团队 Coding Plan Key |
+| 国际站 | `zai-coding` | `https://api.z.ai/api/mcp/web_search_prime/mcp` | 个人／团队 Coding Plan Key |
+
+每次搜索建立独立 session，顺序为 `initialize` → `notifications/initialized` → `tools/list` → `tools/call` → 尽力 `DELETE`。初始化、发现和工具调用共享 `timeout` 的一次总预算（默认 25000 毫秒），不会每阶段重复获得完整超时；清理使用独立 1000 毫秒上限。`timeout: 0` 只关闭 provider deadline，仍保留宿主取消。请求支持 JSON 与 SSE，回传 `Mcp-Session-Id` 和协商后的 `MCP-Protocol-Version`，拒绝重定向；HTTP 拒绝正文不会写入错误，以防代理反射 Key 或 session ID。
+
+MCP 模块集中在 `src/mcp/`，按生命周期策略拆分：[stateless.mjs](../src/mcp/stateless.mjs) 直接调用工具，[session.mjs](../src/mcp/session.mjs) 管理初始化会话；两者平级并共同依赖 [response.mjs](../src/mcp/response.mjs) 解析 JSON／SSE、匹配 RPC ID 与校验 JSON-RPC。共享 reader 不解释工具结果，`isError` 由各自的 `tools/call` 边界校验。是否携带认证头与是否初始化会话是两个独立维度。
+
+搜索内容解析独立放在 [search-results.mjs](../src/mcp/search-results.mjs)，不依赖 HTTP 或 session。`mcp/stateless.mjs` 中的 `callMCPSearch()` 组合单次调用和这个解析器；Coding Plan provider 则在会话调用后直接使用解析器，并显式启用 `search_result` 别名、结构化字符串解码和最多三层 JSON 解码。默认策略保持 Parallel／TinyFish 的 `results` 与单层文本 JSON 规则。解析器保留 envelope 元数据，别名归一化为首选数组字段；URL 过滤、结果映射、文本截断和缓存仍由 provider 负责。
+
+工具名以每次 `tools/list` 为准，优先真实服务曾返回的 `web_search_prime`，兼容官方页面展示的 `webSearchPrime`。始终发送 `search_query`；仅当实时 `inputSchema.properties` 声明时发送 `count`、`search_recency_filter`、`search_domain_filter`、`content_size`。schema 缺少 `count` 时在本地截断；用户配置了不受当前 schema 支持的其他筛选项时，在 `tools/call` 前明确报错，不静默忽略。
+
+结果优先解析 `structuredContent`，再解析 `content[]` 的文本；允许顶层数组、`results`、`search_result` 及最多三层的字符串 JSON 解码。`link`／`url` 映射 URL，`content`／`snippet` 映射文本，`publish_date` 映射 `age`；先过滤无 URL 项再应用本地上限。合法空数组最多缓存 30 秒，非空但完全不可用或无法解析的 payload 报错且不缓存。
+
+Coding Plan Key 与 Standard API Key 不通用；国内／国际凭证、端点、工具发现和缓存完全隔离。MCP 失败不会自动调用按次计费 REST，也不会跨站重发。官方套餐文档使用共享 credits，实施时公布的 Web Search MCP 系数为每次 1.2 credits；它不是匿名或无限额度。官方 Remote MCP 页面说明可供兼容客户端使用，但未明确把 Magpie 列为官方支持客户端，因此当前标记为实验性，使用者应先确认最新 Usage Policy；本项目不声称获得官方 Magpie 支持。
+
+协议依据见[国内 REST 参考](https://docs.bigmodel.cn/api-reference/工具-api/网络搜索)、[国内 MCP](https://docs.bigmodel.cn/cn/coding-plan/mcp/search-mcp-server)、[国际 MCP](https://docs.z.ai/devpack/mcp/search-mcp-server)与 [MCP Streamable HTTP](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports)。
+
+本地验证使用 dummy Key 和模拟服务，覆盖 REST 两站请求、国内引擎差异，以及 Coding Plan 双站的完整 MCP 生命周期、JSON／SSE、结果映射、数量及文本限制、缓存、异常响应、超时、429、Key 轮换与显式后备调度。Magpie 0.1.3141 本地宿主验证不使用真实账户。尚未使用真实 Standard 或 Coding Plan Key 验证搜索成功、国际过滤效果、延迟、实际扣费、账户限流或检索质量。
 
 ```sh
-magpie plugin options magpie-websearch '{"zhipu":{"engine":"search_pro","contentSize":"high","resultLimit":6},"zai":{"resultLimit":6}}'
+magpie plugin options magpie-websearch '{"zhipu":{"engine":"search_pro","contentSize":"high","resultLimit":6},"zai":{"resultLimit":6},"zhipu-coding":{"resultLimit":6},"zai-coding":{"resultLimit":6}}'
 ```
 
 <a id="stepfun-search"></a>
@@ -547,6 +570,13 @@ magpie plugin options magpie-websearch '{"linkup":{"depth":"deep","resultLimit":
 | zai | `contentChars` | `ZAI_CONTENT_CHARS` | `4000` | 每条文本的 Unicode 码点上限；0 保留全部 |
 | zai | `recency` | `ZAI_RECENCY` | `noLimit` | `noLimit`、`oneDay`、`oneWeek`、`oneMonth`、`oneYear`；效果待实测 |
 | zai | `domainFilter` | `ZAI_DOMAIN_FILTER` | 留空 | 单个白名单域名；效果待实测 |
+| zai-coding | `cacheTTL` | `ZAI_CODING_CACHE_TTL` | `600000` | 缓存时间（毫秒），≥ 0 |
+| zai-coding | `timeout` | `ZAI_CODING_TIMEOUT` | `25000` | 完整 MCP 生命周期总超时；0 仅保留宿主取消 |
+| zai-coding | `resultLimit` | `ZAI_CODING_RESULT_LIMIT` | 未设置 | ≥ 1；schema 支持时上送 `count`，否则本地截断 |
+| zai-coding | `contentChars` | `ZAI_CODING_CONTENT_CHARS` | `4000` | 每条文本的 Unicode 码点上限；0 保留全部 |
+| zai-coding | `recency` | `ZAI_CODING_RECENCY` | `noLimit` | `noLimit` 或 `oneDay`／`oneWeek`／`oneMonth`／`oneYear`；取决于实时 schema |
+| zai-coding | `domainFilter` | `ZAI_CODING_DOMAIN_FILTER` | 留空 | 单个域名；仅 schema 支持时发送 |
+| zai-coding | `contentSize` | `ZAI_CODING_CONTENT_SIZE` | 留空 | 留空、`medium`、`high`；仅 schema 支持时发送 |
 | zhipu | `cacheTTL` | `ZHIPU_CACHE_TTL` | `600000` | 缓存时间（毫秒），≥ 0 |
 | zhipu | `timeout` | `ZHIPU_TIMEOUT` | `25000` | 超时时间（毫秒），≥ 0 |
 | zhipu | `resultLimit` | `ZHIPU_RESULT_LIMIT` | 未设置 | 1–50；显式本地上限；搜狗向上取档，夸克省略 count |
@@ -555,6 +585,13 @@ magpie plugin options magpie-websearch '{"linkup":{"depth":"deep","resultLimit":
 | zhipu | `domainFilter` | `ZHIPU_DOMAIN_FILTER` | 留空 | 单个白名单域名；夸克不支持 |
 | zhipu | `engine` | `ZHIPU_ENGINE` | `search_std` | `search_std`、`search_pro`、`search_pro_sogou`、`search_pro_quark` |
 | zhipu | `contentSize` | `ZHIPU_CONTENT_SIZE` | `medium` | `medium`、`high`；上游摘要长度 |
+| zhipu-coding | `cacheTTL` | `ZHIPU_CODING_CACHE_TTL` | `600000` | 缓存时间（毫秒），≥ 0 |
+| zhipu-coding | `timeout` | `ZHIPU_CODING_TIMEOUT` | `25000` | 完整 MCP 生命周期总超时；0 仅保留宿主取消 |
+| zhipu-coding | `resultLimit` | `ZHIPU_CODING_RESULT_LIMIT` | 未设置 | ≥ 1；schema 支持时上送 `count`，否则本地截断 |
+| zhipu-coding | `contentChars` | `ZHIPU_CODING_CONTENT_CHARS` | `4000` | 每条文本的 Unicode 码点上限；0 保留全部 |
+| zhipu-coding | `recency` | `ZHIPU_CODING_RECENCY` | `noLimit` | `noLimit` 或 `oneDay`／`oneWeek`／`oneMonth`／`oneYear`；取决于实时 schema |
+| zhipu-coding | `domainFilter` | `ZHIPU_CODING_DOMAIN_FILTER` | 留空 | 单个域名；仅 schema 支持时发送 |
+| zhipu-coding | `contentSize` | `ZHIPU_CODING_CONTENT_SIZE` | 留空 | 留空、`medium`、`high`；仅 schema 支持时发送 |
 
 表中的 `contentChars` 表示截断前保留的 Unicode 码点数，不是最终文本长度；截断时还会追加一个 `…`，因此实际长度可能多 1 个码点。
 
@@ -568,7 +605,7 @@ magpie plugin options magpie-websearch '{"linkup":{"depth":"deep","resultLimit":
 
 | 过滤器设置 | 实际向 Magpie 注册的 API |
 |---|---|
-| 省略未设，或 `{}` | 全部 19 个 API 均注册 |
+| 省略未设，或 `{}` | 全部 21 个 API 均注册 |
 | `"enable": ["linkup", "querit"]` | 仅注册 Linkup 与 Querit |
 | `"disable": ["keenable"]` | 注册除 Keenable 外的其余 API |
 | `"enable": ["linkup", "querit"], "disable": ["querit"]` | 仅注册 Linkup（`disable` 优先级高于 `enable`） |
@@ -591,7 +628,7 @@ magpie plugin options magpie-websearch '{"disable":["keenable"],"linkup":{"depth
 magpie plugin options magpie-websearch off
 ```
 
-全部 19 个 API 会重新注册。供应商配置优先取环境变量，否则使用默认值。若只想移除过滤器，请保存包含所有需要保留的供应商配置的完整选项对象。
+全部 21 个 API 会重新注册。供应商配置优先取环境变量，否则使用默认值。若只想移除过滤器，请保存包含所有需要保留的供应商配置的完整选项对象。
 
 <a id="development"></a>
 
@@ -612,10 +649,12 @@ npm run smoke:magpie # 在独立沙箱中启动真实 Magpie 进程进行完整�
 
 Magpie 通过其管理的 **Bun** 运行插件。基于 Node 的开发命令要求 **Node.js 20.3.0 或更新版本**，依赖 `AbortSignal.any` 组合超时和取消信号；`check:bun` 直接在 Bun 下运行。本插件使用 Magpie 的 `search` hook；`package.json` 中的 `opencode` 关键词用于 Magpie 的 npm 插件发现。
 
-`npm run smoke:magpie` 测试脚本要求环境变量 PATH 中存在 `magpie` 可执行文件（或通过 `MAGPIE_BIN` 指定）。脚本创建独立的沙箱配置环境、隔离账户发现、在随机回环端口启动网关，验证插件加载、注册过滤、自定义 URL、宿主 `count` 传递与显式 `resultLimit` 上限、超时中断、匿名 429 冷却与后备调度、Parallel 及 TinyFish 的 MCP／REST，以及 SerpApi、Perplexity、StepFun、Bocha、Ollama、Jina、Kagi、Serper、Moonshot 双站和 Zhipu／Z.ai 的带 Key 协议。Moonshot 用例覆盖秒／毫秒重置头、超限值忽略与 Key 休眠排序；Zhipu／Z.ai 用例覆盖搜狗档位、本地截断、业务错误、查询长度、Key 轮换和跨站后备凭证隔离；StepFun 用例覆盖分类、正文、异常结果、Credit 429、451 和 Key 轮换；Perplexity 用例覆盖 fast 模式、筛选参数、异常、超时、429 Retry-After、Key 轮换与后备调度；Bocha 用例覆盖普通摘要默认值、显式开启生成摘要与时效筛选、业务错误 code/msg/log_id、429 Retry-After 与健康 Key 轮换；Ollama 用例覆盖前缀码点截断、429 Retry-After 与顺序 Key 轮换；Jina 用例覆盖摘要／全文、正文截断与请求头切换；Kagi 用例覆盖 Lens 优先级、清空 Lens 后恢复时间筛选及地区过滤；Serper 用例覆盖固定 num、本地截取与 SerpApi 的端点／凭证隔离。三家新增适配器均覆盖空结果／畸形结果、超时、429 Retry-After、Linkup 后备，以及 429 和 401 正文中断后的 Key 轮换与健康 Key 优先。测试完成后自动清理沙箱，搜索请求只访问本地模拟服务并使用 dummy Key，不调用付费搜索；Magpie 自身启动时仍可能独立获取模型目录等公共资源。
+`npm run smoke:magpie` 测试脚本要求环境变量 PATH 中存在 `magpie` 可执行文件（或通过 `MAGPIE_BIN` 指定）。脚本创建独立的沙箱配置环境、隔离账户发现、在随机回环端口启动网关，验证插件加载、注册过滤、自定义 URL、宿主 `count` 传递与显式 `resultLimit` 上限、超时中断、匿名 429 冷却与后备调度、Parallel 及 TinyFish 的 MCP／REST，以及 SerpApi、Perplexity、StepFun、Bocha、Ollama、Jina、Kagi、Serper、Moonshot 双站和 Zhipu／Z.ai 的带 Key 协议。Moonshot 用例覆盖秒／毫秒重置头、超限值忽略与 Key 休眠排序；Zhipu／Z.ai REST 用例覆盖搜狗档位、本地截断、业务错误、查询长度、Key 轮换和跨站后备凭证隔离，Coding Plan 用例覆盖双站完整 MCP session、JSON／SSE、总超时、401 轮换、429 与不隐式降级 REST；StepFun 用例覆盖分类、正文、异常结果、Credit 429、451 和 Key 轮换；Perplexity 用例覆盖 fast 模式、筛选参数、异常、超时、429 Retry-After、Key 轮换与后备调度；Bocha 用例覆盖普通摘要默认值、显式开启生成摘要与时效筛选、业务错误 code/msg/log_id、429 Retry-After 与健康 Key 轮换；Ollama 用例覆盖前缀码点截断、429 Retry-After 与顺序 Key 轮换；Jina 用例覆盖摘要／全文、正文截断与请求头切换；Kagi 用例覆盖 Lens 优先级、清空 Lens 后恢复时间筛选及地区过滤；Serper 用例覆盖固定 num、本地截取与 SerpApi 的端点／凭证隔离。测试完成后自动清理沙箱，搜索请求只访问本地模拟服务并使用 dummy Key，不调用付费搜索；Magpie 自身启动时仍可能独立获取模型目录等公共资源。
 
 可用 `MAGPIE_PLUGIN_DIR` 指定解包后的 npm 插件目录，目录名应保持为 `magpie-websearch` 以维持 Vendor ID。`MAGPIE_SMOKE_ROOT` 可覆盖测试沙箱使用的系统临时目录。CI 分别运行 Node 22／24、Bun 检查和解包后的 npm 包 Magpie 验证，三个作业之间没有顺序依赖。
 
-2026-11-06 本地验证使用 **Node.js 24.19.0、Bun 1.4.4、magpie 0.1.3097**。Node 与 Bun 均通过 305 项测试（22 个测试文件），覆盖宿主 `count` 传递、显式 `resultLimit` 上限和旧名称迁移；完整 Magpie 沙箱验证通过，包括宿主 `count` 传递、显式 `resultLimit` 上限，以及 Jina、Kagi、Serper 用例。Bun 通过 `npm exec --yes --package=bun@1.4.4 -- bun run check:bun` 临时运行，不增加项目依赖或 lockfile。Windows 可通过 `MAGPIE_BIN` 指定实际的 Magpie 可执行文件；未设置时使用 PATH 中的 `magpie`。这些验证使用本地模拟服务与 dummy Key，不代表真实账户搜索、质量或计费验证。此前 **magpie 0.1.2911／0.1.2964／0.1.3026／0.1.3035／0.1.3041** 的记录属于历史验证；这些记录均不代表最低支持版本。
+2026-11-06 本地验证使用 **Node.js 24.19.0、Bun 1.4.4、magpie 0.1.3141**。Node 与 Bun 均通过 329 项测试（26 个测试文件），覆盖宿主 `count` 传递、显式 `resultLimit` 上限、旧名称迁移，以及 Coding Plan MCP 生命周期、JSON／SSE、schema 参数、超时取消、错误防泄漏与双站缓存隔离。共享 MCP reader 和搜索内容解析器分别有独立测试，验证协议层不解释工具级错误，以及解析层的字段别名、解码深度、空数组优先级和元数据保留。完整 Magpie 沙箱验证通过，包括双站 MCP Key 轮换、429、显式后备和无 REST 隐式降级。
+
+Bun 通过 `npm exec --yes --package=bun@1.4.4 -- bun run check:bun` 临时运行，不增加项目依赖或 lockfile。Windows 可通过 `MAGPIE_BIN` 指定实际的 Magpie 可执行文件；未设置时使用 PATH 中的 `magpie`。这些验证使用本地模拟服务与 dummy Key，不代表真实账户搜索、质量或计费验证。此前 **magpie 0.1.2911／0.1.2964／0.1.3026／0.1.3035／0.1.3041／0.1.3097** 的记录属于历史验证；这些记录均不代表最低支持版本。
 
 本地文件夹安装以文件夹名作为插件短名称。包名为 `@guotree/magpie-websearch`，文件夹名为 `magpie-websearch` 时，两种安装方式均使用 `magpie-websearch:*` ID。

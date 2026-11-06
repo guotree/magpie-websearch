@@ -8,7 +8,7 @@
 
 Additional web search APIs for [magpie](https://usemagpie.ai). Once installed, the APIs appear in **Settings › Models › Web search**, where Magpie manages keys, on/off switches and request order.
 
-Current providers: **AnySearch, Bocha, Jina, Kagi, Keenable, Linkup, Metaso, Moonshot, Moonshot CN, Ollama, Parallel, Perplexity, Querit, SerpApi, Serper, StepFun, TinyFish, Z.ai and Zhipu**. AnySearch, Keenable, Parallel and TinyFish support keyless anonymous access; the other fifteen require an API key.
+The plugin currently registers **21 search channels**: AnySearch, Bocha, Jina, Kagi, Keenable, Linkup, Metaso, Moonshot, Moonshot CN, Ollama, Parallel, Perplexity, Querit, SerpApi, Serper, StepFun, TinyFish, plus separate Standard REST and Coding Plan MCP channels for Z.ai and Zhipu. AnySearch, Keenable, Parallel and TinyFish support keyless anonymous access; the other seventeen require the key for their specific product.
 
 ## Install
 
@@ -35,7 +35,7 @@ magpie search add magpie-websearch:linkup <key>
 magpie search
 ```
 
-All nineteen APIs are registered by default without plugin options. Magpie's Web search settings determine which APIs are used.
+All twenty-one APIs are registered by default without plugin options. Magpie's Web search settings determine which APIs are used.
 
 Since Magpie v0.1.3062, agents can specify `count` when calling `web_search` (1–20, default 6). From the terminal:
 
@@ -77,7 +77,9 @@ Each command replaces the complete saved options object, so include every option
 | StepFun | `magpie-websearch:stepfun` | required | Standalone China REST search with scenario preferences and snippet/full text selection |
 | TinyFish | `magpie-websearch:tinyfish` | optional | Anonymous MCP or keyed REST; web, news and papers (papers require a key) |
 | Z.ai | `magpie-websearch:zai` | required | Standalone REST search on Zhipu's international site using `search-prime` |
+| Z.ai Coding Plan | `magpie-websearch:zai-coding` | required | International Coding Plan search over Streamable HTTP MCP; consumes shared plan credits |
 | Zhipu | `magpie-websearch:zhipu` | required | Standalone REST search on the China site with `search_std`/`search_pro`, Sogou and Quark engines |
+| Zhipu Coding Plan | `magpie-websearch:zhipu-coding` | required | China Coding Plan search over Streamable HTTP MCP; consumes shared plan credits |
 
 Search entries appear as `<Provider> (magpie-websearch)` in Magpie. Vendor IDs remain `magpie-websearch:<id>`; plugin options and registration filters use short IDs such as `linkup`. See [PROVIDERS.md](PROVIDERS.md) for full support status and the integration plan.
 
@@ -87,6 +89,9 @@ Search entries appear as `<Provider> (magpie-websearch)` in Magpie. Vendor IDs r
 - **Search parameters only**: Conversation history, system prompts, local files, tool outputs and agent context are never read or forwarded.
 - **Magpie manages credentials**: Keys are sent using each vendor's protocol. SerpApi errors omit original exceptions, response bodies and request URLs; other providers retain their own diagnostic handling. The plugin cannot control vendor or proxy access logs.
 - **No silent downgrade**: Failed keyed requests never downgrade to anonymous access.
+- **Strict channel isolation**: Coding Plan keys and Standard API keys are not interchangeable. MCP failures never fall back to metered REST, and requests never cross the China/international boundary.
+
+The two Coding Plan providers are currently experimental. The official pages describe a Remote MCP for compatible clients but do not list Magpie as an officially supported client. Confirm the Coding Plan usage policy and your account terms before use; this project does not claim official Zhipu or Z.ai support for Magpie.
 
 Leaving the key empty while editing an existing keyed entry keeps its saved key. See [Anonymous search and rate limits](docs/technical-reference.en.md#anonymous-search) for switching back to anonymous access and handling rate limits.
 

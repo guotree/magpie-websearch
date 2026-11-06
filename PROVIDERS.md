@@ -27,14 +27,16 @@ A model provider preset alone does not cover a vendor's standalone search API.
 | StepFun (magpie-websearch) | `magpie-websearch:stepfun` | [stepfun.mjs](src/providers/stepfun.mjs) | required |
 | TinyFish (magpie-websearch) | `magpie-websearch:tinyfish` | [tinyfish.mjs](src/providers/tinyfish.mjs) | optional |
 | Z.ai (magpie-websearch) | `magpie-websearch:zai` | [zai.mjs](src/providers/zai.mjs) | required |
+| Z.ai Coding Plan (magpie-websearch) | `magpie-websearch:zai-coding` | [zai-coding.mjs](src/providers/zai-coding.mjs) | required |
 | Zhipu (magpie-websearch) | `magpie-websearch:zhipu` | [zhipu.mjs](src/providers/zhipu.mjs) | required |
+| Zhipu Coding Plan (magpie-websearch) | `magpie-websearch:zhipu-coding` | [zhipu-coding.mjs](src/providers/zhipu-coding.mjs) | required |
 
 Every search definition's `name` must follow `<Provider> (magpie-websearch)`.
 This suffix identifies the plugin in magpie's GUI and CLI. Keep the short API ID
 and the namespaced vendor ID independent of the display name; suffix changes
 must not rename the IDs used by saved keys, switches, order or plugin options.
 
-All nineteen APIs are registered by default. `enable` and `disable` are optional
+All twenty-one APIs are registered by default. `enable` and `disable` are optional
 plugin options that filter this list by short ID (`linkup`, for example).
 `disable` takes precedence over `enable`; `enable: []` registers none, while
 `disable: []` excludes none. Provider settings such as `linkup.depth` do not
@@ -85,7 +87,7 @@ and other endpoints are independent of that cooldown. See
   primarily documents OAuth.
 - A single stateless `tools/call` works without `initialize`. Responses may be
   JSON or SSE. Its transport is implemented in
-  [mcp.mjs](src/mcp.mjs), not a general MCP client.
+  [mcp/stateless.mjs](src/mcp/stateless.mjs), not a general MCP client.
   Search JSON is extracted from `structuredContent.results` or
   JSON text in `content[]`; JSON-RPC and tool failures are errors, not empty hits.
   RPC codes do not become numeric HTTP statuses.
@@ -184,10 +186,60 @@ and other endpoints are independent of that cooldown. See
   to form the cache identity; no raw credential is stored in the cache key.
 - Published REST prices: domestic ¥0.01/0.03/0.05/0.05 per use respectively;
   international $0.01 per use. No promise of free empty or failed searches is made.
-  Coding Plan MCP is a separate access path and is not used by these adapters.
+  Coding Plan MCP is a separate access path and is never used by the `zhipu` or `zai`
+  REST adapters.
 - Dummy-key tests cover protocol behavior and host scheduling; successful searches,
   filter effects, billing, real account limits and quality with real keys remain
   unverified. See the [technical reference](docs/technical-reference.en.md#zhipu-search).
+
+### Zhipu and Z.ai Coding Plan MCP notes
+
+- MCP modules live in `src/mcp/` and are separated by responsibility:
+  [stateless.mjs](src/mcp/stateless.mjs) performs a direct tool call, while
+  [session.mjs](src/mcp/session.mjs) handles
+  initialization and a session lifecycle. Both depend on
+  [response.mjs](src/mcp/response.mjs) for JSON/SSE and JSON-RPC decoding;
+  neither calling strategy imports the other. Authentication is independent of
+  this split. Tool-level `isError` is checked at each tool-call boundary.
+- [search-results.mjs](src/mcp/search-results.mjs) extracts search payloads
+  independently of transport or session state. The stateless `callMCPSearch`
+  composes its tool call with this extractor; Coding Plan providers call the
+  extractor directly with `search_result` compatibility and up to three JSON
+  decoding layers. Default extraction keeps the original `results`/single-decode
+  policy for Parallel and TinyFish. It preserves envelope metadata and leaves
+  URL validation, row mapping, text limits and caches to providers.
+- `zhipu-coding` and `zai-coding` are separate required-key providers. They use the
+  official Streamable HTTP endpoints
+  `https://open.bigmodel.cn/api/mcp/web_search_prime/mcp` and
+  `https://api.z.ai/api/mcp/web_search_prime/mcp`. Coding Plan keys are not Standard
+  API keys, are never exchanged between sites, and never trigger a fallback to the
+  metered REST providers.
+- Each search creates one session: `initialize`, `notifications/initialized`,
+  `tools/list`, `tools/call`, then a best-effort `DELETE`. One 25-second default
+  budget covers initialization, discovery and the tool call; cleanup has a separate
+  one-second budget. Requests reject redirects and carry credentials only in the
+  Bearer header. HTTP refusal bodies are withheld so reflected keys or session IDs
+  cannot enter adapter errors.
+- The client negotiates known MCP protocol versions, supports JSON and SSE responses,
+  and discovers the tool from the live schema. It prefers `web_search_prime` while
+  accepting the documented `webSearchPrime` spelling. `count` and optional filters
+  are sent only when the current `inputSchema` advertises them. An explicitly
+  configured unsupported recency, domain or content-size filter fails before
+  `tools/call`; count still caps results locally when the schema omits it.
+- Results may be structured content or single/double-encoded JSON text containing a
+  top-level array, `results`, or `search_result`. Invalid URLs are removed before the
+  local cap. Valid empty results receive the normal short cache; malformed or wholly
+  unusable non-empty payloads are not cached.
+- Official plan documentation currently describes each Web Search MCP call as using
+  shared Coding Plan credits (the documented coefficient at implementation time is
+  1.2 credits per call). It is not anonymous or unlimited. Local fake-service and
+  Magpie 0.1.3141 host checks cover both endpoints, JSON/SSE, lifecycle cleanup,
+  count, timeout, HTTP refusal, key rotation and explicit provider fallback. No live
+  Coding Plan key or billing account has been used yet.
+- These two providers are experimental pending confirmation that Magpie use falls
+  within the current Coding Plan client policy. The official pages describe use by
+  compatible MCP clients but do not list Magpie as an officially supported client;
+  this project makes no such support claim.
 
 ### StepFun protocol notes
 

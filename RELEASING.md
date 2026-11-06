@@ -66,9 +66,15 @@ Before bumping the version:
   and remain independent of an anonymous cooldown.
 - For Parallel and TinyFish, check anonymous MCP JSON/SSE and keyed REST, complete custom
   endpoint URLs, local result caps, and mode/domain restrictions. Keep the shared MCP transport in
-  [src/mcp.mjs](src/mcp.mjs) included in the
+  [src/mcp/stateless.mjs](src/mcp/stateless.mjs) and shared
+  [src/mcp/response.mjs](src/mcp/response.mjs) included in the
   npm package. Distinguish live anonymous verification from local fake-service
   checks; do not claim a live keyed success or an anonymous quota without evidence.
+- Include [src/mcp/search-results.mjs](src/mcp/search-results.mjs) in the package.
+  Verify structured content takes precedence even for empty results, metadata is
+  preserved, and text parts are inspected in order. Keep alternate array keys and
+  additional JSON decoding layers explicit per caller; Coding Plan compatibility
+  must not broaden Parallel/TinyFish's default extraction policy.
 - For both Moonshot sites, check independent registration and credentials, Basic
   request limits, snippet/full-text mapping, seconds/milliseconds reset headers,
   excessive-reset omission, key rotation and explicit fallback. Keep both entry
@@ -80,6 +86,19 @@ Before bumping the version:
   response/business-error validation, key rotation and explicit cross-site fallback.
   Keep both entry modules and the shared factory in the package. Distinguish local
   dummy-key checks from real-key verification of result counts, filters and billing.
+- For `zhipu-coding` and `zai-coding`, verify the complete Streamable HTTP lifecycle
+  (`initialize`, initialized notification, `tools/list`, `tools/call`, `DELETE`),
+  JSON and SSE, negotiated protocol/session headers, the shared total timeout,
+  live-schema field gating, tool-name compatibility, result decoding and cache
+  isolation by site/key/endpoint/count/filter. Preserve HTTP 401/403/429 status and
+  validated `Retry-After` without exposing refusal bodies, credentials or session IDs.
+  Confirm failed MCP requests never call Standard REST or cross to the other site.
+  Keep [src/mcp/session.mjs](src/mcp/session.mjs), the shared response reader, both entry modules and the
+  Coding Plan shared factory in the package.
+- Treat Coding Plan support as experimental until Zhipu/Z.ai confirms that Magpie use
+  is permitted by the current client policy. Do not claim official Magpie support.
+  Record real-key verification separately for China and international accounts, and
+  verify shared-credit usage independently from Standard REST billing before release.
 - For StepFun China, check REST `query`/`n`/`category`, snippet/full-text fallback,
   Unicode text budgets, malformed/empty results, timeout and cancellation, Credit
   429 and moderation 451. Verify long errors retain `type`/`code`, withheld 402
