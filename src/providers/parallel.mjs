@@ -2,7 +2,7 @@ import {
   cacheKey, configCountPolicy, configInt, configStr, makeAnonymousCooldown, makeCache, normalizeQuery,
   page, requestJSON, resolveEndpoint, resolveResultCount, truncateCodePoints,
 } from "../core.mjs"
-import { callMCPSearch } from "../mcp.mjs"
+import { callMCPSearch } from "../mcp/stateless.mjs"
 
 function extractText(excerpts) {
   if (!Array.isArray(excerpts)) return ""

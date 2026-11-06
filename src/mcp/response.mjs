@@ -1,7 +1,6 @@
-// Shared stateless MCP transport and helpers: a single tools/call over HTTP
-// JSON or SSE, without a session handshake or client SDK. Used by search
-// providers that offer anonymous MCP access (Parallel, TinyFish, etc.).
-import { boundDetail, requestResponse } from "./core.mjs"
+// Shared JSON/SSE response decoding for both MCP calling strategies. This
+// module owns JSON-RPC framing only; callers interpret method-specific results.
+import { boundDetail } from "../core.mjs"
 
 const object = (value) => value !== null && typeof value === "object" && !Array.isArray(value)
 
@@ -13,13 +12,10 @@ function matching(message, id, label) {
     throw new Error(`${label} MCP error: ${boundDetail(message.error?.message ?? "unknown error")}`)
   }
   if (!object(message.result)) throw new Error(`Invalid ${label} MCP response: missing result`)
-  if (message.result.isError === true) {
-    throw new Error(`${label} MCP search tool failed`)
-  }
   return message.result
 }
 
-async function readResult(response, signal, id, label) {
+export async function readMCPResult(response, signal, id, label) {
   if (!response.body) throw new Error(`Invalid ${label} MCP response: missing body`)
   const sse = response.headers.get("Content-Type")?.toLowerCase().includes("text/event-stream")
   const reader = response.body.getReader()
@@ -78,36 +74,4 @@ async function readResult(response, signal, id, label) {
     cancel()
     reader.releaseLock()
   }
-}
-
-export async function callMCPTool(endpoint, name, args, ctx, options = {}) {
-  const { label = "search", headers = {} } = options
-  const id = 1
-  return requestResponse(endpoint, {
-    method: "POST",
-    headers: {
-      Accept: "application/json, text/event-stream", "Content-Type": "application/json",
-      ...headers,
-    },
-    body: JSON.stringify({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } }),
-  }, ctx, options, (response, signal) => readResult(response, signal, id, label))
-}
-
-export function extractMCPResults(result, label, key = "results") {
-  if (Array.isArray(result?.structuredContent?.[key])) return result.structuredContent
-  if (Array.isArray(result?.structuredContent) && key === "results") return { results: result.structuredContent }
-  for (const part of Array.isArray(result?.content) ? result.content : []) {
-    if (part?.type !== "text" || typeof part.text !== "string") continue
-    let json
-    try { json = JSON.parse(part.text) } catch { continue }
-    if (Array.isArray(json?.[key])) return json
-    if (Array.isArray(json) && key === "results") return { results: json }
-  }
-  throw new Error(`Invalid ${label} MCP search result: expected results array`)
-}
-
-export async function callMCPSearch(endpoint, name, args, ctx, options = {}) {
-  const { label = "search", timeout, headers, arrayKey = "results" } = options
-  const toolResult = await callMCPTool(endpoint, name, args, ctx, { label, timeout, headers })
-  return extractMCPResults(toolResult, label, arrayKey)
 }

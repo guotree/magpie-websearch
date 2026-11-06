@@ -62,7 +62,7 @@
     "icon": "https://raw.githubusercontent.com/guotree/magpie-websearch/main/assets/icon-128.png"
   },
   "scripts": {
-    "test": "node --test test/anysearch.test.mjs test/bocha.test.mjs test/jina.test.mjs test/kagi.test.mjs test/keenable.test.mjs test/linkup.test.mjs test/metaso.test.mjs test/moonshot.test.mjs test/ollama.test.mjs test/parallel.test.mjs test/perplexity.test.mjs test/querit.test.mjs test/serpapi.test.mjs test/serper.test.mjs test/stepfun.test.mjs test/tinyfish.test.mjs test/zhipu.test.mjs test/mcp.test.mjs test/index.test.mjs test/search-contract.test.mjs test/core.test.mjs test/anonymous.test.mjs",
+    "test": "node --test test/anysearch.test.mjs test/bocha.test.mjs test/jina.test.mjs test/kagi.test.mjs test/keenable.test.mjs test/linkup.test.mjs test/metaso.test.mjs test/moonshot.test.mjs test/ollama.test.mjs test/parallel.test.mjs test/perplexity.test.mjs test/querit.test.mjs test/serpapi.test.mjs test/serper.test.mjs test/stepfun.test.mjs test/tinyfish.test.mjs test/zhipu.test.mjs test/mcp-response.test.mjs test/mcp-search-results.test.mjs test/mcp-stateless.test.mjs test/index.test.mjs test/search-contract.test.mjs test/core.test.mjs test/anonymous.test.mjs",
     "check": "node scripts/check.mjs && npm test",
     "check:bun": "bun scripts/check.mjs && bun test ./test/*.test.mjs",
     "smoke:magpie": "node scripts/smoke-magpie.mjs"

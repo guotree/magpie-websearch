@@ -2,7 +2,7 @@ import {
   cacheKey, configCountPolicy, configInt, configStr, makeAnonymousCooldown, makeCache, normalizeQuery,
   page, requestJSON, resolveEndpoint, resolveResultCount,
 } from "../core.mjs"
-import { callMCPSearch } from "../mcp.mjs"
+import { callMCPSearch } from "../mcp/stateless.mjs"
 
 export function createTinyfish(options = {}) {
   const ttl = configInt(options, "cacheTTL", "TINYFISH_CACHE_TTL", 600_000)

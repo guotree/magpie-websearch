@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { callMCPSearch, callMCPTool, extractMCPResults } from "../src/mcp.mjs"
+import { callMCPSearch, callMCPTool } from "../src/mcp/stateless.mjs"
 import { TINYFISH_MCP_RESPONSE } from "./cases.mjs"
 import { context, json, stubFetch, text } from "./harness.mjs"
 
@@ -13,7 +13,7 @@ function stream(chunks, onCancel = () => {}) {
   }), { headers: { "Content-Type": "text/event-stream; charset=utf-8" } })
 }
 
-test("mcp: reads a JSON response and rejects RPC/tool errors without inventing HTTP status", async () => {
+test("stateless MCP: reads a JSON response and rejects RPC/tool errors without inventing HTTP status", async () => {
   let response = TINYFISH_MCP_RESPONSE
   const fake = stubFetch(() => json(response))
   try {
@@ -36,7 +36,7 @@ test("mcp: reads a JSON response and rejects RPC/tool errors without inventing H
   } finally { fake.restore() }
 })
 
-test("mcp: parses chunked UTF-8 SSE, CRLF/LF/CR, multiline data and ignores notifications", async () => {
+test("stateless MCP: parses chunked UTF-8 SSE, CRLF/LF/CR, multiline data and ignores notifications", async () => {
   const result = { structuredContent: { results: [{ title: "中文🐟", url: "https://example.com" }] } }
   for (const newline of ["\r\n", "\n", "\r"]) {
     const wire = [
@@ -56,7 +56,7 @@ test("mcp: parses chunked UTF-8 SSE, CRLF/LF/CR, multiline data and ignores noti
   }
 })
 
-test("mcp: malformed JSON, incomplete SSE and streams without a matching response fail", async () => {
+test("stateless MCP: malformed JSON, incomplete SSE and streams without a matching response fail", async () => {
   for (const raw of [
     "data: nope\n\n", 'data: {"jsonrpc":"2.0","id":1,"result":{}}',
     'data: {"jsonrpc":"2.0","id":2,"result":{}}\n\n', "data: [DONE]\n\n",
@@ -68,7 +68,7 @@ test("mcp: malformed JSON, incomplete SSE and streams without a matching respons
   try { await assert.rejects(call(), /malformed JSON/) } finally { fake.restore() }
 })
 
-test("mcp: the deadline and host cancellation cover stalled JSON and SSE bodies", async () => {
+test("stateless MCP: the deadline and host cancellation cover stalled JSON and SSE bodies", async () => {
   const keepAlive = setInterval(() => {}, 1000)
   try {
     for (const type of ["application/json", "text/event-stream"]) {
@@ -86,41 +86,16 @@ test("mcp: the deadline and host cancellation cover stalled JSON and SSE bodies"
   } finally { clearInterval(keepAlive) }
 })
 
-test("extractMCPResults: unpacks structuredContent or content text JSON, and supports custom keys", () => {
-  const hit = { title: "Hit", url: "https://example.com" }
-  // structuredContent with results array
-  assert.deepEqual(extractMCPResults({ structuredContent: { results: [hit] } }, "test"), { results: [hit] })
-  // structuredContent as top-level array
-  assert.deepEqual(extractMCPResults({ structuredContent: [hit] }, "test"), { results: [hit] })
-  // content text with JSON
-  assert.deepEqual(extractMCPResults({ content: [{ type: "text", text: JSON.stringify({ results: [hit] }) }] }, "test"), { results: [hit] })
-  // content text with progress part before JSON
-  assert.deepEqual(extractMCPResults({
-    content: [{ type: "text", text: "working..." }, { type: "text", text: JSON.stringify({ results: [hit] }) }],
-  }, "test"), { results: [hit] })
-  // custom array key
-  assert.deepEqual(extractMCPResults({ structuredContent: { items: [hit] } }, "test", "items"), { items: [hit] })
-  // malformed payloads throw with expected results array
-  for (const bad of [
-    {},
-    { structuredContent: {} },
-    { structuredContent: { results: "not-array" } },
-    { content: [{ type: "text", text: "invalid-json" }] },
-    { content: [{ type: "image", data: "..." }] },
-  ]) {
-    assert.throws(() => extractMCPResults(bad, "provider-x"), (err) => {
-      assert.match(err.message, /Invalid provider-x MCP search result: expected results array/)
-      return true
-    })
-  }
-})
-
 test("callMCPSearch: composes tool call and result extraction", async () => {
   const hit = { title: "Hit", url: "https://example.com" }
-  const fake = stubFetch(() => json({ jsonrpc: "2.0", id: 1, result: { structuredContent: { results: [hit] } } }))
+  let payload
+  const fake = stubFetch(() => json({ jsonrpc: "2.0", id: 1, result: { structuredContent: payload } }))
   try {
-    const data = await callMCPSearch("https://example.com/mcp", "search", { q: "test" }, context(), { label: "TestMCP", timeout: 1000 })
-    assert.deepEqual(data, { results: [hit] })
-    assert.equal(fake.calls[0].url, "https://example.com/mcp")
+    for (const arrayKey of ["results", "items"]) {
+      payload = { [arrayKey]: [hit], total: 1 }
+      const data = await callMCPSearch("https://example.com/mcp", "search", { q: "test" }, context(), { label: "TestMCP", timeout: 1000, arrayKey })
+      assert.deepEqual(data, payload)
+      assert.equal(fake.calls.at(-1).url, "https://example.com/mcp")
+    }
   } finally { fake.restore() }
 })
