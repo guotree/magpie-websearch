@@ -1,5 +1,9 @@
 # magpie-websearch
 
+<p align="center">
+  <img src="assets/magpie-websearch-hero.png" alt="magpie-websearch — One plugin. Many sources." width="100%">
+</p>
+
 [中文说明](README.md) | [English](README.en.md)
 
 Additional web search APIs for [magpie](https://usemagpie.ai). Once installed, the APIs appear in **Settings › Models › Web search**, where Magpie manages keys, on/off switches and request order.

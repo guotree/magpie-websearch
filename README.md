@@ -1,5 +1,9 @@
 # magpie-websearch
 
+<p align="center">
+  <img src="assets/magpie-websearch-hero.png" alt="magpie-websearch — One plugin. Many sources." width="100%">
+</p>
+
 [中文说明](README.md) | [English](README.en.md)
 
 为 [magpie](https://usemagpie.ai) 增加的第三方多源网页搜索 API 插件。安装后，这些 API 会出现在 **设置 › 模型 › 网页搜索** 中，由 Magpie 统一管理密钥、启用开关与请求顺序。
