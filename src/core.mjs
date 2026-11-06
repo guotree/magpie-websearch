@@ -281,15 +281,16 @@ function discardBody(response) {
 export async function requestResponse(input, init, ctx, options = {}, read) {
   const {
     label = "search", timeout = 25_000, messages = {}, sensitive = false,
-    retryAfterFromResponse, errorDetailFromBody,
+    withholdErrorBody = false, retryAfterFromResponse, errorDetailFromBody,
   } = options
   const signal = signalFor(ctx, timeout)
+  const protectedError = sensitive || withholdErrorBody
 
   const extractRetry = (res) => {
     if (typeof retryAfterFromResponse === "function") {
       return retryAfterFromResponse(res)
     }
-    return sensitive ? cleanRetryAfter(res.headers.get("Retry-After")) : res.headers.get("Retry-After")
+    return protectedError ? cleanRetryAfter(res.headers.get("Retry-After")) : res.headers.get("Retry-After")
   }
 
   let response
@@ -309,7 +310,7 @@ export async function requestResponse(input, init, ctx, options = {}, read) {
     throw new Error(`${label} search cancelled`)
   }
 
-  if (!response.ok && sensitive) {
+  if (!response.ok && protectedError) {
     // Cleanup must not delay a known refusal, even if a transport's cancel
     // promise never settles. Handle rejection without retaining its details.
     discardBody(response)
