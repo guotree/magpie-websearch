@@ -397,11 +397,12 @@ with the REST channels:
 | China | `zhipu-coding` | `https://open.bigmodel.cn/api/mcp/web_search_prime/mcp` | Individual/team Coding Plan key |
 | International | `zai-coding` | `https://api.z.ai/api/mcp/web_search_prime/mcp` | Individual/team Coding Plan key |
 
-Every search creates one session: `initialize`, `notifications/initialized`,
+Each result-cache miss creates one session: `initialize`, `notifications/initialized`,
 `tools/list`, `tools/call`, and a best-effort `DELETE`. Initialization, discovery,
 and the tool call share one `timeout` budget (25,000 ms by default); cleanup has a
-separate 1,000 ms budget. `timeout: 0` removes only the provider deadline and still
-honors host cancellation. The client accepts JSON and SSE, returns the session and
+separate 1,000 ms budget outside that timeout. Cache hits return results without a
+session. `timeout: 0` removes only the main-call deadline, still honors host
+cancellation, and leaves the cleanup timeout in place. The client accepts JSON and SSE, returns the session and
 negotiated protocol headers, and rejects redirects. HTTP refusal bodies are withheld
 so a proxy cannot reflect a key or session ID into adapter errors.
 
@@ -413,6 +414,11 @@ for JSON/SSE decoding, RPC ID matching and JSON-RPC validation. The shared reade
 does not interpret tool results; each `tools/call` boundary checks `isError`.
 Authentication headers and session initialization are independent choices.
 
+The entry point is `callSessionMCPTool()`, which discovers and
+selects a tool using caller-supplied names. `clientInfo.name` is `magpie-websearch`;
+`clientInfo.version` is read once at module load through `createRequire()` from
+the package-root `package.json`.
+
 [search-results.mjs](../src/mcp/search-results.mjs) extracts search content
 independently of HTTP or session state. The stateless `callMCPSearch()` combines
 a direct tool call with this extractor. Coding Plan providers use it after the
@@ -422,18 +428,28 @@ decoding and up to three JSON decoding layers. Defaults retain Parallel/TinyFish
 metadata and normalizes aliases to the preferred array field. Providers still
 own URL filtering, row mapping, text limits and caching.
 
-The live `tools/list` response controls discovery. The adapter prefers the observed
-`web_search_prime` name and accepts the documented `webSearchPrime` spelling. It
+Each result-cache miss runs `tools/list` again. The adapter prefers the reported
+`web_search_prime` name and accepts the documented `webSearchPrime` spelling;
+this project has not confirmed the live tool name using a real Coding Plan key. It
 always sends `search_query`; `count`, recency, domain, and content-size fields are
 sent only when present in the current `inputSchema.properties`. Missing `count`
 falls back to local truncation. An explicitly configured unsupported filter fails
-before `tools/call` instead of being silently ignored.
+before `tools/call` instead of being silently ignored. This tests property
+presence rather than performing full JSON Schema validation; constraints such as
+`maxLength`, `minimum` and `maximum` remain subject to server-side validation.
 
 Results may come from `structuredContent` or text content containing a top-level
 array, `results`, or `search_result`, including up to three JSON string-decode
-layers. `link`/`url`, `content`/`snippet`, and `publish_date` map to Magpie fields.
-Rows without URLs are removed before the local cap. Valid empty arrays receive the
+layers. `link ?? url` must be a nonblank string and is trimmed without syntax,
+protocol or reachability validation. A non-null `link` takes precedence even if
+unusable. String `content` is preferred, otherwise string `snippet`; `publish_date`
+maps to `age`. Rows without usable URLs are removed before the local cap. Valid empty arrays receive the
 short empty-result cache; malformed or wholly unusable nonempty payloads do not.
+
+Each provider instance also keeps up to 200 tool-discovery metadata entries,
+isolated by a hash of site, endpoint and key, solely to reconstruct result-cache
+identities. This does not retain or reuse network sessions; cache misses still
+discover the tool again.
 
 Coding Plan and Standard API keys are not interchangeable. China/international
 credentials, endpoints, discovery metadata, and caches are isolated. An MCP failure
@@ -918,7 +934,7 @@ The table lists fields inside each provider's object (`linkup.depth`, for exampl
 | zai | `recency` | `ZAI_RECENCY` | `noLimit` | `noLimit`, `oneDay`, `oneWeek`, `oneMonth`, `oneYear`; effects unverified |
 | zai | `domainFilter` | `ZAI_DOMAIN_FILTER` | empty | Single whitelist domain; effects unverified |
 | zai-coding | `cacheTTL` | `ZAI_CODING_CACHE_TTL` | `600000` | ≥ 0; milliseconds |
-| zai-coding | `timeout` | `ZAI_CODING_TIMEOUT` | `25000` | Total MCP lifecycle timeout; 0 keeps host cancellation only |
+| zai-coding | `timeout` | `ZAI_CODING_TIMEOUT` | `25000` | Initialization through tool result; 0 preserves host cancellation; DELETE has a separate 1000ms cap |
 | zai-coding | `resultLimit` | `ZAI_CODING_RESULT_LIMIT` | unset | ≥ 1; sends `count` when supported, otherwise caps locally |
 | zai-coding | `contentChars` | `ZAI_CODING_CONTENT_CHARS` | `4000` | Code points per text; 0 keeps all |
 | zai-coding | `recency` | `ZAI_CODING_RECENCY` | `noLimit` | `noLimit`, `oneDay`, `oneWeek`, `oneMonth`, `oneYear`; live-schema dependent |
@@ -933,7 +949,7 @@ The table lists fields inside each provider's object (`linkup.depth`, for exampl
 | zhipu | `engine` | `ZHIPU_ENGINE` | `search_std` | `search_std`, `search_pro`, `search_pro_sogou`, `search_pro_quark` |
 | zhipu | `contentSize` | `ZHIPU_CONTENT_SIZE` | `medium` | `medium`, `high`; upstream excerpt size |
 | zhipu-coding | `cacheTTL` | `ZHIPU_CODING_CACHE_TTL` | `600000` | ≥ 0; milliseconds |
-| zhipu-coding | `timeout` | `ZHIPU_CODING_TIMEOUT` | `25000` | Total MCP lifecycle timeout; 0 keeps host cancellation only |
+| zhipu-coding | `timeout` | `ZHIPU_CODING_TIMEOUT` | `25000` | Initialization through tool result; 0 preserves host cancellation; DELETE has a separate 1000ms cap |
 | zhipu-coding | `resultLimit` | `ZHIPU_CODING_RESULT_LIMIT` | unset | ≥ 1; sends `count` when supported, otherwise caps locally |
 | zhipu-coding | `contentChars` | `ZHIPU_CODING_CONTENT_CHARS` | `4000` | Code points per text; 0 keeps all |
 | zhipu-coding | `recency` | `ZHIPU_CODING_RECENCY` | `noLimit` | `noLimit`, `oneDay`, `oneWeek`, `oneMonth`, `oneYear`; live-schema dependent |
@@ -1059,7 +1075,7 @@ IDs). `MAGPIE_SMOKE_ROOT` can override the system temporary directory used for
 the sandbox. CI runs separate jobs for Node 22/24, Bun, and Magpie testing of the
 unpacked npm package; the three jobs have no ordering dependency.
 
-Local verification on **2026-11-06** used **Node.js 24.19.0, Bun 1.4.4 and magpie
+Local verification through **2026-11-07** used **Node.js 24.19.0, Bun 1.4.4 and magpie
 0.1.3141**. Node and Bun each passed 329 tests across 26 test files, covering
 host `count` passthrough, explicit `resultLimit` caps, legacy-name migration, and
 Coding Plan MCP lifecycle, JSON/SSE, schema-gated fields, timeout/cancellation,
@@ -1068,6 +1084,7 @@ extraction tests verify tool-level error separation, explicit aliases, decoding
 depth, empty-array priority and metadata preservation. The complete Magpie sandbox passed,
 including both MCP sites' key rotation, 429 handling, explicit fallback and the
 absence of implicit REST downgrade.
+
 Bun ran temporarily via `npm exec --yes --package=bun@1.4.4 -- bun run check:bun`,
 without adding a project dependency or lockfile. On Windows, `MAGPIE_BIN` can name
 the executable; otherwise the script uses `magpie` on PATH. These checks use

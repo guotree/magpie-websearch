@@ -257,15 +257,19 @@ Coding Plan 搜索现作为两个独立 provider 接入，绝不与上述 REST �
 | 国内站 | `zhipu-coding` | `https://open.bigmodel.cn/api/mcp/web_search_prime/mcp` | 个人／团队 Coding Plan Key |
 | 国际站 | `zai-coding` | `https://api.z.ai/api/mcp/web_search_prime/mcp` | 个人／团队 Coding Plan Key |
 
-每次搜索建立独立 session，顺序为 `initialize` → `notifications/initialized` → `tools/list` → `tools/call` → 尽力 `DELETE`。初始化、发现和工具调用共享 `timeout` 的一次总预算（默认 25000 毫秒），不会每阶段重复获得完整超时；清理使用独立 1000 毫秒上限。`timeout: 0` 只关闭 provider deadline，仍保留宿主取消。请求支持 JSON 与 SSE，回传 `Mcp-Session-Id` 和协商后的 `MCP-Protocol-Version`，拒绝重定向；HTTP 拒绝正文不会写入错误，以防代理反射 Key 或 session ID。
+结果缓存未命中时建立独立 session，顺序为 `initialize` → `notifications/initialized` → `tools/list` → `tools/call` → 尽力 `DELETE`；缓存命中直接返回结果。初始化、发现和工具调用共享 `timeout` 的一次总预算（默认 25000 毫秒），不会每阶段重复获得完整超时；DELETE 清理在该预算之外，使用独立 1000 毫秒上限。`timeout: 0` 只关闭主调用的 provider deadline，仍保留宿主取消，DELETE 仍有自身超时。请求支持 JSON 与 SSE，回传 `Mcp-Session-Id` 和协商后的 `MCP-Protocol-Version`，拒绝重定向；HTTP 拒绝正文不会写入错误，以防代理反射 Key 或 session ID。
 
 MCP 模块集中在 `src/mcp/`，按生命周期策略拆分：[stateless.mjs](../src/mcp/stateless.mjs) 直接调用工具，[session.mjs](../src/mcp/session.mjs) 管理初始化会话；两者平级并共同依赖 [response.mjs](../src/mcp/response.mjs) 解析 JSON／SSE、匹配 RPC ID 与校验 JSON-RPC。共享 reader 不解释工具结果，`isError` 由各自的 `tools/call` 边界校验。是否携带认证头与是否初始化会话是两个独立维度。
 
+会话入口为 `callSessionMCPTool()`，按调用方给出的工具名列表执行发现与选择。`clientInfo.name` 固定为 `magpie-websearch`，`clientInfo.version` 在模块加载时通过 `createRequire()` 从包根目录 `package.json` 读取。
+
 搜索内容解析独立放在 [search-results.mjs](../src/mcp/search-results.mjs)，不依赖 HTTP 或 session。`mcp/stateless.mjs` 中的 `callMCPSearch()` 组合单次调用和这个解析器；Coding Plan provider 则在会话调用后直接使用解析器，并显式启用 `search_result` 别名、结构化字符串解码和最多三层 JSON 解码。默认策略保持 Parallel／TinyFish 的 `results` 与单层文本 JSON 规则。解析器保留 envelope 元数据，别名归一化为首选数组字段；URL 过滤、结果映射、文本截断和缓存仍由 provider 负责。
 
-工具名以每次 `tools/list` 为准，优先真实服务曾返回的 `web_search_prime`，兼容官方页面展示的 `webSearchPrime`。始终发送 `search_query`；仅当实时 `inputSchema.properties` 声明时发送 `count`、`search_recency_filter`、`search_domain_filter`、`content_size`。schema 缺少 `count` 时在本地截断；用户配置了不受当前 schema 支持的其他筛选项时，在 `tools/call` 前明确报错，不静默忽略。
+每次结果缓存未命中都会重新执行 `tools/list`，优先 `web_search_prime`，兼容官方页面展示的 `webSearchPrime`；前者来自服务返回名称的报告，当前项目尚未用真实 Coding Plan Key 确认。始终发送 `search_query`；仅当本次 `inputSchema.properties` 声明时发送 `count`、`search_recency_filter`、`search_domain_filter`、`content_size`。schema 缺少 `count` 时在本地截断；已配置非默认筛选值但 schema 未声明对应字段时，在 `tools/call` 前明确报错，不静默忽略。这里按属性存在与否选择参数，不是完整 JSON Schema 验证：不在本地执行 `maxLength`、`minimum`／`maximum` 等约束，由服务端校验。
 
-结果优先解析 `structuredContent`，再解析 `content[]` 的文本；允许顶层数组、`results`、`search_result` 及最多三层的字符串 JSON 解码。`link`／`url` 映射 URL，`content`／`snippet` 映射文本，`publish_date` 映射 `age`；先过滤无 URL 项再应用本地上限。合法空数组最多缓存 30 秒，非空但完全不可用或无法解析的 payload 报错且不缓存。
+结果优先解析 `structuredContent`，再解析 `content[]` 的文本；允许顶层数组、`results`、`search_result` 及最多三层的字符串 JSON 解码。`link ?? url` 须为非空白字符串，trim 后作为 URL；不额外校验语法、协议或可访问性，存在非 null 的 `link` 时不会因其不可用而改取 `url`。文本优先取字符串 `content`，否则取字符串 `snippet`；`publish_date` 映射 `age`。先过滤无可用 URL 项再应用本地上限。合法空数组最多缓存 30 秒，非空但完全不可用或无法解析的 payload 报错且不缓存。
+
+每个 provider 实例另有最多 200 项的工具发现元数据缓存，按站点、端点和 Key 的哈希隔离，仅用于重建结果缓存 identity；它不保存或复用网络 session，结果缓存未命中仍会重新发现工具。
 
 Coding Plan Key 与 Standard API Key 不通用；国内／国际凭证、端点、工具发现和缓存完全隔离。MCP 失败不会自动调用按次计费 REST，也不会跨站重发。官方套餐文档使用共享 credits，实施时公布的 Web Search MCP 系数为每次 1.2 credits；它不是匿名或无限额度。官方 Remote MCP 页面说明可供兼容客户端使用，但未明确把 Magpie 列为官方支持客户端，因此当前标记为实验性，使用者应先确认最新 Usage Policy；本项目不声称获得官方 Magpie 支持。
 
@@ -571,7 +575,7 @@ magpie plugin options magpie-websearch '{"linkup":{"depth":"deep","resultLimit":
 | zai | `recency` | `ZAI_RECENCY` | `noLimit` | `noLimit`、`oneDay`、`oneWeek`、`oneMonth`、`oneYear`；效果待实测 |
 | zai | `domainFilter` | `ZAI_DOMAIN_FILTER` | 留空 | 单个白名单域名；效果待实测 |
 | zai-coding | `cacheTTL` | `ZAI_CODING_CACHE_TTL` | `600000` | 缓存时间（毫秒），≥ 0 |
-| zai-coding | `timeout` | `ZAI_CODING_TIMEOUT` | `25000` | 完整 MCP 生命周期总超时；0 仅保留宿主取消 |
+| zai-coding | `timeout` | `ZAI_CODING_TIMEOUT` | `25000` | 初始化至工具返回的总超时；0 保留宿主取消；DELETE 另有 1000ms 上限 |
 | zai-coding | `resultLimit` | `ZAI_CODING_RESULT_LIMIT` | 未设置 | ≥ 1；schema 支持时上送 `count`，否则本地截断 |
 | zai-coding | `contentChars` | `ZAI_CODING_CONTENT_CHARS` | `4000` | 每条文本的 Unicode 码点上限；0 保留全部 |
 | zai-coding | `recency` | `ZAI_CODING_RECENCY` | `noLimit` | `noLimit` 或 `oneDay`／`oneWeek`／`oneMonth`／`oneYear`；取决于实时 schema |
@@ -586,7 +590,7 @@ magpie plugin options magpie-websearch '{"linkup":{"depth":"deep","resultLimit":
 | zhipu | `engine` | `ZHIPU_ENGINE` | `search_std` | `search_std`、`search_pro`、`search_pro_sogou`、`search_pro_quark` |
 | zhipu | `contentSize` | `ZHIPU_CONTENT_SIZE` | `medium` | `medium`、`high`；上游摘要长度 |
 | zhipu-coding | `cacheTTL` | `ZHIPU_CODING_CACHE_TTL` | `600000` | 缓存时间（毫秒），≥ 0 |
-| zhipu-coding | `timeout` | `ZHIPU_CODING_TIMEOUT` | `25000` | 完整 MCP 生命周期总超时；0 仅保留宿主取消 |
+| zhipu-coding | `timeout` | `ZHIPU_CODING_TIMEOUT` | `25000` | 初始化至工具返回的总超时；0 保留宿主取消；DELETE 另有 1000ms 上限 |
 | zhipu-coding | `resultLimit` | `ZHIPU_CODING_RESULT_LIMIT` | 未设置 | ≥ 1；schema 支持时上送 `count`，否则本地截断 |
 | zhipu-coding | `contentChars` | `ZHIPU_CODING_CONTENT_CHARS` | `4000` | 每条文本的 Unicode 码点上限；0 保留全部 |
 | zhipu-coding | `recency` | `ZHIPU_CODING_RECENCY` | `noLimit` | `noLimit` 或 `oneDay`／`oneWeek`／`oneMonth`／`oneYear`；取决于实时 schema |
@@ -643,7 +647,7 @@ magpie plugin options magpie-websearch off
 ```sh
 npm test          # node:test 单元测试（无依赖）
 npm run check     # 校验 search hook 契约并运行单元测试
-npm run check:bun # 在 Bun 下运行相同检查与测试（需单独安装 Bun）
+npm run check:bun # 在 Bun 下运行相同检查与测试（PATH 中需有 Bun；临时运行方法见下文）
 npm run smoke:magpie # 在独立沙箱中启动真实 Magpie 进程进行完整烟雾测试
 ```
 
@@ -653,7 +657,7 @@ Magpie 通过其管理的 **Bun** 运行插件。基于 Node 的开发命令要�
 
 可用 `MAGPIE_PLUGIN_DIR` 指定解包后的 npm 插件目录，目录名应保持为 `magpie-websearch` 以维持 Vendor ID。`MAGPIE_SMOKE_ROOT` 可覆盖测试沙箱使用的系统临时目录。CI 分别运行 Node 22／24、Bun 检查和解包后的 npm 包 Magpie 验证，三个作业之间没有顺序依赖。
 
-2026-11-06 本地验证使用 **Node.js 24.19.0、Bun 1.4.4、magpie 0.1.3141**。Node 与 Bun 均通过 329 项测试（26 个测试文件），覆盖宿主 `count` 传递、显式 `resultLimit` 上限、旧名称迁移，以及 Coding Plan MCP 生命周期、JSON／SSE、schema 参数、超时取消、错误防泄漏与双站缓存隔离。共享 MCP reader 和搜索内容解析器分别有独立测试，验证协议层不解释工具级错误，以及解析层的字段别名、解码深度、空数组优先级和元数据保留。完整 Magpie 沙箱验证通过，包括双站 MCP Key 轮换、429、显式后备和无 REST 隐式降级。
+截至 2026-11-07，本地验证使用 **Node.js 24.19.0、Bun 1.4.4、magpie 0.1.3141**。Node 与 Bun 均通过 329 项测试（26 个测试文件），覆盖宿主 `count` 传递、显式 `resultLimit` 上限、旧名称迁移，以及 Coding Plan MCP 生命周期、JSON／SSE、schema 参数、超时取消、错误防泄漏与双站缓存隔离。共享 MCP reader 和搜索内容解析器分别有独立测试，验证协议层不解释工具级错误，以及解析层的字段别名、解码深度、空数组优先级和元数据保留。完整 Magpie 沙箱验证通过，包括双站 MCP Key 轮换、429、显式后备和无 REST 隐式降级。
 
 Bun 通过 `npm exec --yes --package=bun@1.4.4 -- bun run check:bun` 临时运行，不增加项目依赖或 lockfile。Windows 可通过 `MAGPIE_BIN` 指定实际的 Magpie 可执行文件；未设置时使用 PATH 中的 `magpie`。这些验证使用本地模拟服务与 dummy Key，不代表真实账户搜索、质量或计费验证。此前 **magpie 0.1.2911／0.1.2964／0.1.3026／0.1.3035／0.1.3041／0.1.3097** 的记录属于历史验证；这些记录均不代表最低支持版本。
 

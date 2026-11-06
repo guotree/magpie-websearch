@@ -95,6 +95,9 @@ Before bumping the version:
   Confirm failed MCP requests never call Standard REST or cross to the other site.
   Keep [src/mcp/session.mjs](src/mcp/session.mjs), the shared response reader, both entry modules and the
   Coding Plan shared factory in the package.
+- Check `initialize.params.clientInfo.version` against the packaged `package.json`.
+  The session module reads it at module load; no separate hard-coded version should
+  need updating. The protocol version is negotiated independently of the package version.
 - Treat Coding Plan support as experimental until Zhipu/Z.ai confirms that Magpie use
   is permitted by the current client policy. Do not claim official Magpie support.
   Record real-key verification separately for China and international accounts, and

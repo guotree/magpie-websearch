@@ -8,7 +8,7 @@
 
 Additional web search APIs for [magpie](https://usemagpie.ai). Once installed, the APIs appear in **Settings › Models › Web search**, where Magpie manages keys, on/off switches and request order.
 
-The plugin currently registers **21 search channels**: AnySearch, Bocha, Jina, Kagi, Keenable, Linkup, Metaso, Moonshot, Moonshot CN, Ollama, Parallel, Perplexity, Querit, SerpApi, Serper, StepFun, TinyFish, plus separate Standard REST and Coding Plan MCP channels for Z.ai and Zhipu. AnySearch, Keenable, Parallel and TinyFish support keyless anonymous access; the other seventeen require the key for their specific product.
+The plugin registers **21 search channels**: AnySearch, Bocha, Jina, Kagi, Keenable, Linkup, Metaso, Moonshot, Moonshot CN, Ollama, Parallel, Perplexity, Querit, SerpApi, Serper, StepFun, TinyFish, plus separate Standard REST and Coding Plan MCP channels for Z.ai and Zhipu. AnySearch, Keenable, Parallel and TinyFish support keyless anonymous access; the other seventeen require the key for their specific product.
 
 ## Install
 
@@ -86,10 +86,10 @@ Search entries appear as `<Provider> (magpie-websearch)` in Magpie. Vendor IDs r
 ## Privacy and security
 
 - **Direct endpoints**: Requests go directly to official vendor APIs or an explicitly configured custom endpoint.
-- **Search parameters only**: Conversation history, system prompts, local files, tool outputs and agent context are never read or forwarded.
+- **Search data and protocol metadata**: Requests contain search parameters; MCP initialization also includes the client name, package version and protocol capabilities. Conversation history, system prompts, user files, tool outputs and agent context are never read or forwarded.
 - **Magpie manages credentials**: Keys are sent using each vendor's protocol. SerpApi errors omit original exceptions, response bodies and request URLs; other providers retain their own diagnostic handling. The plugin cannot control vendor or proxy access logs.
 - **No silent downgrade**: Failed keyed requests never downgrade to anonymous access.
-- **Strict channel isolation**: Coding Plan keys and Standard API keys are not interchangeable. MCP failures never fall back to metered REST, and requests never cross the China/international boundary.
+- **Strict channel isolation**: Coding Plan keys and Standard API keys are not interchangeable. A provider never turns an MCP failure into metered REST or an automatic retry on the other site. Magpie may try another explicitly configured provider in order, using that provider's own key.
 
 The two Coding Plan providers are currently experimental. The official pages describe a Remote MCP for compatible clients but do not list Magpie as an officially supported client. Confirm the Coding Plan usage policy and your account terms before use; this project does not claim official Zhipu or Z.ai support for Magpie.
 
@@ -111,6 +111,8 @@ Leaving the key empty while editing an existing keyed entry keeps its saved key.
 ## Roadmap
 
 The third batch of planned standalone web search APIs (Jina, Kagi, Serper) has now been fully integrated; see [PROVIDERS.md](PROVIDERS.md#planned) for the integration plan. A model provider preset or a model's built-in search capability alone does not exclude a vendor's standalone search API from consideration. Official search support is checked before adding a new integration.
+
+Both Coding Plan implementations and local simulations are complete. Real-key search, plan-credit versus Standard REST billing checks, and confirmation of the client policy for Magpie remain pending. Experimental support does not imply real-account verification.
 
 ## Acknowledgements
 

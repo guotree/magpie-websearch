@@ -200,36 +200,44 @@ and other endpoints are independent of that cooldown. See
   initialization and a session lifecycle. Both depend on
   [response.mjs](src/mcp/response.mjs) for JSON/SSE and JSON-RPC decoding;
   neither calling strategy imports the other. Authentication is independent of
-  this split. Tool-level `isError` is checked at each tool-call boundary.
+  this split. Tool-level `isError` is checked at each tool-call boundary. The
+  session helper still performs tool discovery and selection using caller-supplied
+  names; it is not a general MCP SDK or a callback-based session API.
 - [search-results.mjs](src/mcp/search-results.mjs) extracts search payloads
   independently of transport or session state. The stateless `callMCPSearch`
   composes its tool call with this extractor; Coding Plan providers call the
   extractor directly with `search_result` compatibility and up to three JSON
   decoding layers. Default extraction keeps the original `results`/single-decode
   policy for Parallel and TinyFish. It preserves envelope metadata and leaves
-  URL validation, row mapping, text limits and caches to providers.
+  URL filtering, row mapping, text limits and caches to providers.
 - `zhipu-coding` and `zai-coding` are separate required-key providers. They use the
   official Streamable HTTP endpoints
   `https://open.bigmodel.cn/api/mcp/web_search_prime/mcp` and
   `https://api.z.ai/api/mcp/web_search_prime/mcp`. Coding Plan keys are not Standard
   API keys, are never exchanged between sites, and never trigger a fallback to the
   metered REST providers.
-- Each search creates one session: `initialize`, `notifications/initialized`,
+- Each result-cache miss creates one session: `initialize`, `notifications/initialized`,
   `tools/list`, `tools/call`, then a best-effort `DELETE`. One 25-second default
   budget covers initialization, discovery and the tool call; cleanup has a separate
   one-second budget. Requests reject redirects and carry credentials only in the
   Bearer header. HTTP refusal bodies are withheld so reflected keys or session IDs
-  cannot enter adapter errors.
+  cannot enter adapter errors. `clientInfo.version` comes from the installed
+  `package.json` at module load.
+  No session is opened on a result-cache hit.
 - The client negotiates known MCP protocol versions, supports JSON and SSE responses,
-  and discovers the tool from the live schema. It prefers `web_search_prime` while
+  and discovers the tool on every cache miss. It prefers `web_search_prime` while
   accepting the documented `webSearchPrime` spelling. `count` and optional filters
   are sent only when the current `inputSchema` advertises them. An explicitly
   configured unsupported recency, domain or content-size filter fails before
   `tools/call`; count still caps results locally when the schema omits it.
-- Results may be structured content or single/double-encoded JSON text containing a
-  top-level array, `results`, or `search_result`. Invalid URLs are removed before the
+  This checks property presence, not every JSON Schema constraint such as
+  `maxLength`, `minimum`, or `maximum`. Server-side validation still applies.
+- Results may be structured content or JSON text decoded up to three times, containing a
+  top-level array, `results`, or `search_result`. Rows without a nonblank string
+  `link ?? url` are removed before the
   local cap. Valid empty results receive the normal short cache; malformed or wholly
-  unusable non-empty payloads are not cached.
+  unusable non-empty payloads are not cached. Result URLs are trimmed without syntax,
+  protocol or reachability validation. A non-null `link` takes precedence over `url`.
 - Official plan documentation currently describes each Web Search MCP call as using
   shared Coding Plan credits (the documented coefficient at implementation time is
   1.2 credits per call). It is not anonymous or unlimited. Local fake-service and
