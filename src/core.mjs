@@ -70,6 +70,26 @@ export function normalizeQuery(query) {
   return String(query ?? "").trim().replace(/\s+/g, " ")
 }
 
+export function requireQuery(query, label) {
+  const value = normalizeQuery(query)
+  if (!value) throw new Error(`${label} query must not be empty`)
+  return value
+}
+
+// An explicitly empty array is a valid answer; malformed shapes and an array
+// containing only unusable rows are failures and must not enter the cache.
+// Provider-specific exclusions (e.g. Linkup images) are not malformed rows.
+export function searchRows(value, label, { url = (item) => item.url, ignore = () => false } = {}) {
+  if (!Array.isArray(value)) throw new Error(`Invalid ${label} response: expected results array`)
+  const candidates = value.filter((item) => !ignore(item))
+  const valid = candidates.filter((item) => item && typeof item === "object" && !Array.isArray(item)
+    && typeof url(item) === "string" && url(item).trim())
+  if (candidates.length > 0 && valid.length === 0) {
+    throw new Error(`Invalid ${label} response: no usable search results in payload`)
+  }
+  return valid
+}
+
 // Resolves the search endpoint: if a custom URL is given, validate that it is
 // HTTP(S) without credentials, query or fragment, and use it as the exact
 // endpoint without heuristic rewriting. When omitted, use defaultEndpoint.
@@ -110,6 +130,13 @@ export function resolveResultCount(hostCount, { fallbackCount, configuredLimit, 
   return Math.max(1, Math.min(requestedCount, configuredLimit ?? providerMax, providerMax))
 }
 
+// Local defensive budgets, not upstream limits. Typical 50-result search
+// payloads are a few hundred KiB; 16 MiB leaves room for full-content modes
+// without allowing an unbounded body into memory. Error bodies only feed a
+// 300-code-point diagnostic, so they need much less.
+export const MAX_REST_BYTES = 16 * 1024 * 1024
+export const MAX_ERROR_BYTES = 64 * 1024
+
 // An error body is diagnostic, not content: a WAF or CDN interposing an HTML
 // page can make it tens of kilobytes. API refusal bodies are JSON of a few
 // hundred characters, so this bound loses nothing. Counted in code points,
@@ -118,24 +145,28 @@ const ERROR_DETAIL_CHARS = 300
 
 // Inputs are strings and validated nonnegative integer limits. Iterate only
 // through the retained prefix plus one code point; never expand a full page.
-export function truncateCodePoints(text, limit) {
-  if (limit <= 0 || text.length <= limit) return text
+function codePointPrefixEnd(text, limit) {
+  if (text.length <= limit) return text.length
   let count = 0
   let end = 0
   for (const point of text) {
-    if (count === limit) return text.slice(0, end) + "…"
+    if (count === limit) break
     end += point.length
     count++
   }
-  return text
+  return end
+}
+
+export function truncateCodePoints(text, limit) {
+  if (limit <= 0) return text
+  const end = codePointPrefixEnd(text, limit)
+  return end === text.length ? text : text.slice(0, end) + "…"
 }
 
 export function boundDetail(detail) {
   const text = String(detail ?? "")
-  if (text.length <= ERROR_DETAIL_CHARS) return text
-  const points = [...text]
-  if (points.length <= ERROR_DETAIL_CHARS) return text
-  return points.slice(0, ERROR_DETAIL_CHARS).join("") + "… [truncated]"
+  const end = codePointPrefixEnd(text, ERROR_DETAIL_CHARS)
+  return end === text.length ? text : text.slice(0, end) + "… [truncated]"
 }
 
 // `Retry-After` is delay-seconds ("3") or an HTTP-date ("Wed, 21 Oct 2026
@@ -204,6 +235,22 @@ function timedOut(error, signal, ctx) {
     signal?.reason?.name === "TimeoutError" ||
     ctx?.abort?.aborted === true
   )
+}
+
+// Preserve the public message/name while allowing internal callers to recognize
+// our own deadlines without classifying server-controlled diagnostic text.
+export class SearchTimeoutError extends Error {
+  constructor(label, timeout) {
+    super(`${label} search timed out after ${timeout}ms`)
+  }
+}
+
+class ResponseTooLargeError extends Error {
+  constructor(limit) {
+    super(`response exceeds ${limit} bytes`)
+    this.name = "ResponseTooLargeError"
+    this.limit = limit
+  }
 }
 
 export function makeCache(ttl, limit = 200) {
@@ -276,12 +323,55 @@ function discardBody(response) {
   try { response.body?.cancel().catch(() => {}) } catch {}
 }
 
+// Read a response body without ever retaining more than `limit` decoded bytes.
+// Counting happens before decoding, so a multi-byte character split across
+// chunks is still reconstructed correctly by TextDecoder while the budget
+// remains an actual byte count.
+async function readBoundedText(response, signal, limit) {
+  if (!response.body) {
+    // Real fetch responses without a body (for example 204) read as ""; the
+    // fallback keeps Response-like test doubles and older transports working.
+    const value = await response.text()
+    if (new TextEncoder().encode(value).byteLength > limit) throw new ResponseTooLargeError(limit)
+    return value
+  }
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let bytes = 0
+  let text = ""
+  let completed = false
+  const cancel = () => { void reader.cancel().catch(() => {}) }
+  const onAbort = () => cancel()
+  signal?.addEventListener?.("abort", onAbort, { once: true })
+  try {
+    while (true) {
+      signal?.throwIfAborted?.()
+      const { value, done } = await reader.read()
+      if (done) {
+        // reader.cancel() from the abort listener resolves a pending read as
+        // done; the abort must still win over a successful empty body.
+        signal?.throwIfAborted?.()
+        completed = true
+        return text + decoder.decode()
+      }
+      bytes += value?.byteLength ?? 0
+      if (bytes > limit) throw new ResponseTooLargeError(limit)
+      text += decoder.decode(value, { stream: true })
+    }
+  } finally {
+    signal?.removeEventListener?.("abort", onAbort)
+    if (!completed) cancel()
+    try { reader.releaseLock() } catch {}
+  }
+}
+
 // A custom reader shares the HTTP errors and the deadline, including while
 // consuming a streaming response. JSON providers keep the default text reader.
 export async function requestResponse(input, init, ctx, options = {}, read) {
   const {
     label = "search", timeout = 25_000, messages = {}, sensitive = false,
     withholdErrorBody = false, retryAfterFromResponse, errorDetailFromBody,
+    maxResponseBytes = MAX_REST_BYTES, maxErrorBytes = MAX_ERROR_BYTES,
   } = options
   const signal = signalFor(ctx, timeout)
   const protectedError = sensitive || withholdErrorBody
@@ -299,7 +389,7 @@ export async function requestResponse(input, init, ctx, options = {}, read) {
   } catch (error) {
     if (ctx?.abort?.aborted) throw new Error(`${label} search cancelled`)
     if (timedOut(error, signal, ctx)) {
-      throw new Error(`${label} search timed out after ${timeout}ms`)
+      throw new SearchTimeoutError(label, timeout)
     }
     if (sensitive) throw new Error(`${label} request failed`)
     throw new Error(`${label} request failed: ${String(error)}`)
@@ -328,27 +418,43 @@ export async function requestResponse(input, init, ctx, options = {}, read) {
     throw apiError(response.status, message, retry)
   }
 
-  // A 402 body can carry freshly generated credentials (AnySearch does), so a
-  // provider with a custom 402 message has its body withheld, not echoed.
-  if (!response.ok && response.status === 402 && messages[402]) {
+  // A fixed message for a known status never needs the body. In particular a
+  // 402 body can carry freshly generated credentials (AnySearch does), so it
+  // must be withheld rather than echoed or read.
+  if (!response.ok && messages[response.status] !== undefined) {
     discardBody(response)
-    throw apiError(402, messages[402], extractRetry(response))
+    const retry = extractRetry(response)
+    let message = messages[response.status]
+    if (response.status === 429) message += retryHint(retry)
+    throw apiError(response.status, message, retry)
   }
 
   let raw
   try {
-    raw = await (response.ok && read ? read(response, signal) : response.text())
+    if (response.ok && read) {
+      raw = await read(response, signal)
+    } else {
+      raw = await readBoundedText(
+        response, signal, response.ok ? maxResponseBytes : maxErrorBytes,
+      )
+    }
   } catch (error) {
     if (ctx?.abort?.aborted) throw new Error(`${label} search cancelled`)
     if (!response.ok) {
       discardBody(response)
       const retry = extractRetry(response)
-      let message = messages[response.status] ?? `${label} API error ${response.status}: response body unavailable`
+      const detail = error instanceof ResponseTooLargeError
+        ? `response body exceeds ${error.limit} bytes`
+        : "response body unavailable"
+      let message = `${label} API error ${response.status}: ${detail}`
       if (response.status === 429) message += retryHint(retry)
       throw apiError(response.status, message, retry)
     }
     if (timedOut(error, signal, ctx)) {
-      throw new Error(`${label} search timed out after ${timeout}ms`)
+      throw new SearchTimeoutError(label, timeout)
+    }
+    if (error instanceof ResponseTooLargeError) {
+      throw new Error(`Invalid ${label} response: body exceeds ${error.limit} bytes`)
     }
     if (response.ok && read && !sensitive) throw error
     throw new Error(`${label} response body unavailable`)
@@ -359,7 +465,7 @@ export async function requestResponse(input, init, ctx, options = {}, read) {
     const custom = messages[response.status]
     let detail = raw
     // Vendor formatting is optional and cannot hide a known HTTP refusal.
-    // Sensitive mode and the withheld 402 branch never invoke this callback.
+    // Sensitive mode and fixed-message branches never invoke this callback.
     if (custom === undefined && typeof errorDetailFromBody === "function") {
       try {
         const formatted = errorDetailFromBody(raw, response)

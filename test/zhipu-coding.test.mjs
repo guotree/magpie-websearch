@@ -178,6 +178,43 @@ test("coding providers: valid empty results cache but unusable nonempty payloads
   } finally { fake.restore() }
 })
 
+test("coding providers: oversized MCP responses cancel, clean up sessions and never cache", { timeout: 10_000 }, async () => {
+  for (const create of [createZhipuCoding, createZaiCoding]) {
+    const provider = create()
+    const fake = codingFake()
+    const original = globalThis.fetch
+    let cancelled = 0
+    const block = new TextEncoder().encode("private ".repeat(128 * 1024))
+    globalThis.fetch = async (input, init) => {
+      const response = await original(input, init)
+      if (JSON.parse(init.body ?? "null")?.method !== "tools/call") return response
+      let chunks = 0
+      return new Response(new ReadableStream({
+        pull(controller) {
+          // Leave queued data after the limit so this checks cancellation of
+          // an open stream, rather than a stream that already closed itself.
+          if (chunks++ === 12) controller.close()
+          else controller.enqueue(block)
+        },
+        cancel() { cancelled++ },
+      }))
+    }
+    try {
+      for (let i = 0; i < 2; i++) {
+        await assert.rejects(provider.execute({ query: "oversized", key: "key" }, context()), error => {
+          assert.match(error.message, /10485760-byte limit/)
+          assert.doesNotMatch(error.message, /private|session-secret/)
+          assert.equal(error.status, undefined)
+          return true
+        })
+      }
+      assert.equal(cancelled, 2)
+      assert.equal(fake.calls.filter(call => call.body?.method === "tools/call").length, 2)
+      assert.equal(fake.calls.filter(call => call.init.method === "DELETE").length, 2)
+    } finally { globalThis.fetch = original; fake.restore() }
+  }
+})
+
 test("coding providers: cache identity isolates key, endpoint, count, parameters and site", async () => {
   const cn = createZhipuCoding()
   const intl = createZaiCoding()

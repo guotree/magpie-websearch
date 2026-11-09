@@ -261,6 +261,8 @@ Coding Plan 搜索现作为两个独立 provider 接入，绝不与上述 REST �
 
 MCP 模块集中在 `src/mcp/`，按生命周期策略拆分：[stateless.mjs](../src/mcp/stateless.mjs) 直接调用工具，[session.mjs](../src/mcp/session.mjs) 管理初始化会话；两者平级并共同依赖 [response.mjs](../src/mcp/response.mjs) 解析 JSON／SSE、匹配 RPC ID 与校验 JSON-RPC。共享 reader 不解释工具结果，`isError` 由各自的 `tools/call` 边界校验。是否携带认证头与是否初始化会话是两个独立维度。
 
+两条 MCP 通路经共享 reader 读取的 JSON-RPC 结果响应（初始化、工具发现、工具调用）设置 **10 MiB（10,485,760 字节）** 的本地防御预算，按实际读取的响应体字节累计，包含同一 SSE 流内的行、注释和通知，不依赖 `Content-Length`。超限取消流、释放 reader 并报错，不把正文写入错误或缓存；已建立的 session 仍尝试 DELETE。内容解析器在每层字符串 JSON 解码前另外按 UTF-8 字节检查相同预算。该数值不是上游服务限制；普通 REST、`notifications/initialized` 确认及 DELETE 确认正文使用独立的通用 HTTP 预算（成功 16 MiB、错误 64 KiB）。session 只根据内部超时错误类型归一化总预算，服务器返回的相似错误文本仍作为 RPC 错误报告。
+
 会话入口为 `callSessionMCPTool()`，按调用方给出的工具名列表执行发现与选择。`clientInfo.name` 固定为 `magpie-websearch`，`clientInfo.version` 在模块加载时通过 `createRequire()` 从包根目录 `package.json` 读取。
 
 搜索内容解析独立放在 [search-results.mjs](../src/mcp/search-results.mjs)，不依赖 HTTP 或 session。`mcp/stateless.mjs` 中的 `callMCPSearch()` 组合单次调用和这个解析器；Coding Plan provider 则在会话调用后直接使用解析器，并显式启用 `search_result` 别名、结构化字符串解码和最多三层 JSON 解码。默认策略保持 Parallel／TinyFish 的 `results` 与单层文本 JSON 规则。解析器保留 envelope 元数据，别名归一化为首选数组字段；URL 过滤、结果映射、文本截断和缓存仍由 provider 负责。
@@ -433,7 +435,11 @@ magpie plugin options magpie-websearch '{"serper":{"gl":"cn","hl":"zh-cn","tbs":
 - 自动剔除不包含 URL 的无效结果。
 - 抛出带有数值型 `status`（401、402、403、429）的错误被 Magpie 识别为服务商拒绝；对于带 Key 请求，Magpie 会休眠该 Key 并尝试下一个。匿名 429 冷却由本插件自主管理；失败时会触发 Magpie 调度下一可用引擎。
 - 429 响应的 `Retry-After` 按适配器策略处理：Bocha、Jina、Kagi、Ollama、Perplexity、SerpApi、Serper、StepFun、Zhipu 和 Z.ai 仅传递校验和规范化后的整数秒数或标准 HTTP 日期；Moonshot 双站优先传递合法标准头，非法或缺失时按[重置头规则](#moonshot-search)回退；其他适配器沿用通用头透传逻辑。
+- 公共 HTTP 层对普通 REST 响应设置本地字节预算：成功响应最多 **16 MiB（16,777,216 字节）**，失败响应正文最多 **64 KiB（65,536 字节）**。按 `fetch` 解压后的实际读取字节累计，不依赖 `Content-Length`；超限会取消流并报错，不返回部分结果、不写缓存。非 2xx 超限仍保留数值型 `status` 和适配器提取的重试信息，429 保留重试提示。该预算是本地防御策略，不是上游限制；MCP 的 10 MiB 预算见 [MCP 结果解析](#zhipu-search)。
 - 公共 HTTP 层在失败响应正文读取中断或超时后，仍保留已知 `status` 和适配器提取的重试信息；请求阶段的宿主主动取消优先报告取消。此规则不把网络连接失败或 HTTP 200 中的业务错误伪装成 HTTP 拒绝。
+- 所有搜索请求均拒绝 HTTP 重定向；自定义 Base URL 仍作为精确端点。标准化后的空查询在发送请求前报错。Linkup、Metaso 和 Querit 与其他要求 Key 的通道一样修剪 Key 首尾空白，空白 Key 不会发送。
+- AnySearch、Keenable、Linkup、Metaso、Querit、Parallel 和 TinyFish 要求结果字段为数组，可用行的 URL 必须为非空白字符串。显式空数组仍正常返回并最多缓存 30 秒；畸形字段或非空候选数组全无可用行则报错且不缓存。Linkup 先排除图片行，纯图片结果仍可得到合法空数组；Metaso 保留 `webpages` → `results` → `papers` → `documents` → `data` 的 nullish 回退顺序。
+- AnySearch、Querit 和 Moonshot 双站的业务错误消息最多保留 300 码点，超长另加 `… [truncated]`；AnySearch、Querit 的动态业务码和请求标识各保留最多 80 码点，超长另加 `…`。预算不包含固定前缀和标记。短错误格式保持不变，不因业务消息伪造 HTTP status。
 
 <a id="configuration"></a>
 
@@ -642,7 +648,7 @@ magpie plugin options magpie-websearch off
 
 正文截断复用 `truncateCodePoints(text, limit)`：调用者传入字符串和已校验的非负整数，函数不校验类型、不裁剪空白或归一化文本；0 保留全部，超长时保留前 N 个码点并另加 `…`。只遍历保留前缀及额外一个码点，不展开全文。正文选择与字段容错由适配器负责。
 
-`requestResponse`／`requestJSON` 可接收同步 `errorDetailFromBody(raw, response)` 回调，在非成功 HTTP 响应的正文读取完成后、诊断截断前格式化厂商详情；返回非字符串或抛错时回退原始正文。该状态的固定 `messages`、敏感模式与隐藏 402 正文的策略优先，不调用该回调。回调不处理 HTTP 200 中的业务错误，此类错误由适配器自行校验。正文读取失败仍保留已知 HTTP 状态及重试信息，请求阶段的宿主主动取消优先。
+`requestResponse`／`requestJSON` 可接收同步 `errorDetailFromBody(raw, response)` 回调，在非成功 HTTP 响应的正文读取完成后、诊断截断前格式化厂商详情；返回非字符串或抛错时回退原始正文。该状态的固定 `messages`、敏感模式与隐藏 402 正文的策略优先，不调用该回调。回调不处理 HTTP 200 中的业务错误，此类错误由适配器自行校验。正文读取失败仍保留已知 HTTP 状态及重试信息，请求阶段的宿主主动取消优先。默认成功体预算为 16 MiB、失败体预算为 64 KiB；测试可通过内部选项 `maxResponseBytes`／`maxErrorBytes` 缩小预算，不将其作为用户配置暴露。
 
 ```sh
 npm test          # node:test 单元测试（无依赖）
@@ -653,11 +659,13 @@ npm run smoke:magpie # 在独立沙箱中启动真实 Magpie 进程进行完整�
 
 Magpie 通过其管理的 **Bun** 运行插件。基于 Node 的开发命令要求 **Node.js 20.3.0 或更新版本**，依赖 `AbortSignal.any` 组合超时和取消信号；`check:bun` 直接在 Bun 下运行。本插件使用 Magpie 的 `search` hook；`package.json` 中的 `opencode` 关键词用于 Magpie 的 npm 插件发现。
 
+Node 与 Bun 的测试入口均通过 `scripts/test.mjs` 枚举 `test/` 目录中的 `*.test.mjs` 普通文件，再以参数数组启动当前运行时；不依赖 shell 展开 glob，也不把 `harness.mjs` 和 `cases.mjs` 作为独立测试文件。新增符合命名规则的测试文件无需修改 package.json。
+
 `npm run smoke:magpie` 测试脚本要求环境变量 PATH 中存在 `magpie` 可执行文件（或通过 `MAGPIE_BIN` 指定）。脚本创建独立的沙箱配置环境、隔离账户发现、在随机回环端口启动网关，验证插件加载、注册过滤、自定义 URL、宿主 `count` 传递与显式 `resultLimit` 上限、超时中断、匿名 429 冷却与后备调度、Parallel 及 TinyFish 的 MCP／REST，以及 SerpApi、Perplexity、StepFun、Bocha、Ollama、Jina、Kagi、Serper、Moonshot 双站和 Zhipu／Z.ai 的带 Key 协议。Moonshot 用例覆盖秒／毫秒重置头、超限值忽略与 Key 休眠排序；Zhipu／Z.ai REST 用例覆盖搜狗档位、本地截断、业务错误、查询长度、Key 轮换和跨站后备凭证隔离，Coding Plan 用例覆盖双站完整 MCP session、JSON／SSE、总超时、401 轮换、429 与不隐式降级 REST；StepFun 用例覆盖分类、正文、异常结果、Credit 429、451 和 Key 轮换；Perplexity 用例覆盖 fast 模式、筛选参数、异常、超时、429 Retry-After、Key 轮换与后备调度；Bocha 用例覆盖普通摘要默认值、显式开启生成摘要与时效筛选、业务错误 code/msg/log_id、429 Retry-After 与健康 Key 轮换；Ollama 用例覆盖前缀码点截断、429 Retry-After 与顺序 Key 轮换；Jina 用例覆盖摘要／全文、正文截断与请求头切换；Kagi 用例覆盖 Lens 优先级、清空 Lens 后恢复时间筛选及地区过滤；Serper 用例覆盖固定 num、本地截取与 SerpApi 的端点／凭证隔离。测试完成后自动清理沙箱，搜索请求只访问本地模拟服务并使用 dummy Key，不调用付费搜索；Magpie 自身启动时仍可能独立获取模型目录等公共资源。
 
 可用 `MAGPIE_PLUGIN_DIR` 指定解包后的 npm 插件目录，目录名应保持为 `magpie-websearch` 以维持 Vendor ID。`MAGPIE_SMOKE_ROOT` 可覆盖测试沙箱使用的系统临时目录。CI 分别运行 Node 22／24、Bun 检查和解包后的 npm 包 Magpie 验证，三个作业之间没有顺序依赖。
 
-截至 2026-11-07，本地验证使用 **Node.js 24.19.0、Bun 1.4.4、magpie 0.1.3141**。Node 与 Bun 均通过 329 项测试（26 个测试文件），覆盖宿主 `count` 传递、显式 `resultLimit` 上限、旧名称迁移，以及 Coding Plan MCP 生命周期、JSON／SSE、schema 参数、超时取消、错误防泄漏与双站缓存隔离。共享 MCP reader 和搜索内容解析器分别有独立测试，验证协议层不解释工具级错误，以及解析层的字段别名、解码深度、空数组优先级和元数据保留。完整 Magpie 沙箱验证通过，包括双站 MCP Key 轮换、429、显式后备和无 REST 隐式降级。
+0.7.0 发布时的本地验证使用 **Node.js 24.19.0、Bun 1.4.4、magpie 0.1.3141**，Node 与 Bun 均通过 329 项测试（26 个测试文件），完整 Magpie 沙箱验证通过。2026-11-07 本轮加固后，**Node.js 20.3.0、Node.js 24.19.0 和 Bun 1.4.4 均通过 371 项测试（28 个测试文件）**；Windows npm/cmd 的 `check:bun` 入口也通过。完整宿主沙箱在 **magpie 0.1.3216** 通过，覆盖注册、数量、超时、匿名冷却、Key 轮换、后备调度和双站 MCP 生命周期。新增测试验证畸形结果不缓存、合法空结果及字段回退、Key/query 守卫、真实 HTTP 重定向拒绝、诊断截断、REST 16 MiB／64 KiB 字节预算、MCP 精确字节预算和超限清理，以及伪装超时的 RPC 文本。
 
 Bun 通过 `npm exec --yes --package=bun@1.4.4 -- bun run check:bun` 临时运行，不增加项目依赖或 lockfile。Windows 可通过 `MAGPIE_BIN` 指定实际的 Magpie 可执行文件；未设置时使用 PATH 中的 `magpie`。这些验证使用本地模拟服务与 dummy Key，不代表真实账户搜索、质量或计费验证。此前 **magpie 0.1.2911／0.1.2964／0.1.3026／0.1.3035／0.1.3041／0.1.3097** 的记录属于历史验证；这些记录均不代表最低支持版本。
 

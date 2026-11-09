@@ -1,6 +1,6 @@
 import {
   cacheKey, configCountPolicy, configInt, configStr, makeAnonymousCooldown, makeCache, normalizeQuery,
-  page, requestJSON, resolveEndpoint, resolveResultCount, truncateCodePoints,
+  page, requestJSON, resolveEndpoint, resolveResultCount, searchRows, truncateCodePoints,
 } from "../core.mjs"
 import { callMCPSearch } from "../mcp/stateless.mjs"
 
@@ -55,10 +55,10 @@ export function createParallel(options = {}) {
             "x-api-key": key,
           },
           body: JSON.stringify(body),
+          redirect: "error",
         }, ctx, { label: "Parallel", timeout })
         if (!Array.isArray(json?.results)) throw new Error("Invalid Parallel response: expected results array")
-        const results = json.results
-          .filter((item) => item && item.url)
+        const results = searchRows(json.results, "Parallel")
           .slice(0, limit)
           .map((item) => page(item.title, item.url, truncateCodePoints(extractText(item.excerpts), contentChars), item.publish_date))
         cache.write(identity, results)
@@ -75,8 +75,7 @@ export function createParallel(options = {}) {
         }, ctx, { label: "Parallel", timeout })
       })
       if (!Array.isArray(json?.results)) throw new Error("Invalid Parallel response: expected results array")
-      const results = json.results
-        .filter((item) => item && item.url)
+      const results = searchRows(json.results, "Parallel")
         .slice(0, limit)
         .map((item) => page(item.title, item.url, truncateCodePoints(extractText(item.excerpts), contentChars), item.publish_date))
       cache.write(identity, results)

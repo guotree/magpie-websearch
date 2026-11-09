@@ -1,7 +1,7 @@
 // Initialized MCP sessions over Streamable HTTP, with one total deadline and
 // best-effort cleanup. Authentication is supplied independently through headers.
 import { createRequire } from "node:module"
-import { boundDetail, cleanRetryAfter, requestResponse } from "../core.mjs"
+import { boundDetail, cleanRetryAfter, requestResponse, SearchTimeoutError } from "../core.mjs"
 import { readMCPResult } from "./response.mjs"
 
 // Read once from the installed package; createRequire also supports Node 20.3
@@ -21,7 +21,7 @@ const validSessionID = (value) => typeof value === "string" && value.length > 0
   && [...value].every((character) => character.charCodeAt(0) >= 0x21 && character.charCodeAt(0) <= 0x7e)
 
 function timeoutError(label, timeout) {
-  return new Error(`${label} search timed out after ${timeout}ms`)
+  return new SearchTimeoutError(label, timeout)
 }
 
 export async function callSessionMCPTool({
@@ -81,7 +81,7 @@ export async function callSessionMCPTool({
         retryAfterFromResponse: (response) => cleanRetryAfter(response.headers.get("Retry-After")),
       }, (response, signal) => readMCPResult(response, signal, id, label))
     } catch (error) {
-      if (timeout > 0 && /search timed out after \d+ms$/.test(error?.message ?? "")) {
+      if (timeout > 0 && error instanceof SearchTimeoutError) {
         throw timeoutError(label, timeout)
       }
       throw error
@@ -101,7 +101,7 @@ export async function callSessionMCPTool({
         retryAfterFromResponse: (response) => cleanRetryAfter(response.headers.get("Retry-After")),
       })
     } catch (error) {
-      if (timeout > 0 && /search timed out after \d+ms$/.test(error?.message ?? "")) {
+      if (timeout > 0 && error instanceof SearchTimeoutError) {
         throw timeoutError(label, timeout)
       }
       throw error
@@ -134,7 +134,7 @@ export async function callSessionMCPTool({
       initializeResponse = response
       return readMCPResult(response, signal, initializeID, label)
     }).catch((error) => {
-      if (timeout > 0 && /search timed out after \d+ms$/.test(error?.message ?? "")) throw timeoutError(label, timeout)
+      if (timeout > 0 && error instanceof SearchTimeoutError) throw timeoutError(label, timeout)
       throw error
     })
 

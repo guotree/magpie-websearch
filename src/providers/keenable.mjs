@@ -1,6 +1,6 @@
 import {
-  cacheKey, configCountPolicy, configInt, configStr, list, makeAnonymousCooldown, makeCache, normalizeQuery,
-  page, requestJSON, resolveEndpoint, resolveResultCount,
+  cacheKey, configCountPolicy, configInt, configStr, makeAnonymousCooldown, makeCache,
+  page, requestJSON, requireQuery, resolveEndpoint, resolveResultCount, searchRows,
 } from "../core.mjs"
 
 export function createKeenable(options = {}) {
@@ -18,8 +18,9 @@ export function createKeenable(options = {}) {
     keyOptional: true,
     async execute({ query, count, key = "", url }, ctx) {
       key = key.trim()
+      const q = requireQuery(query, "Keenable")
       const endpoint = resolveEndpoint(url, key ? "https://api.keenable.ai/v1/search" : "https://api.keenable.ai/v1/search/public")
-      const body = { query: normalizeQuery(query), max_results: resolveResultCount(count, countPolicy), ...(mode ? { mode } : {}) }
+      const body = { query: q, max_results: resolveResultCount(count, countPolicy), ...(mode ? { mode } : {}) }
       const identity = cacheKey(endpoint, body, key)
       const cached = cache.read(identity)
       if (cached) return cached
@@ -30,14 +31,14 @@ export function createKeenable(options = {}) {
           ...(key ? { "X-API-Key": key } : {}),
         },
         body: JSON.stringify(body),
+        redirect: "error",
       }, ctx, {
         label: "Keenable", timeout,
         messages: key ? {
           402: "Keenable credits exhausted (HTTP 402). Check your account balance, add credits or wait for your allowance to reset.",
         } : {},
       }))
-      const results = list(json.results)
-        .filter((item) => item && item.url)
+      const results = searchRows(json?.results, "Keenable")
         .slice(0, body.max_results)
         .map((item) => page(item.title, item.url, item.snippet || item.description, item.published_at))
       cache.write(identity, results)

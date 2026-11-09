@@ -1,6 +1,9 @@
 // Search payload extraction, independent of HTTP and session lifecycle.
 // Return the envelope (including provider metadata), normalizing an accepted
 // alias to the first array key. Providers still own row validation and mapping.
+import { Buffer } from "node:buffer"
+import { MAX_MCP_BYTES, mcpSizeError } from "./limits.mjs"
+
 export function extractMCPResults(result, label, {
   arrayKeys = ["results"],
   maxJSONDepth = 1,
@@ -10,6 +13,7 @@ export function extractMCPResults(result, label, {
   const extract = (value, depth) => {
     let decoded = value
     for (let i = 0; i < depth && typeof decoded === "string"; i++) {
+      if (Buffer.byteLength(decoded, "utf8") > MAX_MCP_BYTES) throw mcpSizeError(label)
       try { decoded = JSON.parse(decoded) } catch { return undefined }
     }
     // Preserve the original custom-key policy: bare arrays represent results.

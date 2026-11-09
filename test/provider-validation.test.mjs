@@ -1,6 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { WebSearch } from "../index.mjs"
+import { MAX_REST_BYTES } from "../src/core.mjs"
 import { context, json, stubFetch } from "./harness.mjs"
 
 const specs = [
@@ -168,3 +169,24 @@ for (const [id, payloads] of [
     }
   })
 }
+
+test("REST responses over the success byte budget fail without caching", { timeout: 20_000 }, async () => {
+  const provider = await create("linkup")
+  const chunk = new Uint8Array(1024 * 1024).fill(97)
+  const fake = stubFetch(() => {
+    let sent = 0
+    return new Response(new ReadableStream({
+      pull(controller) {
+        if (sent >= 17) return controller.close()
+        sent++
+        controller.enqueue(chunk)
+      },
+    }), { status: 200, headers: { "content-type": "application/json" } })
+  })
+  try {
+    for (let i = 0; i < 2; i++) {
+      await assert.rejects(provider.execute(args, context()), new RegExp(`body exceeds ${MAX_REST_BYTES} bytes`))
+    }
+    assert.equal(fake.calls.length, 2, "oversized bodies must be retried, not cached")
+  } finally { fake.restore() }
+})

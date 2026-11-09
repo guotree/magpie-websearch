@@ -1,6 +1,6 @@
 import {
-  cacheKey, configCountPolicy, configInt, configStr, list, makeCache, normalizeQuery,
-  page, requestJSON, resolveEndpoint, resolveResultCount, truncateCodePoints,
+  cacheKey, configCountPolicy, configInt, configStr, makeCache,
+  page, requestJSON, requireQuery, resolveEndpoint, resolveResultCount, searchRows, truncateCodePoints,
 } from "../core.mjs"
 
 export function createMetaso(options = {}) {
@@ -17,11 +17,13 @@ export function createMetaso(options = {}) {
     name: "Metaso (magpie-websearch)",
     keysURL: "https://metaso.cn/search-api/api-keys",
     async execute({ query, count, key, url }, ctx) {
+      key = String(key ?? "").trim()
       if (!key) throw new Error("Metaso needs a key: add one in magpie's Web search settings")
+      const q = requireQuery(query, "Metaso")
       const endpoint = resolveEndpoint(url, "https://metaso.cn/api/v1/search")
       const limit = resolveResultCount(count, countPolicy)
       const body = {
-        q: normalizeQuery(query),
+        q,
         scope,
         size: limit,
         concise: true,
@@ -38,11 +40,12 @@ export function createMetaso(options = {}) {
           Authorization: "Bearer " + key,
         },
         body: JSON.stringify(body),
+        redirect: "error",
       }, ctx, { label: "Metaso", timeout })
 
-      const raw = list(json.webpages ?? json.results ?? json.papers ?? json.documents ?? json.data)
+      const raw = searchRows(json?.webpages ?? json?.results ?? json?.papers ?? json?.documents ?? json?.data,
+        "Metaso", { url: (item) => item.link || item.url })
       const results = raw
-        .filter((item) => item && (item.link || item.url))
         .slice(0, limit)
         .map((item) => page(item.title, item.link || item.url,
           truncateCodePoints(String(item.snippet ?? item.content ?? ""), contentChars), item.date))

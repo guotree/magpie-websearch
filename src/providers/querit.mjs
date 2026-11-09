@@ -1,6 +1,6 @@
 import {
-  cacheKey, configCountPolicy, configInt, list, makeCache, normalizeQuery,
-  page, requestJSON, resolveEndpoint, resolveResultCount,
+  boundDetail, cacheKey, configCountPolicy, configInt, makeCache,
+  page, requestJSON, requireQuery, resolveEndpoint, resolveResultCount, searchRows, truncateCodePoints,
 } from "../core.mjs"
 
 export function createQuerit(options = {}) {
@@ -16,9 +16,11 @@ export function createQuerit(options = {}) {
     name: "Querit (magpie-websearch)",
     keysURL: "https://querit.ai",
     async execute({ query, count, key, url }, ctx) {
+      key = String(key ?? "").trim()
       if (!key) throw new Error("Querit needs a key: add one in magpie's Web search settings")
+      const q = requireQuery(query, "Querit")
       const endpoint = resolveEndpoint(url, "https://api.querit.ai/v1/search")
-      const body = { query: normalizeQuery(query), count: resolveResultCount(count, countPolicy) }
+      const body = { query: q, count: resolveResultCount(count, countPolicy) }
       const identity = cacheKey(endpoint, body, key)
       const cached = cache.read(identity)
       if (cached) return cached
@@ -26,13 +28,17 @@ export function createQuerit(options = {}) {
         method: "POST",
         headers: { Accept: "application/json", "Content-Type": "application/json", Authorization: "Bearer " + key },
         body: JSON.stringify(body),
+        redirect: "error",
       }, ctx, { label: "Querit", timeout })
+      if (!json || typeof json !== "object" || Array.isArray(json)) {
+        throw new Error("Invalid Querit response: expected an object")
+      }
       if (json.error_code !== undefined && Number(json.error_code) !== 200) {
         const id = typeof json.search_id === "string" || typeof json.search_id === "number" ? String(json.search_id) : "unknown"
-        throw new Error(`Querit API error ${json.error_code}: ${json.error_msg ?? "unknown error"} (search_id ${id})`)
+        const code = truncateCodePoints(String(json.error_code), 80)
+        throw new Error(`Querit API error ${code}: ${boundDetail(json.error_msg ?? "unknown error")} (search_id ${truncateCodePoints(id, 80)})`)
       }
-      const results = list(json.results?.result)
-        .filter((item) => item && item.url)
+      const results = searchRows(json.results?.result, "Querit")
         .slice(0, body.count)
         .map((item) => page(item.title, item.url,
           item.snippet ?? (Array.isArray(item.sentence) ? item.sentence.join(" ") : ""), item.page_age))

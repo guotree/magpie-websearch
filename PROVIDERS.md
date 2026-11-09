@@ -419,8 +419,11 @@ All third-batch planned standalone web search APIs (Jina, Kagi, Serper) have now
    unusable rows before capping, even when the upstream ignores the requested count.
 3. Return `{ title, url, text, age? }` results. Drop entries without a URL and
    preserve the provider's date string when available.
-4. Preserve `ctx.abort` and apply the configured request timeout. Throw errors
-   with a numeric `status` for HTTP refusals and carry `retryAfter` on 429.
+4. Preserve `ctx.abort` and apply the configured request timeout. Reject HTTP
+   redirects and reject queries that normalize to an empty string before fetching. Throw errors
+   with a numeric `status` for HTTP refusals and carry `retryAfter` on 429. Use the shared
+   `requestResponse`/`requestJSON` reader: ordinary REST bodies are bounded locally at
+   16 MiB for success and 64 KiB for failures, so do not call `response.text()` directly.
 5. Create settings and cache per plugin instance. Isolate cache entries by
    hashing the final endpoint, credential and all request parameters together.
 6. Add optional provider settings with environment fallback and document their
@@ -438,7 +441,8 @@ All third-batch planned standalone web search APIs (Jina, Kagi, Serper) have now
    isolation and errors. Cover host counts above 6 and the `fallbackCount` with at
    least 25 valid results, smaller explicit/environment caps, `providerMax` and
    missing-count fallbacks. Exercise canonical `resultLimit` names and legacy
-   aliases. Run Node, Bun and the magpie host checks.
+   aliases. Files named `*.test.mjs` in `test/` are discovered by `scripts/test.mjs`
+   on both Node and Bun without a shell glob. Run Node, Bun and the magpie host checks.
 10. Update the supported-provider table, README, package description and keywords.
 
 ### Configuration naming

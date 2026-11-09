@@ -57,6 +57,7 @@ test("all APIs follow host count unless an explicit limit or provider maximum ap
         const pages = await search[id].execute({ ...args, query: `host count ${count}`, count }, context())
         assert.equal(pages.length, Math.min(count, maxima[id] ?? 25), `${id}, count=${count}`)
         assert.equal(fake.calls.length, before + 1, "one request, without pagination")
+        assert.equal(fake.calls.at(-1).init.redirect, "error", `${id}: refuse redirects`)
         assertRequestedCount(id, fake.calls.at(-1), Math.min(count, maxima[id] ?? count))
       }
       const fallback = id === "ollama" ? 5 : id === "querit" ? 8 : 10
@@ -82,6 +83,7 @@ test("anonymous MCP follows larger host counts without inventing upstream count 
       for (const count of [20, 6]) {
         assert.equal((await search[id].execute({ query: "anonymous count", count }, context())).length, count)
         const args = fake.calls.at(-1).body.params.arguments
+        assert.equal(fake.calls.at(-1).init.redirect, "error", `${id}: refuse MCP redirects`)
         assert.equal(Object.hasOwn(args, "count"), false)
         assert.equal(Object.hasOwn(args, "max_results"), false)
       }

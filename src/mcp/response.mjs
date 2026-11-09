@@ -1,6 +1,7 @@
 // Shared JSON/SSE response decoding for both MCP calling strategies. This
 // module owns JSON-RPC framing only; callers interpret method-specific results.
 import { boundDetail } from "../core.mjs"
+import { MAX_MCP_BYTES, mcpSizeError } from "./limits.mjs"
 
 const object = (value) => value !== null && typeof value === "object" && !Array.isArray(value)
 
@@ -23,6 +24,7 @@ export async function readMCPResult(response, signal, id, label) {
   let buffer = ""
   let data = []
   let skipLF = false
+  let receivedBytes = 0
   const parse = (raw) => {
     let message
     try { message = JSON.parse(raw) } catch {
@@ -47,6 +49,8 @@ export async function readMCPResult(response, signal, id, label) {
       signal.throwIfAborted()
       const { value, done } = await reader.read()
       signal.throwIfAborted()
+      receivedBytes += value?.byteLength ?? 0
+      if (receivedBytes > MAX_MCP_BYTES) throw mcpSizeError(label)
       buffer += decoder.decode(value, { stream: !done })
       if (sse) {
         if (skipLF && buffer.length > 0) {

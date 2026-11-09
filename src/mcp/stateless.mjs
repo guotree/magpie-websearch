@@ -14,6 +14,7 @@ export async function callMCPTool(endpoint, name, args, ctx, options = {}) {
       ...headers,
     },
     body: JSON.stringify({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } }),
+    redirect: "error",
   }, ctx, options, (response, signal) => readMCPResult(response, signal, id, label))
   if (result.isError === true) throw new Error(`${label} MCP search tool failed`)
   return result

@@ -1,6 +1,6 @@
 import {
-  cacheKey, configCountPolicy, configInt, configStr, list, makeAnonymousCooldown, makeCache, normalizeQuery,
-  page, requestJSON, resolveEndpoint, resolveResultCount,
+  boundDetail, cacheKey, configCountPolicy, configInt, configStr, makeAnonymousCooldown, makeCache,
+  page, requestJSON, requireQuery, resolveEndpoint, resolveResultCount, searchRows, truncateCodePoints,
 } from "../core.mjs"
 
 export function createAnysearch(options = {}) {
@@ -20,9 +20,10 @@ export function createAnysearch(options = {}) {
     keyOptional: true,
     async execute({ query, count, key = "", url }, ctx) {
       key = key.trim()
+      const q = requireQuery(query, "AnySearch")
       const endpoint = resolveEndpoint(url, "https://api.anysearch.com/v1/search")
       const body = {
-        query: normalizeQuery(query),
+        query: q,
         max_results: resolveResultCount(count, countPolicy),
         ...(tag ? { tag } : {}),
         ...(zone ? { zone } : {}),
@@ -39,6 +40,7 @@ export function createAnysearch(options = {}) {
           ...(key ? { Authorization: "Bearer " + key } : {}),
         },
         body: JSON.stringify(body),
+        redirect: "error",
       }, ctx, {
         label: "AnySearch", timeout,
         messages: {
@@ -47,11 +49,16 @@ export function createAnysearch(options = {}) {
       }))
       // Business errors have no reliable HTTP status mapping; keep the vendor's
       // request id, and never invent a key refusal from its free-form message.
-      if (Number(json.code) !== 0) {
-        throw new Error(`AnySearch API error ${json.code}: ${json.message ?? "unknown error"} (request_id ${json.request_id ?? "unknown"})`)
+      if (!json || typeof json !== "object" || Array.isArray(json)) {
+        throw new Error("Invalid AnySearch response: expected an object")
       }
-      const results = list(json.data?.results)
-        .filter((item) => item && item.url)
+      if (json.code === undefined) throw new Error("Invalid AnySearch response: missing code")
+      if (Number(json.code) !== 0) {
+        const code = truncateCodePoints(String(json.code), 80)
+        const id = truncateCodePoints(String(json.request_id ?? "unknown"), 80)
+        throw new Error(`AnySearch API error ${code}: ${boundDetail(json.message ?? "unknown error")} (request_id ${id})`)
+      }
+      const results = searchRows(json.data?.results, "AnySearch")
         .slice(0, body.max_results)
         .map((item) => page(item.title, item.url, item.content ?? item.snippet))
       cache.write(identity, results)

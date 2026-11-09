@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { cleanRetryAfter, configCountPolicy, configInt, configStr, makeCache, requestJSON, requestResponse, resolveResultCount, truncateCodePoints } from "../src/core.mjs"
+import { boundDetail, cleanRetryAfter, configCountPolicy, configInt, configStr, makeCache, requestJSON, requestResponse, resolveResultCount, truncateCodePoints } from "../src/core.mjs"
 import { context, stubFetch, text } from "./harness.mjs"
 
 test("configuration helpers preserve legacy validation and error fields", () => {
@@ -211,6 +211,30 @@ test("truncateCodePoints preserves text at the boundary, Unicode pairs and zero-
     ["  a\nb  ", 5, "  a\nb…"], ["e\u0301x", 2, "e\u0301…"],
     ["🙂".repeat(100_000), 3, "🙂🙂🙂…"], ["🙂🚀x", 0, "🙂🚀x"],
   ]) assert.equal(truncateCodePoints(value, limit), expected)
+})
+
+test("boundDetail preserves exact code-point boundaries and diagnostic suffixes", () => {
+  for (const point of ["x", "🙂", "…"]) {
+    for (const length of [299, 300, 301]) {
+      const input = point.repeat(length)
+      assert.equal(boundDetail(input), length <= 300 ? input : point.repeat(300) + "… [truncated]")
+    }
+  }
+  assert.equal(boundDetail(null), "")
+  assert.equal(boundDetail(42), "42")
+})
+
+test("boundDetail consumes only the diagnostic prefix of a large input", () => {
+  const original = String.prototype[Symbol.iterator]
+  let visited = 0
+  String.prototype[Symbol.iterator] = function* () {
+    for (const point of original.call(this)) {
+      assert.ok(++visited <= 301, "diagnostic truncation must not traverse the full body")
+      yield point
+    }
+  }
+  try { assert.equal(boundDetail("x".repeat(100_000)), "x".repeat(300) + "… [truncated]") }
+  finally { String.prototype[Symbol.iterator] = original }
 })
 
 test("withheld 402 bodies are cancelled without waiting or exposing cleanup failures", async () => {
@@ -446,6 +470,100 @@ test("requestResponse and requestJSON in sensitive mode conceal credentials and 
       },
     )
   } finally { fakeJson.restore() }
+})
+
+test("REST bodies are bounded before decoding and never return partial payloads", async () => {
+  const exact = "a".repeat(8)
+  let fake = stubFetch(() => text(exact))
+  try {
+    assert.equal(await requestResponse("https://example.com", {}, context(), {
+      label: "TestAPI", maxResponseBytes: 8,
+    }), exact)
+  } finally { fake.restore() }
+
+  let cancelled = false
+  const stream = () => new ReadableStream({
+    start(controller) { controller.enqueue(new TextEncoder().encode("123456789")) },
+    cancel() { cancelled = true },
+  })
+
+  fake = stubFetch(() => new Response(stream()))
+  try {
+    await assert.rejects(requestResponse("https://example.com", {}, context(), {
+      label: "TestAPI", maxResponseBytes: 8,
+    }), { message: "Invalid TestAPI response: body exceeds 8 bytes" })
+    assert.equal(cancelled, true, "an oversized success body is cancelled")
+  } finally { fake.restore() }
+
+  cancelled = false
+  fake = stubFetch(() => new Response(stream(), { status: 401, headers: { "Retry-After": "7" } }))
+  try {
+    await assert.rejects(requestResponse("https://example.com", {}, context(), {
+      label: "TestAPI", maxErrorBytes: 8,
+    }), (error) => {
+      assert.equal(error.status, 401)
+      assert.equal(error.retryAfter, "7")
+      assert.match(error.message, /response body exceeds 8 bytes/)
+      return true
+    })
+    assert.equal(cancelled, true, "an oversized error body is cancelled")
+  } finally { fake.restore() }
+
+  cancelled = false
+  fake = stubFetch(() => new Response(stream(), { status: 429, headers: { "Retry-After": "5" } }))
+  try {
+    await assert.rejects(requestResponse("https://example.com", {}, context(), {
+      label: "TestAPI", maxErrorBytes: 8,
+    }), (error) => {
+      assert.equal(error.status, 429)
+      assert.equal(error.retryAfter, "5")
+      assert.match(error.message, /retry after 5s/)
+      return true
+    })
+  } finally { fake.restore() }
+})
+
+test("REST body budgets count UTF-8 bytes while decoding split characters", async () => {
+  const encoded = new TextEncoder().encode("é")
+  const bytes = () => new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoded.slice(0, 1))
+      controller.enqueue(encoded.slice(1))
+      controller.close()
+    },
+  })
+  let fake = stubFetch(() => new Response(bytes()))
+  try {
+    assert.equal(await requestResponse("https://example.com", {}, context(), {
+      label: "TestAPI", maxResponseBytes: 2,
+    }), "é")
+  } finally { fake.restore() }
+
+  fake = stubFetch(() => new Response(bytes()))
+  try {
+    await assert.rejects(requestResponse("https://example.com", {}, context(), {
+      label: "TestAPI", maxResponseBytes: 1,
+    }), /body exceeds 1 bytes/)
+  } finally { fake.restore() }
+})
+
+test("REST body reads preserve host cancellation while waiting for a chunk", { timeout: 10_000 }, async () => {
+  const controller = new AbortController()
+  let cancelled = false
+  const stream = new ReadableStream({
+    pull() { return new Promise(() => {}) },
+    cancel() { cancelled = true },
+  })
+  const fake = stubFetch(() => new Response(stream))
+  try {
+    const pending = requestResponse("https://example.com", {}, { abort: controller.signal }, {
+      label: "TestAPI", timeout: 0,
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    controller.abort()
+    await assert.rejects(pending, { message: "TestAPI search cancelled" })
+    assert.equal(cancelled, true)
+  } finally { fake.restore() }
 })
 
 test("retryAfterFromResponse custom hook extracts retry hints across failure paths", async () => {

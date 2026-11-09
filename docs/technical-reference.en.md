@@ -414,6 +414,18 @@ for JSON/SSE decoding, RPC ID matching and JSON-RPC validation. The shared reade
 does not interpret tool results; each `tools/call` boundary checks `isError`.
 Authentication headers and session initialization are independent choices.
 
+JSON-RPC result responses read by the shared reader on either MCP path
+(initialize, tools/list and tools/call) have a local **10 MiB (10,485,760 bytes)**
+budget, counting actual body bytes read, including lines, comments and
+notifications in the same SSE stream, without trusting `Content-Length`. Exceeding the budget cancels
+the stream, releases the reader and fails without reflecting body content or
+caching results; an established session still attempts DELETE. Before each
+string JSON decoding layer, the content extractor checks the same UTF-8 byte
+budget. This is a local defensive limit, not an upstream service limit. Ordinary
+REST bodies, `notifications/initialized` acknowledgements and DELETE acknowledgements
+use the separate generic HTTP budget (16 MiB success, 64 KiB error). Session timeout normalization uses
+an internal error type; similar server-supplied text remains an RPC error.
+
 The entry point is `callSessionMCPTool()`, which discovers and
 selects a tool using caller-supplied names. `clientInfo.name` is `magpie-websearch`;
 `clientInfo.version` is read once at module load through `createRequire()` from
@@ -768,7 +780,11 @@ All three reject redirects and use custom Base URLs as exact endpoints. HTTP ref
 - A hit without a URL is dropped.
 - A thrown error with a numeric `status` (401, 402, 403, 429) is an API refusal. For keyed calls, magpie records the key's rest and tries the next key. Anonymous 429 cooldowns are managed by this plugin; failed APIs give way to the next configured API.
 - `retryAfter` on a 429 follows the adapter's policy. Bocha, Jina, Kagi, Ollama, Perplexity, SerpApi, Serper, StepFun, Zhipu and Z.ai forward only validated and normalized integer seconds or a standard HTTP date. Moonshot's two adapters prefer a valid standard header, falling back to the [reset-header rules](#moonshot-search) when it is missing or invalid. Other adapters use the shared header passthrough behavior.
+- The shared HTTP layer applies local byte budgets to ordinary REST responses: **16 MiB (16,777,216 bytes)** for successful responses and **64 KiB (65,536 bytes)** for failed-response bodies. It counts bytes actually read after `fetch` decompression and does not trust `Content-Length`. Exceeding a budget cancels the stream and fails without returning partial results or writing the cache. A non-2xx overrun still retains the numeric `status` and the adapter's retry metadata; a 429 keeps its retry hint. These are local defensive limits, not upstream limits; the separate MCP 10 MiB budget is described in [the Zhipu section](#zhipu-search).
 - If reading a failed HTTP response body is interrupted or times out, the shared HTTP layer retains the known `status` and retry metadata extracted by the adapter. Explicit host cancellation during a request takes precedence. Network failures and business errors in HTTP 200 responses do not acquire invented HTTP statuses.
+- All search requests reject HTTP redirects; a custom Base URL remains an exact endpoint. Queries that normalize to an empty string fail before fetching. Linkup, Metaso and Querit trim surrounding key whitespace and reject blank keys, as the other required-key adapters do.
+- AnySearch, Keenable, Linkup, Metaso, Querit, Parallel and TinyFish require array result fields and nonblank string URLs on usable rows. Explicit empty arrays remain successful and cache for at most 30 seconds. Malformed fields and nonempty candidate arrays with no usable rows fail without caching. Linkup excludes images first, so image-only results remain a valid empty answer. Metaso preserves its nullish fallback order: `webpages` → `results` → `papers` → `documents` → `data`.
+- Business error messages from AnySearch, Querit and both Moonshot sites retain at most 300 code points plus `… [truncated]` when needed. AnySearch/Querit business codes and request identifiers each retain at most 80 code points plus `…`. Fixed prefixes and markers are outside these budgets. Short error formats stay unchanged, and business messages do not invent an HTTP status.
 
 <a id="configuration"></a>
 
@@ -1036,7 +1052,9 @@ entry for that status, sensitive mode and withheld 402 bodies take precedence
 and skip the callback. It does not handle business errors in HTTP 200 responses;
 adapters validate those themselves. Failed body reads retain the known HTTP
 status and retry metadata; explicit host cancellation during a request takes
-precedence.
+precedence. The default success-body budget is 16 MiB and the failure-body
+budget is 64 KiB; tests may lower them through the internal
+`maxResponseBytes`/`maxErrorBytes` options, which are not user settings.
 
 ```sh
 npm test        # node:test, no dependencies
@@ -1049,6 +1067,11 @@ magpie runs the plugin on **Bun**, which it manages. The Node-based development
 commands require **Node.js 20.3.0 or later** (`AbortSignal.any` is used to combine
 deadlines and cancellation); `check:bun` runs directly on Bun. This plugin uses magpie's `search` hook. The
 `opencode` keywords in package.json are required for magpie's npm discovery.
+
+Both Node and Bun use `scripts/test.mjs` to enumerate regular `*.test.mjs` files
+in `test/`, then launch the current runtime with an argument array. This avoids
+shell glob expansion and does not run `harness.mjs` or `cases.mjs` as independent
+test files. New files following this naming rule need no package.json update.
 
 The smoke script requires `magpie` on PATH (`MAGPIE_BIN` can name its executable).
 It creates a temporary HOME/config/cache, disables account discovery, starts a
@@ -1075,15 +1098,17 @@ IDs). `MAGPIE_SMOKE_ROOT` can override the system temporary directory used for
 the sandbox. CI runs separate jobs for Node 22/24, Bun, and Magpie testing of the
 unpacked npm package; the three jobs have no ordering dependency.
 
-Local verification through **2026-11-07** used **Node.js 24.19.0, Bun 1.4.4 and magpie
-0.1.3141**. Node and Bun each passed 329 tests across 26 test files, covering
-host `count` passthrough, explicit `resultLimit` caps, legacy-name migration, and
-Coding Plan MCP lifecycle, JSON/SSE, schema-gated fields, timeout/cancellation,
-error redaction and site/cache isolation. Independent MCP reader and search
-extraction tests verify tool-level error separation, explicit aliases, decoding
-depth, empty-array priority and metadata preservation. The complete Magpie sandbox passed,
-including both MCP sites' key rotation, 429 handling, explicit fallback and the
-absence of implicit REST downgrade.
+Release 0.7.0 was verified with **Node.js 24.19.0, Bun 1.4.4 and magpie
+0.1.3141**: Node and Bun each passed 329 tests across 26 files, and the complete
+Magpie sandbox passed. After the 2026-11-07 hardening changes, **Node.js 20.3.0,
+Node.js 24.19.0 and Bun 1.4.4 each passed 371 tests across 28 files**, including
+the Windows npm/cmd `check:bun` entry point. The complete host sandbox passed on
+**magpie 0.1.3216**, covering registration, counts, timeouts, anonymous cooldowns,
+key rotation, fallback and both MCP sites' lifecycle. New tests cover malformed
+results without caching, valid empty answers and field fallback, key/query
+guards, real HTTP redirect rejection, bounded diagnostics, REST 16 MiB/64 KiB byte
+budgets, exact MCP byte budgets and cleanup after oversized responses, and RPC text
+resembling a timeout.
 
 Bun ran temporarily via `npm exec --yes --package=bun@1.4.4 -- bun run check:bun`,
 without adding a project dependency or lockfile. On Windows, `MAGPIE_BIN` can name

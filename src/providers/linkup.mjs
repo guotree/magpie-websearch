@@ -1,6 +1,6 @@
 import {
-  cacheKey, configCountPolicy, configInt, configStr, list, makeCache, normalizeQuery,
-  page, requestJSON, resolveEndpoint, resolveResultCount, truncateCodePoints,
+  cacheKey, configCountPolicy, configInt, configStr, makeCache,
+  page, requestJSON, requireQuery, resolveEndpoint, resolveResultCount, searchRows, truncateCodePoints,
 } from "../core.mjs"
 
 export function createLinkup(options = {}) {
@@ -15,9 +15,11 @@ export function createLinkup(options = {}) {
     name: "Linkup (magpie-websearch)",
     keysURL: "https://app.linkup.so",
     async execute({ query, count, key, url }, ctx) {
+      key = String(key ?? "").trim()
       if (!key) throw new Error("Linkup needs a key: add one in magpie's Web search settings")
+      const q = requireQuery(query, "Linkup")
       const endpoint = resolveEndpoint(url, "https://api.linkup.so/v1/search")
-      const body = { q: normalizeQuery(query), depth, outputType: "searchResults", maxResults: resolveResultCount(count, countPolicy) }
+      const body = { q, depth, outputType: "searchResults", maxResults: resolveResultCount(count, countPolicy) }
       const identity = cacheKey(endpoint, body, key)
       const cached = cache.read(identity)
       if (cached) return cached
@@ -25,9 +27,9 @@ export function createLinkup(options = {}) {
         method: "POST",
         headers: { Accept: "application/json", "Content-Type": "application/json", Authorization: "Bearer " + key },
         body: JSON.stringify(body),
+        redirect: "error",
       }, ctx, { label: "Linkup", timeout })
-      const results = list(json.results)
-        .filter((item) => item && item.url && item.type !== "image")
+      const results = searchRows(json?.results, "Linkup", { ignore: (item) => item?.type === "image" })
         .slice(0, body.maxResults)
         .map((item) => page(item.name, item.url, truncateCodePoints(String(item.content ?? ""), contentChars)))
       cache.write(identity, results)

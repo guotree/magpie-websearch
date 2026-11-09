@@ -89,3 +89,26 @@ test("MCP search results: malformed payloads fail without HTTP status or reflect
     })
   }
 })
+
+test("MCP search results: bounds every JSON string before decoding by UTF-8 bytes", () => {
+  const limit = 10 * 1024 * 1024
+  const overhead = Buffer.byteLength(JSON.stringify({ results: [], padding: "" }))
+  const exact = JSON.stringify({ results: [], padding: "x".repeat(limit - overhead) })
+  assert.equal(Buffer.byteLength(exact), limit)
+  assert.deepEqual(extractMCPResults({ content: [{ type: "text", text: exact }] }, "test").results, [])
+  const tooLarge = JSON.stringify({ results: [], padding: "中".repeat(Math.floor(limit / 3)) })
+  assert.ok(tooLarge.length < limit)
+  assert.ok(Buffer.byteLength(tooLarge) > limit)
+  for (const result of [
+    { structuredContent: tooLarge },
+    { content: [{ type: "text", text: exact + " " }] },
+    { content: [{ type: "text", text: JSON.stringify(exact) }] },
+  ]) {
+    assert.throws(() => extractMCPResults(result, "test", codingPolicy), error => {
+      assert.match(error.message, /10485760-byte limit/)
+      assert.equal(error.status, undefined)
+      assert.ok(error.message.length < 100)
+      return true
+    })
+  }
+})

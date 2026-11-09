@@ -136,7 +136,7 @@ test("session MCP: malformed responses fail clearly and DELETE failures never re
   }
 })
 
-test("session MCP: one total timeout and host cancellation cover every stage", async () => {
+test("session MCP: one total timeout and host cancellation cover every stage", { timeout: 10_000 }, async () => {
   const keepAlive = setInterval(() => {}, 1_000)
   let fake
   try {
@@ -168,4 +168,18 @@ test("session MCP: one total timeout and host cancellation cover every stage", a
     clearInterval(keepAlive)
     fake?.restore()
   }
+})
+
+test("session MCP: server text resembling a timeout remains an RPC error and sessions are cleaned up", async () => {
+  const message = "server says search timed out after 7ms"
+  let fake = stubFetch(call => json({ jsonrpc: "2.0", id: call.body.id, error: { code: -32603, message } }))
+  try {
+    await assert.rejects(callSessionMCPTool(args), { message: `Coding MCP error: ${message}` })
+    assert.equal(fake.calls.length, 1)
+  } finally { fake.restore() }
+  fake = lifecycle({ callResponse: call => json({ jsonrpc: "2.0", id: call.body.id, error: { code: -32603, message } }) })
+  try {
+    await assert.rejects(callSessionMCPTool(args), { message: `Coding MCP error: ${message}` })
+    assert.equal(fake.calls.at(-1).init.method, "DELETE")
+  } finally { fake.restore() }
 })

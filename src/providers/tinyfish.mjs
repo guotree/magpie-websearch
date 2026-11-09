@@ -1,6 +1,6 @@
 import {
   cacheKey, configCountPolicy, configInt, configStr, makeAnonymousCooldown, makeCache, normalizeQuery,
-  page, requestJSON, resolveEndpoint, resolveResultCount,
+  page, requestJSON, resolveEndpoint, resolveResultCount, searchRows,
 } from "../core.mjs"
 import { callMCPSearch } from "../mcp/stateless.mjs"
 
@@ -46,10 +46,11 @@ export function createTinyfish(options = {}) {
         target.search = new URLSearchParams(args).toString()
         return requestJSON(target.href, {
           method: "GET", headers: { Accept: "application/json", "X-API-Key": key },
+          redirect: "error",
         }, ctx, { label: "TinyFish", timeout })
       })
       if (!Array.isArray(json?.results)) throw new Error("Invalid TinyFish response: expected results array")
-      const results = json.results.filter((item) => item && item.url)
+      const results = searchRows(json.results, "TinyFish")
         .slice(0, limit).map((item) => page(item.title, item.url, item.snippet, item.date))
       cache.write(identity, results)
       return results

@@ -1,5 +1,5 @@
 import {
-  cacheKey, cleanRetryAfter, configCountPolicy, configInt, configStr, makeCache,
+  boundDetail, cacheKey, cleanRetryAfter, configCountPolicy, configInt, configStr, makeCache,
   normalizeQuery, page, requestJSON, resolveEndpoint, resolveResultCount, truncateCodePoints,
 } from "../core.mjs"
 
@@ -104,7 +104,7 @@ export function createMoonshotProvider(meta, options = {}) {
         const detail = typeof json.error === "object"
           ? (json.error.message ?? JSON.stringify(json.error))
           : String(json.error)
-        throw new Error(`${displayLabel} API error: ${detail}`)
+        throw new Error(`${displayLabel} API error: ${boundDetail(detail)}`)
       }
       if (!Array.isArray(json.search_results)) {
         throw new Error(`Invalid ${displayLabel} response: search_results must be an array`)
