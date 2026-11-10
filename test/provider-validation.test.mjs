@@ -121,6 +121,17 @@ test("metaso: documented aliases and nullish precedence are preserved", async ()
   } finally { fake.restore() }
 })
 
+test("metaso: an unsafe link falls back to a valid url", async () => {
+  const provider = await create("metaso", { cacheTTL: 0 })
+  const fake = stubFetch(() => json({ webpages: [
+    { title: "fallback", link: "javascript:alert(1)", url: "https://example.com/fallback" },
+  ] }))
+  try {
+    const pages = await provider.execute(args, context())
+    assert.deepEqual(pages.map((page) => page.url), ["https://example.com/fallback"])
+  } finally { fake.restore() }
+})
+
 for (const id of ["parallel", "tinyfish"]) {
   test(`${id}: anonymous MCP rejects unusable nonempty rows without caching`, async () => {
     const provider = await create(id)

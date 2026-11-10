@@ -41,6 +41,104 @@ function manyResults(id) {
   return response
 }
 
+function rowsAt(response, id) {
+  const path = resultPaths[id]
+  const parent = path.slice(0, -1).reduce((value, key) => value[key], response)
+  return { parent, field: path.at(-1) }
+}
+
+function replaceResultUrls(id, urls) {
+  const response = structuredClone(fixtures[id].response)
+  const { parent, field } = rowsAt(response, id)
+  const template = parent[field].find((row) => row && (row.url || row.link) && row.type !== "image")
+  parent[field] = urls.map((url) => ({ ...structuredClone(template), url, link: url }))
+  return response
+}
+
+function responseWithOnlyField(id, keep) {
+  const response = structuredClone(fixtures[id].response)
+  const { parent, field } = rowsAt(response, id)
+  const template = parent[field].find((row) => row && (row.url || row.link) && row.type !== "image")
+  const row = { ...structuredClone(template), [keep]: `https://example.com/${keep}` }
+  delete row[keep === "url" ? "link" : "url"]
+  parent[field] = [row]
+  return response
+}
+
+test("all REST providers drop non-http result URLs and reject unusable nonempty payloads", async () => {
+  for (const id of Object.keys(fixtures)) {
+    const { search } = await WebSearch({}, { enable: [id], [id]: { cacheTTL: 0 } })
+    const args = { query: "url policy", count: 2, key: "k", url: `https://local.example/${id}` }
+
+    let fake = stubFetch(() => json(replaceResultUrls(id, [
+      "javascript:alert(1)", "https://example.com/good",
+    ])))
+    try {
+      const pages = await search[id].execute(args, context())
+      assert.deepEqual(pages.map((page) => page.url), ["https://example.com/good"], `${id}: unsafe row dropped`)
+      assert.equal(fake.calls.length, 1)
+    } finally { fake.restore() }
+
+    fake = stubFetch(() => json(replaceResultUrls(id, ["data:text/html,<script>alert(1)</script>"])))
+    try {
+      const rejecting = await WebSearch({}, { enable: [id] })
+      for (let attempt = 0; attempt < 2; attempt++) {
+        await assert.rejects(rejecting.search[id].execute({ ...args, query: "url policy rejected" }, context()),
+          /no usable search results/, `${id}: wholly unusable payload must fail`)
+      }
+      assert.equal(fake.calls.length, 2, `${id}: wholly unusable payload must not be cached`)
+    } finally { fake.restore() }
+  }
+})
+
+test("result URL filtering happens before the local result cap for every REST provider", async () => {
+  for (const id of Object.keys(fixtures)) {
+    const { search } = await WebSearch({}, { enable: [id], [id]: { cacheTTL: 0 } })
+    const response = manyResults(id)
+    const { parent, field } = rowsAt(response, id)
+    const template = parent[field].find((row) => row && (row.url || row.link) && row.type !== "image")
+    parent[field].unshift({ ...structuredClone(template), url: "javascript:alert(1)", link: "javascript:alert(1)" })
+    const fake = stubFetch(() => json(response))
+    try {
+      const pages = await search[id].execute({
+        query: "filter before cap", count: 6, key: "k", url: `https://local.example/${id}`,
+      }, context())
+      assert.equal(pages.length, 6, `${id}: the unsafe row must not consume a result slot`)
+    } finally { fake.restore() }
+  }
+})
+
+test("providers validate the URL field they actually map", async () => {
+  for (const [id, primary, alternate, alternateWorks] of [
+    ["anysearch", "url", "link", false],
+    ["jina", "url", "link", false],
+    ["serpapi", "link", "url", false],
+    ["serper", "link", "url", false],
+    ["zhipu", "link", "url", false],
+    ["metaso", "link", "url", true],
+  ]) {
+    const { search } = await WebSearch({}, { enable: [id], [id]: { cacheTTL: 0 } })
+    const args = { query: "field mapping", count: 1, key: "k", url: `https://local.example/${id}` }
+
+    let fake = stubFetch(() => json(responseWithOnlyField(id, primary)))
+    try {
+      const pages = await search[id].execute(args, context())
+      assert.deepEqual(pages.map((page) => page.url), [`https://example.com/${primary}`], `${id}: primary field`)
+    } finally { fake.restore() }
+
+    fake = stubFetch(() => json(responseWithOnlyField(id, alternate)))
+    try {
+      if (alternateWorks) {
+        const pages = await search[id].execute(args, context())
+        assert.deepEqual(pages.map((page) => page.url), [`https://example.com/${alternate}`], `${id}: fallback field`)
+      } else {
+        await assert.rejects(search[id].execute(args, context()),
+          /no usable search results/, `${id}: alternate field must not satisfy validation`)
+      }
+    } finally { fake.restore() }
+  }
+})
+
 test("all APIs follow host count unless an explicit limit or provider maximum applies", async () => {
   const saved = { ...process.env }
   const maxima = { anysearch: 10, ollama: 10, serpapi: 10, serper: 10, jina: 20, moonshot: 20, "moonshot-cn": 20, parallel: 20, perplexity: 20, stepfun: 20 }

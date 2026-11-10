@@ -1,6 +1,6 @@
 import {
   cacheKey, configCountPolicy, configInt, configStr, makeCache, normalizeQuery,
-  page, requestJSON, resolveEndpoint, resolveResultCount,
+  page, requestJSON, resolveEndpoint, resolveResultCount, safeResultUrl,
 } from "../core.mjs"
 
 export function createSerpapi(options = {}) {
@@ -94,11 +94,16 @@ export function createSerpapi(options = {}) {
       }
 
       if (Array.isArray(json.organic_results)) {
-        const results = json.organic_results
-          .filter((item) => item && typeof item.link === "string" && item.link.trim())
+        const valid = json.organic_results
+          .filter((item) => item && safeResultUrl(item.link) !== undefined)
+        if (json.organic_results.length > 0 && valid.length === 0) {
+          throw new Error("Invalid SerpApi response: no usable search results in payload")
+        }
+        const results = valid
           .slice(0, limit)
           .map((item) => page(item.title, item.link,
             typeof item.snippet === "string" ? item.snippet : "", item.date))
+          .filter(Boolean)
         cache.write(identity, results)
         return results
       }

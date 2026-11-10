@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { boundDetail, cleanRetryAfter, configCountPolicy, configInt, configStr, makeCache, requestJSON, requestResponse, resolveResultCount, truncateCodePoints } from "../src/core.mjs"
+import { boundDetail, cleanRetryAfter, configCountPolicy, configInt, configStr, makeCache, MAX_RESULT_URL_CHARS, page, requestJSON, requestResponse, resolveResultCount, safeResultUrl, searchRows, truncateCodePoints } from "../src/core.mjs"
 import { context, stubFetch, text } from "./harness.mjs"
 
 test("configuration helpers preserve legacy validation and error fields", () => {
@@ -235,6 +235,82 @@ test("boundDetail consumes only the diagnostic prefix of a large input", () => {
   }
   try { assert.equal(boundDetail("x".repeat(100_000)), "x".repeat(300) + "… [truncated]") }
   finally { String.prototype[Symbol.iterator] = original }
+})
+
+test("safeResultUrl accepts absolute http(s) pages and canonicalizes them", () => {
+  assert.equal(safeResultUrl("https://example.com"), "https://example.com/")
+  assert.equal(safeResultUrl("http://example.com"), "http://example.com/")
+  assert.equal(safeResultUrl("  https://example.com/path?q=1#frag  "), "https://example.com/path?q=1#frag")
+  assert.equal(safeResultUrl("HTTPS://EXAMPLE.COM/A B"), "https://example.com/A%20B")
+  assert.equal(safeResultUrl("https://example.com/path?q=javascript:alert(1)"),
+    "https://example.com/path?q=javascript:alert(1)")
+  assert.ok(safeResultUrl("https://例え.テスト/パス").startsWith("https://xn--"))
+  const backslash = safeResultUrl("https://example.com\\@evil.example")
+  assert.equal(new URL(backslash).hostname, "example.com")
+  const base = "https://example.com/"
+  const exact = base + "a".repeat(MAX_RESULT_URL_CHARS - base.length)
+  assert.equal(safeResultUrl(exact), exact)
+  assert.equal(safeResultUrl(exact + "a"), undefined)
+})
+
+test("safeResultUrl rejects non-web schemes, credentials, controls and oversized URLs", () => {
+  for (const value of [
+    undefined, null, 42, {}, [], "",
+    "   ",
+    "/relative/path",
+    "//example.com/path",
+    "https://",
+    "javascript:alert(1)",
+    " javaScript:alert(1) ",
+    "data:text/html,<script>alert(1)</script>",
+    "file:///C:/secret.txt",
+    "blob:https://example.com/id",
+    "ftp://example.com/file",
+    "mailto:user@example.com",
+    "https://user@example.com/path",
+    "https://user:secret@example.com/path",
+    "https://:secret@example.com/path",
+    "https://example.com/\npath",
+    "https://example.com/\tpath",
+    "https://example.com/\u0000path",
+    "https://example.com/\u061Cpath",
+    "https://example.com/\u200Epath",
+    "https://example.com/\u200Fpath",
+    "https://example.com/\u2028path",
+    "https://example.com/\u2029path",
+    "https://example.com/\u202Epath",
+    "https://example.com/" + "a".repeat(MAX_RESULT_URL_CHARS),
+  ]) assert.equal(safeResultUrl(value), undefined, `unsafe URL accepted: ${String(value)}`)
+})
+
+test("page drops unsafe URLs and uses the canonical URL as its title fallback", () => {
+  assert.equal(page("title", "javascript:alert(1)"), undefined)
+  assert.equal(page("title", "file:///C:/secret.txt"), undefined)
+  assert.deepEqual(page(undefined, "HTTPS://EXAMPLE.COM/A B", "body", " 2026 "), {
+    title: "https://example.com/A%20B",
+    url: "https://example.com/A%20B",
+    text: "body",
+    age: "2026",
+  })
+  assert.deepEqual(page("title", "https://example.com", ""), {
+    title: "title",
+    url: "https://example.com/",
+    text: "",
+  })
+  assert.equal(page("   ", "https://example.com/x").title, "https://example.com/x")
+  assert.equal(page("  hi  ", "https://example.com/x").title, "  hi  ")
+})
+
+test("searchRows keeps explicit empty answers but rejects nonempty arrays without web URLs", () => {
+  assert.deepEqual(searchRows([], "Test"), [])
+  const good = { url: "https://example.com/good" }
+  assert.deepEqual(searchRows([{ url: "javascript:alert(1)" }, good], "Test"), [good])
+  assert.throws(() => searchRows([{ url: "javascript:alert(1)" }], "Test"),
+    /Invalid Test response: no usable search results in payload/)
+  assert.throws(() => searchRows([{ url: "file:///C:/secret.txt" }, { title: "missing" }], "Test"),
+    /Invalid Test response: no usable search results in payload/)
+  assert.deepEqual(searchRows([{ link: "https://example.com/link" }], "Test",
+    { url: (item) => item.link }), [{ link: "https://example.com/link" }])
 })
 
 test("withheld 402 bodies are cancelled without waiting or exposing cleanup failures", async () => {

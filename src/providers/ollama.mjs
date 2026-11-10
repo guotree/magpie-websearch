@@ -1,6 +1,6 @@
 import {
   boundDetail, cacheKey, cleanRetryAfter, configCountPolicy, configInt, makeCache,
-  normalizeQuery, page, requestJSON, resolveEndpoint, resolveResultCount, truncateCodePoints,
+  normalizeQuery, page, requestJSON, resolveEndpoint, resolveResultCount, safeResultUrl, truncateCodePoints,
 } from "../core.mjs"
 
 export function createOllama(options = {}) {
@@ -49,7 +49,7 @@ export function createOllama(options = {}) {
         throw new Error("Invalid Ollama response: results must be an array")
       }
       const valid = json.results.filter((item) => item && typeof item === "object"
-        && !Array.isArray(item) && typeof item.url === "string" && item.url.trim())
+        && !Array.isArray(item) && safeResultUrl(item.url) !== undefined)
       if (json.results.length > 0 && valid.length === 0) {
         throw new Error("Invalid Ollama response: no usable search results in payload")
       }
@@ -57,7 +57,7 @@ export function createOllama(options = {}) {
         typeof item.title === "string" && item.title.trim() ? item.title.trim() : undefined,
         item.url.trim(),
         truncateCodePoints(typeof item.content === "string" ? item.content : "", contentChars),
-      ))
+      )).filter(Boolean)
       cache.write(identity, results)
       return results
     },

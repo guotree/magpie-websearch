@@ -107,7 +107,8 @@ and other endpoints are independent of that cooldown. See
   authenticated POST search at `/api/v1/search`.
 - Metaso requires an API key (Bearer token). Anonymous access returns HTTP 401.
 - Results are read from `webpages`, falling back to `results`, `papers`, `documents`
-  or `data`; `link` or `url` maps to `url`, `snippet` (or `content` when `snippet`
+  or `data`; a usable `link` maps to `url`, otherwise a usable `url` is used (the
+  shared http(s) result URL policy applies), `snippet` (or `content` when `snippet`
   is absent) to `text`, and a string `date` to `age`.
 - Supports configurable search scope (`webpage`, `document`, `paper`, `image`, `video`, `podcast`).
 - Public search caps results at 50 (`resolveResultCount(count, countPolicy)`).
@@ -233,11 +234,11 @@ and other endpoints are independent of that cooldown. See
   This checks property presence, not every JSON Schema constraint such as
   `maxLength`, `minimum`, or `maximum`. Server-side validation still applies.
 - Results may be structured content or JSON text decoded up to three times, containing a
-  top-level array, `results`, or `search_result`. Rows without a nonblank string
-  `link ?? url` are removed before the
+  top-level array, `results`, or `search_result`. Rows without a usable `link` or
+  `url` under the shared http(s) result URL policy are removed before the
   local cap. Valid empty results receive the normal short cache; malformed or wholly
-  unusable non-empty payloads are not cached. Result URLs are trimmed without syntax,
-  protocol or reachability validation. A non-null `link` takes precedence over `url`.
+  unusable non-empty payloads are not cached. A usable `link` takes precedence;
+  otherwise a usable `url` is used.
 - Official plan documentation currently describes each Web Search MCP call as using
   shared Coding Plan credits (the documented coefficient at implementation time is
   1.2 credits per call). It is not anonymous or unlimited. Local fake-service and
@@ -259,9 +260,9 @@ and other endpoints are independent of that cooldown. See
   `resolveResultCount(count, countPolicy)` (at most 20), and optional `category` (`programming`,
   `research`, `gov`, `business`). The API publishes no query length ceiling,
   pagination, domain/recency filters or safe-search switch.
-- Results read `results`, retaining rows with a nonblank string `url` before
-  capping in upstream order. URLs are trimmed without further syntax, protocol
-  or reachability checks.
+- Results read `results`, retaining rows with a `url` that passes the shared
+  http(s) result URL policy before capping in upstream order. Reachability is not
+  checked.
   Missing/null/non-array results and nonempty arrays with no usable links fail
   without caching; explicit empty arrays cache for at most 30 seconds. This is a
   plugin validation policy. Truthy `error` payloads fail even on HTTP 200.
@@ -418,7 +419,8 @@ All third-batch planned standalone web search APIs (Jina, Kagi, Serper) have now
    Preserve the legacy fallback only when no valid host count is supplied. Filter
    unusable rows before capping, even when the upstream ignores the requested count.
 3. Return `{ title, url, text, age? }` results. Drop entries without a URL and
-   preserve the provider's date string when available.
+   entries whose URL does not pass the shared absolute `http:`/`https:` result
+   URL policy, and preserve the provider's date string when available.
 4. Preserve `ctx.abort` and apply the configured request timeout. Reject HTTP
    redirects and reject queries that normalize to an empty string before fetching. Throw errors
    with a numeric `status` for HTTP refusals and carry `retryAfter` on 429. Use the shared

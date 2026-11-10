@@ -42,6 +42,7 @@ export function createQuerit(options = {}) {
         .slice(0, body.count)
         .map((item) => page(item.title, item.url,
           item.snippet ?? (Array.isArray(item.sentence) ? item.sentence.join(" ") : ""), item.page_age))
+        .filter(Boolean)
       cache.write(identity, results)
       return results
     },

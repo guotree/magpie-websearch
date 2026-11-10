@@ -41,6 +41,7 @@ export function createKeenable(options = {}) {
       const results = searchRows(json?.results, "Keenable")
         .slice(0, body.max_results)
         .map((item) => page(item.title, item.url, item.snippet || item.description, item.published_at))
+        .filter(Boolean)
       cache.write(identity, results)
       return results
     },
