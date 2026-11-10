@@ -61,7 +61,12 @@
   },
   "magpie": {
     "name": "magpie-websearch",
-    "icon": "https://raw.githubusercontent.com/guotree/magpie-websearch/main/assets/icon-128.png"
+    "icon": "https://raw.githubusercontent.com/guotree/magpie-websearch/main/assets/icon-128.png",
+    "options": {
+      "anysearch": {
+        "format": "markdown"
+      }
+    }
   },
   "scripts": {
     "test": "node scripts/test.mjs",
