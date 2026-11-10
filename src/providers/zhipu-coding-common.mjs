@@ -1,6 +1,6 @@
 import {
   cacheKey, configCountPolicy, configInt, configStr, makeCache, normalizeQuery,
-  page, resolveEndpoint, resolveResultCount, truncateCodePoints,
+  page, resolveEndpoint, resolveResultCount, safeResultUrl, truncateCodePoints,
 } from "../core.mjs"
 import { callSessionMCPTool } from "../mcp/session.mjs"
 import { extractMCPResults } from "../mcp/search-results.mjs"
@@ -92,17 +92,17 @@ export function createZhipuCodingProvider(meta, options = {}) {
         decodeStructuredContent: true,
       })
       const valid = upstream.filter((item) => object(item)
-        && typeof (item.link ?? item.url) === "string" && (item.link ?? item.url).trim())
+        && (safeResultUrl(item.link) ?? safeResultUrl(item.url)) !== undefined)
       if (upstream.length > 0 && valid.length === 0) {
         throw new Error(`Invalid ${label} MCP search result: no usable search results in payload`)
       }
       const results = valid.slice(0, limit).map((item) => {
-        const resultURL = (item.link ?? item.url).trim()
+        const resultURL = safeResultUrl(item.link) ?? safeResultUrl(item.url)
         const title = typeof item.title === "string" && item.title.trim() ? item.title.trim() : undefined
         const text = typeof item.content === "string" ? item.content
           : typeof item.snippet === "string" ? item.snippet : ""
         return page(title, resultURL, truncateCodePoints(text, contentChars), item.publish_date)
-      })
+      }).filter(Boolean)
       cache.write(pendingIdentity, results)
       return results
     },

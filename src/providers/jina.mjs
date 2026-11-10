@@ -1,6 +1,6 @@
 import {
   boundDetail, cacheKey, cleanRetryAfter, configCountPolicy, configInt, configStr, makeCache,
-  normalizeQuery, page, requestJSON, resolveEndpoint, resolveResultCount, truncateCodePoints,
+  normalizeQuery, page, requestJSON, resolveEndpoint, resolveResultCount, safeResultUrl, truncateCodePoints,
 } from "../core.mjs"
 
 function describeJinaError(json) {
@@ -98,7 +98,7 @@ export function createJina(options = {}) {
         return []
       }
 
-      const valid = json.data.filter((item) => item && typeof item === "object" && !Array.isArray(item) && typeof item.url === "string" && item.url.trim())
+      const valid = json.data.filter((item) => item && typeof item === "object" && !Array.isArray(item) && safeResultUrl(item.url) !== undefined)
       if (valid.length === 0) {
         throw new Error("Invalid Jina response: no usable search results in payload")
       }
@@ -120,7 +120,7 @@ export function createJina(options = {}) {
           truncated,
           published,
         )
-      })
+      }).filter(Boolean)
 
       cache.write(identity, results)
       return results

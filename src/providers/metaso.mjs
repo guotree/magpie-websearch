@@ -1,6 +1,6 @@
 import {
   cacheKey, configCountPolicy, configInt, configStr, makeCache,
-  page, requestJSON, requireQuery, resolveEndpoint, resolveResultCount, searchRows, truncateCodePoints,
+  page, requestJSON, requireQuery, resolveEndpoint, resolveResultCount, safeResultUrl, searchRows, truncateCodePoints,
 } from "../core.mjs"
 
 export function createMetaso(options = {}) {
@@ -44,11 +44,15 @@ export function createMetaso(options = {}) {
       }, ctx, { label: "Metaso", timeout })
 
       const raw = searchRows(json?.webpages ?? json?.results ?? json?.papers ?? json?.documents ?? json?.data,
-        "Metaso", { url: (item) => item.link || item.url })
+        "Metaso", { url: (item) => safeResultUrl(item.link) ?? safeResultUrl(item.url) })
       const results = raw
         .slice(0, limit)
-        .map((item) => page(item.title, item.link || item.url,
-          truncateCodePoints(String(item.snippet ?? item.content ?? ""), contentChars), item.date))
+        .map((item) => {
+          const resultURL = safeResultUrl(item.link) ?? safeResultUrl(item.url)
+          return resultURL ? page(item.title, resultURL,
+            truncateCodePoints(String(item.snippet ?? item.content ?? ""), contentChars), item.date) : undefined
+        })
+        .filter(Boolean)
 
       cache.write(identity, results)
       return results

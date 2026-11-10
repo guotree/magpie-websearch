@@ -52,6 +52,7 @@ export function createTinyfish(options = {}) {
       if (!Array.isArray(json?.results)) throw new Error("Invalid TinyFish response: expected results array")
       const results = searchRows(json.results, "TinyFish")
         .slice(0, limit).map((item) => page(item.title, item.url, item.snippet, item.date))
+        .filter(Boolean)
       cache.write(identity, results)
       return results
     },

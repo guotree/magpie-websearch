@@ -32,6 +32,7 @@ export function createLinkup(options = {}) {
       const results = searchRows(json?.results, "Linkup", { ignore: (item) => item?.type === "image" })
         .slice(0, body.maxResults)
         .map((item) => page(item.name, item.url, truncateCodePoints(String(item.content ?? ""), contentChars)))
+        .filter(Boolean)
       cache.write(identity, results)
       return results
     },

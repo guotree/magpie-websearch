@@ -1,6 +1,6 @@
 import {
   boundDetail, cacheKey, cleanRetryAfter, configCountPolicy, configInt, configStr, makeCache,
-  normalizeQuery, page, requestJSON, resolveEndpoint, resolveResultCount, truncateCodePoints,
+  normalizeQuery, page, requestJSON, resolveEndpoint, resolveResultCount, safeResultUrl, truncateCodePoints,
 } from "../core.mjs"
 
 function parseSummary(options) {
@@ -107,7 +107,7 @@ export function createBocha(options = {}) {
         throw new Error("Invalid Bocha response: webPages.value must be an array")
       }
       const valid = webPages.value.filter((item) => item && typeof item === "object"
-        && !Array.isArray(item) && typeof item.url === "string" && item.url.trim())
+        && !Array.isArray(item) && safeResultUrl(item.url) !== undefined)
       if (webPages.value.length > 0 && valid.length === 0) {
         throw new Error("Invalid Bocha response: no usable search results in payload")
       }
@@ -120,7 +120,7 @@ export function createBocha(options = {}) {
           item.url.trim(), text,
           published ?? (typeof item.dateLastCrawled === "string" ? item.dateLastCrawled : undefined),
         )
-      })
+      }).filter(Boolean)
       cache.write(identity, results)
       return results
     },

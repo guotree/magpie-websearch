@@ -215,6 +215,28 @@ test("coding providers: oversized MCP responses cancel, clean up sessions and ne
   }
 })
 
+test("coding providers: drop non-web URLs, use a valid fallback field and fail when all rows are unusable", async () => {
+  const provider = createZhipuCoding({ cacheTTL: 0 })
+  let fake = codingFake({ result: { structuredContent: { results: [
+    { title: "bad", link: "javascript:alert(1)" },
+    { title: "fallback", link: "file:///C:/secret.txt", url: "https://example.com/fallback" },
+    { title: "good", link: "https://example.com/good" },
+  ] } } })
+  try {
+    const pages = await provider.execute({ query: "url policy", count: 10, key: "key" }, context())
+    assert.deepEqual(pages.map((page) => page.url),
+      ["https://example.com/fallback", "https://example.com/good"])
+  } finally { fake.restore() }
+
+  fake = codingFake({ result: { structuredContent: { results: [
+    { title: "bad", link: "data:text/html,<script>alert(1)</script>" },
+  ] } } })
+  try {
+    await assert.rejects(provider.execute({ query: "all bad", key: "key" }, context()),
+      /no usable search results/)
+  } finally { fake.restore() }
+})
+
 test("coding providers: cache identity isolates key, endpoint, count, parameters and site", async () => {
   const cn = createZhipuCoding()
   const intl = createZaiCoding()

@@ -452,9 +452,7 @@ presence rather than performing full JSON Schema validation; constraints such as
 
 Results may come from `structuredContent` or text content containing a top-level
 array, `results`, or `search_result`, including up to three JSON string-decode
-layers. `link ?? url` must be a nonblank string and is trimmed without syntax,
-protocol or reachability validation. A non-null `link` takes precedence even if
-unusable. String `content` is preferred, otherwise string `snippet`; `publish_date`
+layers. `link`/`url` must pass the shared result URL policy (absolute `http:`/`https:` only, rejecting credentials, control characters and oversized addresses); a usable `link` wins, otherwise a usable `url` is used. String `content` is preferred, otherwise string `snippet`; `publish_date`
 maps to `age`. Rows without usable URLs are removed before the local cap. Valid empty arrays receive the
 short empty-result cache; malformed or wholly unusable nonempty payloads do not.
 
@@ -515,8 +513,9 @@ Both modes use this budget. Magpie still applies its own 1500-byte cap. The API
 documents no way to suppress the response's full body; no `include_content`
 switch is sent, and these options only select text locally.
 
-Results read the `results` array. Each row requires a nonblank string `url`,
-which is trimmed without further protocol, syntax or reachability checks.
+Results read the `results` array. Each row requires a `url` that passes the
+shared result URL policy (absolute `http:`/`https:` only, rejecting credentials,
+control characters and oversized addresses).
 Missing, non-string or blank titles fall back to the URL. String `time` maps to
 `age` after trimming surrounding whitespace; blank or non-string values are
 omitted. It is not parsed: it is the page's **index time**, not its publication
@@ -649,7 +648,7 @@ will receive full text. Enabling summary does not make an additional model call.
 
 Responses require a top-level object with a `data` object. If `data.webPages` is missing or
 null, it is treated as a valid empty result (`[]`). When present, `webPages.value` must be an
-array. Results without a valid nonblank string `url` are filtered out before capping;
+array. Results without a `url` that passes the shared http(s) result URL policy are filtered out before capping;
 nonempty arrays with no usable URLs fail. `name` maps to `title` (falling back to the URL
 when blank or missing). `age` prioritizes trimmed `datePublished`, falling back to
 `dateLastCrawled`, and is omitted if neither is a nonblank string. Dates are preserved as
@@ -693,7 +692,7 @@ it does not connect to a local Ollama daemon (e.g. localhost:11434), call models
 
 Requests send `query` and `max_results` sized via `resolveResultCount(count, countPolicy)` (at most 10). An explicit `resultLimit` is a cap of 1–10; otherwise follow the host, falling back to 5 only without a valid host count.
 Queries are whitespace-normalized and must be nonempty. The response contains a `results` array of
-items with `title`, `url`, and `content`. Items without a valid nonblank string `url` are dropped
+items with `title`, `url`, and `content`. Items whose `url` does not pass the shared http(s) result URL policy are dropped
 before capping; nonempty arrays with no usable URLs fail. `title` falls back to the URL when
 missing or blank. Results have no date metadata; `age` is omitted.
 
@@ -735,7 +734,7 @@ Uses the [Jina Search API](https://docs.jina.ai/api.md): POST `https://s.jina.ai
 
 The default `content: "snippet"` sends `X-Respond-With: no-content` and maps only string `description`. `content: "full"` omits that header and prefers nonblank string `content`, falling back to `description`. Both modes retain up to `contentChars` code points (4000 by default; 0 keeps all) and append `…` on truncation. The default timeout is 25000 ms for snippets or 60000 ms for full content; an explicit `timeout` or valid `JINA_TIMEOUT` overrides that mode default. These describe the adapter's request and mapping; a local dummy service does not establish live page-fetching behavior or billing.
 
-Responses read the `data` array, filtering rows without nonblank string URLs before capping. A nonempty array with no usable URLs fails. Missing/blank titles fall back to the URL; string `publishedTime` maps to `age` after trimming. A supplied `code` other than numeric 200 or a supplied `status` other than numeric 20000 raises a business error. An `error` field is tolerated only when absent, null, an empty string or an empty array; other values fail without inventing an HTTP status. Missing, null or non-array `data` fails.
+Responses read the `data` array, filtering rows whose URL does not pass the shared http(s) result URL policy before capping. A nonempty array with no usable URLs fails. Missing/blank titles fall back to the URL; string `publishedTime` maps to `age` after trimming. A supplied `code` other than numeric 200 or a supplied `status` other than numeric 20000 raises a business error. An `error` field is tolerated only when absent, null, an empty string or an empty array; other values fail without inventing an HTTP status. Missing, null or non-array `data` fails.
 
 ```sh
 magpie plugin options magpie-websearch '{"jina":{"content":"full","contentChars":4000,"resultLimit":6}}'
@@ -761,7 +760,7 @@ magpie plugin options magpie-websearch '{"kagi":{"recency":"week","region":"cn",
 
 Uses POST `https://google.serper.dev/search` with JSON and an `X-API-KEY` header. Magpie manages the required key from <https://serper.dev/>. Serper is independent of SerpApi, which uses GET and a URL `api_key` parameter. Requests send a normalized, nonempty `q`, fixed `num: 10` and optional `gl`, `hl`, `tbs`. `tbs` accepts `qdr:h`, `qdr:d`, `qdr:w`, `qdr:m`, `qdr:y`; the empty default is omitted. An explicit `resultLimit` (1–10) and the host's `count` only cap results locally; without a configured cap, follow the host up to 10. This does not change the wire `num`. One page is fetched without extra calls to fill short results.
 
-Only `organic` is mapped: rows without nonblank string `link` are removed before capping; missing/blank titles fall back to the URL, string `snippet` maps to `text` and string `date` maps to `age`. Missing `organic` returns `[]` only when an object `knowledgeGraph`/`answerBox` or array `peopleAlsoAsk`/`relatedSearches` is present. Other missing, null/non-array, or nonempty but unusable organic results fail. A nonblank string `message` raises a business error. An `error` field is tolerated only when absent, null or an empty array; other values fail without inventing an HTTP status. There is no separate text-budget option; cache identities include the local count cap.
+Only `organic` is mapped: rows whose `link` does not pass the shared http(s) result URL policy are removed before capping; missing/blank titles fall back to the URL, string `snippet` maps to `text` and string `date` maps to `age`. Missing `organic` returns `[]` only when an object `knowledgeGraph`/`answerBox` or array `peopleAlsoAsk`/`relatedSearches` is present. Other missing, null/non-array, or nonempty but unusable organic results fail. A nonblank string `message` raises a business error. An `error` field is tolerated only when absent, null or an empty array; other values fail without inventing an HTTP status. There is no separate text-budget option; cache identities include the local count cap.
 
 ```sh
 magpie plugin options magpie-websearch '{"serper":{"gl":"cn","hl":"zh-cn","tbs":"qdr:w","resultLimit":6}}'
@@ -777,13 +776,13 @@ All three reject redirects and use custom Base URLs as exact endpoints. HTTP ref
 - Sogou must request at least 10 because of its upstream buckets; Serper always sends `num: 10`; APIs without a configurable count are capped locally. Filter unusable results before capping; no extra pages or requests are made to fill short results.
 - `text` is stripped of tags, unescaped, whitespace-collapsed, and cut to 1500 bytes.
 - `age` preserves the vendor's date-string format after trimming surrounding whitespace. Blank or non-string values are omitted, without guessing dates or converting time zones. StepFun supplies index time.
-- A hit without a URL is dropped.
+- A result `url` must be a string that parses as an absolute `http:` or `https:` URL. The plugin trims it and returns the canonical `href`. URLs with another scheme, embedded credentials, C0/C1 or bidi mark/embedding/isolate controls, line separators, or more than 8192 UTF-16 code units before or after canonicalization are dropped. Reachability is never checked and result URLs are never fetched; loopback and private literal hosts are not blocked, so this is not an SSRF layer. A nonempty result set whose URLs are all unusable is treated as malformed, fails and is not cached; an explicit empty array remains a valid empty answer. A missing or blank title falls back to the canonical URL.
 - A thrown error with a numeric `status` (401, 402, 403, 429) is an API refusal. For keyed calls, magpie records the key's rest and tries the next key. Anonymous 429 cooldowns are managed by this plugin; failed APIs give way to the next configured API.
 - `retryAfter` on a 429 follows the adapter's policy. Bocha, Jina, Kagi, Ollama, Perplexity, SerpApi, Serper, StepFun, Zhipu and Z.ai forward only validated and normalized integer seconds or a standard HTTP date. Moonshot's two adapters prefer a valid standard header, falling back to the [reset-header rules](#moonshot-search) when it is missing or invalid. Other adapters use the shared header passthrough behavior.
 - The shared HTTP layer applies local byte budgets to ordinary REST responses: **16 MiB (16,777,216 bytes)** for successful responses and **64 KiB (65,536 bytes)** for failed-response bodies. It counts bytes actually read after `fetch` decompression and does not trust `Content-Length`. Exceeding a budget cancels the stream and fails without returning partial results or writing the cache. A non-2xx overrun still retains the numeric `status` and the adapter's retry metadata; a 429 keeps its retry hint. These are local defensive limits, not upstream limits; the separate MCP 10 MiB budget is described in [the Zhipu section](#zhipu-search).
 - If reading a failed HTTP response body is interrupted or times out, the shared HTTP layer retains the known `status` and retry metadata extracted by the adapter. Explicit host cancellation during a request takes precedence. Network failures and business errors in HTTP 200 responses do not acquire invented HTTP statuses.
 - All search requests reject HTTP redirects; a custom Base URL remains an exact endpoint. Queries that normalize to an empty string fail before fetching. Linkup, Metaso and Querit trim surrounding key whitespace and reject blank keys, as the other required-key adapters do.
-- AnySearch, Keenable, Linkup, Metaso, Querit, Parallel and TinyFish require array result fields and nonblank string URLs on usable rows. Explicit empty arrays remain successful and cache for at most 30 seconds. Malformed fields and nonempty candidate arrays with no usable rows fail without caching. Linkup excludes images first, so image-only results remain a valid empty answer. Metaso preserves its nullish fallback order: `webpages` → `results` → `papers` → `documents` → `data`.
+- AnySearch, Keenable, Linkup, Metaso, Querit, Parallel and TinyFish require array result fields and URLs that pass the shared http(s) result URL policy on usable rows. Explicit empty arrays remain successful and cache for at most 30 seconds. Malformed fields and nonempty candidate arrays with no usable rows fail without caching. Linkup excludes images first, so image-only results remain a valid empty answer. Metaso preserves its nullish fallback order: `webpages` → `results` → `papers` → `documents` → `data`.
 - Business error messages from AnySearch, Querit and both Moonshot sites retain at most 300 code points plus `… [truncated]` when needed. AnySearch/Querit business codes and request identifiers each retain at most 80 code points plus `…`. Fixed prefixes and markers are outside these budgets. Short error formats stay unchanged, and business messages do not invent an HTTP status.
 
 <a id="configuration"></a>
@@ -1109,6 +1108,12 @@ results without caching, valid empty answers and field fallback, key/query
 guards, real HTTP redirect rejection, bounded diagnostics, REST 16 MiB/64 KiB byte
 budgets, exact MCP byte budgets and cleanup after oversized responses, and RPC text
 resembling a timeout.
+
+Result URL scheme validation adds nine regression tests; the current Node suite is
+**380 tests and passes**, covering the protocol allowlist, URL credentials, control
+characters, oversized URLs, wholly unusable result sets, filtering before capping,
+field mapping, and the Coding Plan `link`/`url` fallback. Bun and the Magpie host
+smoke must be rerun before release; results not yet executed are not claimed here.
 
 Bun ran temporarily via `npm exec --yes --package=bun@1.4.4 -- bun run check:bun`,
 without adding a project dependency or lockfile. On Windows, `MAGPIE_BIN` can name

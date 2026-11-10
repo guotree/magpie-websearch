@@ -1,6 +1,6 @@
 import {
   boundDetail, cacheKey, cleanRetryAfter, configCountPolicy, configInt, configStr, makeCache,
-  normalizeQuery, page, requestJSON, resolveEndpoint, resolveResultCount, truncateCodePoints,
+  normalizeQuery, page, requestJSON, resolveEndpoint, resolveResultCount, safeResultUrl, truncateCodePoints,
 } from "../core.mjs"
 
 function describeFailure(value) {
@@ -97,7 +97,7 @@ export function createStepfun(options = {}) {
         throw new Error("Invalid StepFun response: results must be an array")
       }
       const valid = json.results.filter((item) => item && typeof item === "object"
-        && !Array.isArray(item) && typeof item.url === "string" && item.url.trim())
+        && !Array.isArray(item) && safeResultUrl(item.url) !== undefined)
       if (json.results.length > 0 && valid.length === 0) {
         throw new Error("Invalid StepFun response: no usable search results in payload")
       }
@@ -113,7 +113,7 @@ export function createStepfun(options = {}) {
           // Preserve the index-time string; it is not a publication timestamp.
           item.time,
         )
-      })
+      }).filter(Boolean)
       cache.write(identity, results)
       return results
     },

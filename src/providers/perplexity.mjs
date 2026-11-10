@@ -1,6 +1,6 @@
 import {
   boundDetail, cacheKey, cleanRetryAfter, configCountPolicy, configInt, configStr, makeCache,
-  normalizeQuery, page, requestJSON, resolveEndpoint, resolveResultCount, truncateCodePoints,
+  normalizeQuery, page, requestJSON, resolveEndpoint, resolveResultCount, safeResultUrl, truncateCodePoints,
 } from "../core.mjs"
 
 function parseCountry(options) {
@@ -110,7 +110,7 @@ export function createPerplexity(options = {}) {
         throw new Error("Invalid Perplexity response: results must be an array")
       }
       const valid = json.results.filter((item) => item && typeof item === "object"
-        && !Array.isArray(item) && typeof item.url === "string" && item.url.trim())
+        && !Array.isArray(item) && safeResultUrl(item.url) !== undefined)
       if (json.results.length > 0 && valid.length === 0) {
         throw new Error("Invalid Perplexity response: no usable search results in payload")
       }
@@ -125,7 +125,7 @@ export function createPerplexity(options = {}) {
           text,
           date ?? lastUpdated,
         )
-      })
+      }).filter(Boolean)
       cache.write(identity, results)
       return results
     },

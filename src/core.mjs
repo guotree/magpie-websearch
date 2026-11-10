@@ -76,6 +76,27 @@ export function requireQuery(query, label) {
   return value
 }
 
+// A search result must be an absolute web URL. Dropping a bad row is safer
+// than letting the host render javascript:, data:, file: or credential-bearing
+// links; reachability is deliberately not checked because the plugin never
+// fetches result URLs.
+export function safeResultUrl(value) {
+  if (typeof value !== "string") return undefined
+  const raw = value.trim()
+  if (!raw || raw.length > MAX_RESULT_URL_CHARS) return undefined
+  if (RESULT_URL_CONTROLS.test(raw)) return undefined
+  let parsed
+  try {
+    parsed = new URL(raw)
+  } catch {
+    return undefined
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return undefined
+  if (parsed.username || parsed.password) return undefined
+  const href = parsed.href
+  return href.length <= MAX_RESULT_URL_CHARS ? href : undefined
+}
+
 // An explicitly empty array is a valid answer; malformed shapes and an array
 // containing only unusable rows are failures and must not enter the cache.
 // Provider-specific exclusions (e.g. Linkup images) are not malformed rows.
@@ -83,7 +104,7 @@ export function searchRows(value, label, { url = (item) => item.url, ignore = ()
   if (!Array.isArray(value)) throw new Error(`Invalid ${label} response: expected results array`)
   const candidates = value.filter((item) => !ignore(item))
   const valid = candidates.filter((item) => item && typeof item === "object" && !Array.isArray(item)
-    && typeof url(item) === "string" && url(item).trim())
+    && safeResultUrl(url(item)) !== undefined)
   if (candidates.length > 0 && valid.length === 0) {
     throw new Error(`Invalid ${label} response: no usable search results in payload`)
   }
@@ -136,6 +157,12 @@ export function resolveResultCount(hostCount, { fallbackCount, configuredLimit, 
 // 300-code-point diagnostic, so they need much less.
 export const MAX_REST_BYTES = 16 * 1024 * 1024
 export const MAX_ERROR_BYTES = 64 * 1024
+
+// Result URLs are untrusted upstream content. Bound their length, reject
+// controls before URL parsing strips them, and allow only web pages.
+export const MAX_RESULT_URL_CHARS = 8192
+const RESULT_URL_CONTROLS =
+  /[\u0000-\u001F\u007F-\u009F\u061C\u200E\u200F\u2028\u2029\u202A-\u202E\u2066-\u2069]/
 
 // An error body is diagnostic, not content: a WAF or CDN interposing an HTML
 // page can make it tens of kilobytes. API refusal bodies are JSON of a few
@@ -289,13 +316,15 @@ export function makeCache(ttl, limit = 200) {
 }
 
 // A magpie page: `text` is the snippet/body, `age` is the vendor's own date
-// string (magpie does not require it to be parsed). A hit without a URL cannot
-// be opened or cited, so it is dropped.
+// string (magpie does not require it to be parsed). A hit without a usable web
+// URL cannot be opened or cited, so it is dropped.
 export function page(title, url, text, age) {
-  if (!url) return undefined
+  const safeUrl = safeResultUrl(url)
+  if (!safeUrl) return undefined
+  const titleText = typeof title === "string" && title.trim() ? title : undefined
   const out = {
-    title: typeof title === "string" && title ? title : String(url),
-    url: String(url),
+    title: titleText ?? safeUrl,
+    url: safeUrl,
     text: typeof text === "string" ? text : text == null ? "" : String(text),
   }
   if (typeof age === "string" && age.trim()) out.age = age.trim()

@@ -269,7 +269,7 @@ MCP 模块集中在 `src/mcp/`，按生命周期策略拆分：[stateless.mjs](.
 
 每次结果缓存未命中都会重新执行 `tools/list`，优先 `web_search_prime`，兼容官方页面展示的 `webSearchPrime`；前者来自服务返回名称的报告，当前项目尚未用真实 Coding Plan Key 确认。始终发送 `search_query`；仅当本次 `inputSchema.properties` 声明时发送 `count`、`search_recency_filter`、`search_domain_filter`、`content_size`。schema 缺少 `count` 时在本地截断；已配置非默认筛选值但 schema 未声明对应字段时，在 `tools/call` 前明确报错，不静默忽略。这里按属性存在与否选择参数，不是完整 JSON Schema 验证：不在本地执行 `maxLength`、`minimum`／`maximum` 等约束，由服务端校验。
 
-结果优先解析 `structuredContent`，再解析 `content[]` 的文本；允许顶层数组、`results`、`search_result` 及最多三层的字符串 JSON 解码。`link ?? url` 须为非空白字符串，trim 后作为 URL；不额外校验语法、协议或可访问性，存在非 null 的 `link` 时不会因其不可用而改取 `url`。文本优先取字符串 `content`，否则取字符串 `snippet`；`publish_date` 映射 `age`。先过滤无可用 URL 项再应用本地上限。合法空数组最多缓存 30 秒，非空但完全不可用或无法解析的 payload 报错且不缓存。
+结果优先解析 `structuredContent`，再解析 `content[]` 的文本；允许顶层数组、`results`、`search_result` 及最多三层的字符串 JSON 解码。`link`／`url` 须通过统一的结果 URL 策略（仅绝对 `http:`／`https:`，并拒绝凭证、控制字符和超长地址）；优先使用合法的 `link`，否则回退到合法的 `url`。文本优先取字符串 `content`，否则取字符串 `snippet`；`publish_date` 映射 `age`。先过滤无可用 URL 项再应用本地上限。合法空数组最多缓存 30 秒，非空但完全不可用或无法解析的 payload 报错且不缓存。
 
 每个 provider 实例另有最多 200 项的工具发现元数据缓存，按站点、端点和 Key 的哈希隔离，仅用于重建结果缓存 identity；它不保存或复用网络 session，结果缓存未命中仍会重新发现工具。
 
@@ -293,7 +293,7 @@ magpie plugin options magpie-websearch '{"zhipu":{"engine":"search_pro","content
 
 默认 `content: "snippet"` 优先摘要，摘要为空白时回退到正文；`"full"` 优先 `content` 正文，正文为空白时回退摘要。选中的文本保留原有缩进和换行，再按 `contentChars` 限制为 4000 个 Unicode 码点，截断时追加 `…`，配置 `0` 保留全部。两种模式都受此上限约束，Magpie 仍有单条 1500 字节的后续限制。API 没有公开关闭正文返回的参数，插件不发送 `include_content`；这些选项只影响本地文本选择。
 
-结果读取 `results` 数组，逐条要求 `url` 为非空白字符串，去除首尾空白后使用；不额外校验结果 URL 的协议、语法或可访问性。标题缺失、类型错误或为空白时回退 URL。字符串 `time` 去除首尾空白后作为 `age`，空白或非字符串值省略，不解析成日期或重命名为发布时间：它表示网页的**索引时间**。作为插件校验策略，缺失、null、非数组结果，以及非空但全部无可用 URL 的结果均报错且不缓存；明确的空数组最多缓存 30 秒。HTTP 200 中 truthy 的 `error` 也作为失败处理，不伪造 HTTP 状态。缓存按最终端点、Key、查询、条数、分类、文本模式及预算哈希隔离，每个插件实例独立。
+结果读取 `results` 数组，逐条要求 `url` 通过统一的结果 URL 策略（仅绝对 `http:`／`https:`，并拒绝凭证、控制字符和超长地址）。标题缺失、类型错误或为空白时回退 URL。字符串 `time` 去除首尾空白后作为 `age`，空白或非字符串值省略，不解析成日期或重命名为发布时间：它表示网页的**索引时间**。作为插件校验策略，缺失、null、非数组结果，以及非空但全部无可用 URL 的结果均报错且不缓存；明确的空数组最多缓存 30 秒。HTTP 200 中 truthy 的 `error` 也作为失败处理，不伪造 HTTP 状态。缓存按最终端点、Key、查询、条数、分类、文本模式及预算哈希隔离，每个插件实例独立。
 
 HTTP 失败保留数值 `status`；上游诊断有长度上限，402 使用固定的余额／组织 Credit 提示。401 提示检查国内 Key 与账户权限；429 同时可能表示请求限流、项目或成员 Credit 上限，保留上游错误标识，并透传校验后的标准 `Retry-After`（整数秒或 HTTP 日期，包括 0）；451 提示查询或返回内容审核未通过。Key 休眠、轮换与后备调度由 Magpie 负责，插件不增加睡眠或自动重试。自定义 Base URL 是精确端点，不补路径；请求拒绝重定向。超时和 `ctx.abort` 覆盖请求及正文读取，`timeout: 0` 仍保留宿主取消。
 
@@ -322,7 +322,7 @@ magpie plugin options magpie-websearch '{"stepfun":{"category":"research","conte
 - `language`：映射 `search_language_filter` 数组，按逗号拆分、去除各项首尾空白和空项并转为小写后，接受最多 20 项两位字母代码（如 `EN, zh` 转为 `en,zh`）；显式超限或非法抛出 TypeError，环境变量非法值记录警告并退回空数组。不校验代码是否实际分配给某种语言。空字符串显式覆盖环境配置。
 - `resultLimit`：显式配置允许 1–20，作为宿主 `count` 的上限；未配置时跟随宿主，无有效宿主数量时回退到 10。
 
-`snippet` 为与查询相关的抽取文本；保留其原有的缩进与换行，按 `contentChars`（默认 4000 码点，`0` 保留全部）进行本地码点截断，截断时追加 `…`。空 snippet 仍保留对应有效 URL。结果中 `url` 必须为有效非空字符串，无可用 URL 的项直接剔除；标题缺失或空白时回退至 URL。`age` 优先取非空字符串 `date`，为空时回退至非空字符串 `last_updated`，两者均无时省略，不借用 `server_time`。
+`snippet` 为与查询相关的抽取文本；保留其原有的缩进与换行，按 `contentChars`（默认 4000 码点，`0` 保留全部）进行本地码点截断，截断时追加 `…`。空 snippet 仍保留对应有效 URL。结果中 `url` 必须通过统一结果 URL 策略；无可用 URL 的项直接剔除；标题缺失或空白时回退至 URL。`age` 优先取非空字符串 `date`，为空时回退至非空字符串 `last_updated`，两者均无时省略，不借用 `server_time`。
 
 空结果数组（`results: []`）正常返回并短缓存（至多 30 秒）；非空数组但无一条可用结果则报错且不缓存。HTTP 200 中 truthy 的 `error` 字段触发业务错误（不伪造 HTTP status）。HTTP 失败保留数值 `status`；标准 `Retry-After`（整数秒或规范 HTTP 日期）经清理后透传；超时与取消均不写缓存。
 
@@ -346,7 +346,7 @@ magpie plugin options magpie-websearch '{"perplexity":{"searchType":"fast","rece
 - `summary`：默认 `false`，仅选择普通摘要 `snippet`。生成摘要必须显式开启；`summary` 选项只接受 JSON 布尔值，字符串 `"true"` 会抛出 `TypeError`。未设置选项时，`BOCHA_SUMMARY` 去除首尾空白后只接受精确的 `true`／`false`，空值为 false，其他值警告并回退 false。开启时优先选择非空白字符串 `summary`，缺失、空白或类型错误时回退字符串 `snippet`，均无时为空字符串；保留所选文本的原有缩进与换行，不额外调用生成模型。
 - `freshness`：时间筛选字符串。支持 `noLimit`、`oneDay`、`oneWeek`、`oneMonth`、`oneYear`、`YYYY-MM-DD`、`YYYY-MM-DD..YYYY-MM-DD`；只校验配置类型并去除首尾空白，不在本地校验日期或范围，内容由上游校验。显式空字符串可清除环境时间过滤；空值省略字段，显式 `noLimit` 原样发送。
 
-结果读取 `data.webPages.value` 数组，逐条要求为非数组对象且包含非空白字符串 `url`，去除 URL 首尾空白后使用；先过滤再截取上限并保持排序，非空数组无可用项时报错且不缓存，空数组正常返回。`name` 映射标题，缺失、类型错误或为空白时回退 URL。`age` 优先取非空白字符串 `datePublished`，为空时回退至字符串 `dateLastCrawled`，两者均无时省略；原样保留厂商时间字符串（包括时区标识），不转换时区。
+结果读取 `data.webPages.value` 数组，逐条要求为非数组对象且 `url` 通过统一的结果 URL 策略（仅绝对 `http:`／`https:`，并拒绝凭证、控制字符和超长地址）；先过滤再截取上限并保持排序，非空数组无可用项时报错且不缓存，空数组正常返回。`name` 映射标题，缺失、类型错误或为空白时回退 URL。`age` 优先取非空白字符串 `datePublished`，为空时回退至字符串 `dateLastCrawled`，两者均无时省略；原样保留厂商时间字符串（包括时区标识），不转换时区。
 
 结构校验与错误处理：响应须为非数组对象；`data` 缺失或非对象时报错；`data.webPages` 缺失或为 `null` 时视为合法无结果并短缓存（至多 30 秒）；存在的 `webPages` 须为非数组对象，`value` 必须为数组。HTTP 200 下若已定义的 `code` 既非数值 200 也非字符串 `"200"`，或 `error` 为 truthy，抛出业务错误；诊断按 `code`、`log_id`（分别限制 80 码点）、第一个非空白 message／msg 排序，再进行总长限制，不赋予伪造的 HTTP status 且不写缓存。HTTP 失败保留数值 `status`，包括 401 正文中断；401 追加检查 API Key 的链接（指向 `https://open.bochaai.com/api-keys`），403 追加检查账户权限与余额的链接（指向 `https://open.bochaai.com/overview`），不断言所有 403 都是余额不足。标准 `Retry-After` 整数秒（包括 0）或规范 HTTP 日期经校验清理后透传。
 
@@ -368,7 +368,7 @@ magpie plugin options magpie-websearch '{"bocha":{"summary":false,"freshness":"o
 - `query`：规范化空白后校验非空。
 - `max_results`：通过 `resolveResultCount(count, countPolicy)` 计算；未配置上限时跟随宿主，最多 10 条。显式 `resultLimit` 允许 1–10，无有效宿主数量时回退到 5。
 
-结果读取 `results` 数组，逐条要求为对象且 `url` 为非空白字符串；自动剔除不含 URL 的项，非空数组无可用项时报错且不缓存。标题缺失或空白时回退 URL。`content` 原文按 `contentChars`（默认 2000 码点，`0` 保留全部）进行本地前缀码点截断，截断时追加 `…`。官方响应不包含日期字段，映射结果省略 `age`，不从正文推测日期。
+结果读取 `results` 数组，逐条要求为对象且 `url` 通过统一结果 URL 策略；自动剔除不含可用 URL 的项，非空数组无可用项时报错且不缓存。标题缺失或空白时回退 URL。`content` 原文按 `contentChars`（默认 2000 码点，`0` 保留全部）进行本地前缀码点截断，截断时追加 `…`。官方响应不包含日期字段，映射结果省略 `age`，不从正文推测日期。
 
 非字符串 `content` 映射为空字符串，即使上游附带未约定时间字段也省略 `age`。截断仅遍历保留前缀及额外一个码点；本地限制控制映射与缓存体积，Magpie 仍将每条文本处理为最多 1500 字节，不保证模型获得完整正文。
 
@@ -390,7 +390,7 @@ magpie plugin options magpie-websearch '{"ollama":{"resultLimit":5,"contentChars
 
 默认 `content: "snippet"` 发送 `X-Respond-With: no-content`，本地仅提取字符串 `description`。`content: "full"` 省略该头，优先非空白字符串 `content`，缺失或空白时回退 `description`。两种模式都按 `contentChars`（默认 4000 码点，0 保留全部）截断选中文本，超长时追加 `…`。默认超时为摘要 25000 毫秒、全文 60000 毫秒，显式 `timeout` 或有效 `JINA_TIMEOUT` 覆盖模式默认值。这里说明适配器发送的选项；本地 dummy 服务不证明线上正文抓取行为或费用。
 
-响应读取 `data` 数组，先过滤无非空白字符串 `url` 的条目，再应用结果上限；非空数组全不可用时报错。标题缺失或空白时回退 URL；`publishedTime` 字符串去除首尾空白后映射为 `age`。若已提供的 `code` 不为数值 200、`status` 不为数值 20000，则视为业务错误；`error` 仅容忍缺失、null、空字符串或空数组，其他值均报错。不伪造 HTTP 状态；缺失、null 或非数组 `data` 报错。
+响应读取 `data` 数组，先过滤 `url` 未通过统一结果 URL 策略的条目，再应用结果上限；非空数组全不可用时报错。标题缺失或空白时回退 URL；`publishedTime` 字符串去除首尾空白后映射为 `age`。若已提供的 `code` 不为数值 200、`status` 不为数值 20000，则视为业务错误；`error` 仅容忍缺失、null、空字符串或空数组，其他值均报错。不伪造 HTTP 状态；缺失、null 或非数组 `data` 报错。
 
 ```sh
 magpie plugin options magpie-websearch '{"jina":{"content":"full","contentChars":4000,"resultLimit":6}}'
@@ -416,7 +416,7 @@ magpie plugin options magpie-websearch '{"kagi":{"recency":"week","region":"cn",
 
 使用 `POST https://google.serper.dev/search`，JSON 请求以 `X-API-KEY` 头认证，Key 从 <https://serper.dev/> 获取，由 Magpie 管理，不能留空。它独立于 SerpApi：后者使用 GET 和 URL 中的 `api_key`。请求发送规范化的非空 `q`、固定 `num: 10`，以及可选 `gl`、`hl`、`tbs`；`tbs` 支持 `qdr:h`、`qdr:d`、`qdr:w`、`qdr:m`、`qdr:y`，默认留空省略。显式 `resultLimit`（1–10）与宿主 `count` 仅决定本地截取条数；未配置时跟随宿主且最多 10 条，不改变发送的 `num`。只请求一页，不补足结果。
 
-仅映射 `organic`：过滤无非空白字符串 `link` 的条目后截取，`title` 缺失或空白时回退 URL，字符串 `snippet` 映射 `text`，字符串 `date` 映射 `age`。`organic` 缺失但含对象 `knowledgeGraph`／`answerBox` 或数组 `peopleAlsoAsk`／`relatedSearches` 时返回 `[]`；其他缺失、null／非数组、或非空但无可用链接的结果报错。非空白字符串 `message` 触发业务错误；`error` 仅容忍缺失、null 或空数组，其他值均报错，不伪造 HTTP 状态。适配器没有独立的文本长度选项；缓存身份包含本地条数上限。
+仅映射 `organic`：过滤 `link` 未通过统一结果 URL 策略的条目后截取，`title` 缺失或空白时回退 URL，字符串 `snippet` 映射 `text`，字符串 `date` 映射 `age`。`organic` 缺失但含对象 `knowledgeGraph`／`answerBox` 或数组 `peopleAlsoAsk`／`relatedSearches` 时返回 `[]`；其他缺失、null／非数组、或非空但无可用链接的结果报错。非空白字符串 `message` 触发业务错误；`error` 仅容忍缺失、null 或空数组，其他值均报错，不伪造 HTTP 状态。适配器没有独立的文本长度选项；缓存身份包含本地条数上限。
 
 ```sh
 magpie plugin options magpie-websearch '{"serper":{"gl":"cn","hl":"zh-cn","tbs":"qdr:w","resultLimit":6}}'
@@ -432,13 +432,13 @@ magpie plugin options magpie-websearch '{"serper":{"gl":"cn","hl":"zh-cn","tbs":
 - 搜狗因上游档位约束至少请求 10 条；Serper 固定请求 `num: 10`；不可配置结果数的接口仅本地截断。有效结果过滤后按所需数量截取，不会通过分页或额外请求补齐不足的条数。
 - `text` 会自动剔除 HTML 标签、反转义字符、折叠多余空白并截断至 1500 字节。
 - `age` 保留厂商返回的时间字符串格式，仅去除首尾空白；空白或非字符串值省略，不猜测日期或转换时区。StepFun 的该字段是索引时间。
-- 自动剔除不包含 URL 的无效结果。
+- 结果 `url` 必须是可解析的绝对 `http:`／`https:` 字符串；插件会去除首尾空白并返回规范化后的 `href`。含其他 scheme、URL 内嵌凭证、C0/C1 或 bidi 标记／嵌入／隔离控制符、行分隔符，或原始或规范化后超过 8192 个 UTF-16 代码单元的 URL 会被丢弃。插件不检查可达性，也不会访问结果 URL；它不阻止 localhost／私网字面地址，因此不在这一层做 SSRF 过滤。非空结果中全部 URL 不可用时按畸形结果报错且不缓存；显式空数组仍是合法空结果。标题缺失或空白时回退到规范化后的 URL。
 - 抛出带有数值型 `status`（401、402、403、429）的错误被 Magpie 识别为服务商拒绝；对于带 Key 请求，Magpie 会休眠该 Key 并尝试下一个。匿名 429 冷却由本插件自主管理；失败时会触发 Magpie 调度下一可用引擎。
 - 429 响应的 `Retry-After` 按适配器策略处理：Bocha、Jina、Kagi、Ollama、Perplexity、SerpApi、Serper、StepFun、Zhipu 和 Z.ai 仅传递校验和规范化后的整数秒数或标准 HTTP 日期；Moonshot 双站优先传递合法标准头，非法或缺失时按[重置头规则](#moonshot-search)回退；其他适配器沿用通用头透传逻辑。
 - 公共 HTTP 层对普通 REST 响应设置本地字节预算：成功响应最多 **16 MiB（16,777,216 字节）**，失败响应正文最多 **64 KiB（65,536 字节）**。按 `fetch` 解压后的实际读取字节累计，不依赖 `Content-Length`；超限会取消流并报错，不返回部分结果、不写缓存。非 2xx 超限仍保留数值型 `status` 和适配器提取的重试信息，429 保留重试提示。该预算是本地防御策略，不是上游限制；MCP 的 10 MiB 预算见 [MCP 结果解析](#zhipu-search)。
 - 公共 HTTP 层在失败响应正文读取中断或超时后，仍保留已知 `status` 和适配器提取的重试信息；请求阶段的宿主主动取消优先报告取消。此规则不把网络连接失败或 HTTP 200 中的业务错误伪装成 HTTP 拒绝。
 - 所有搜索请求均拒绝 HTTP 重定向；自定义 Base URL 仍作为精确端点。标准化后的空查询在发送请求前报错。Linkup、Metaso 和 Querit 与其他要求 Key 的通道一样修剪 Key 首尾空白，空白 Key 不会发送。
-- AnySearch、Keenable、Linkup、Metaso、Querit、Parallel 和 TinyFish 要求结果字段为数组，可用行的 URL 必须为非空白字符串。显式空数组仍正常返回并最多缓存 30 秒；畸形字段或非空候选数组全无可用行则报错且不缓存。Linkup 先排除图片行，纯图片结果仍可得到合法空数组；Metaso 保留 `webpages` → `results` → `papers` → `documents` → `data` 的 nullish 回退顺序。
+- AnySearch、Keenable、Linkup、Metaso、Querit、Parallel 和 TinyFish 要求结果字段为数组，可用行的 URL 必须通过统一结果 URL 策略。显式空数组仍正常返回并最多缓存 30 秒；畸形字段或非空候选数组全无可用行则报错且不缓存。Linkup 先排除图片行，纯图片结果仍可得到合法空数组；Metaso 保留 `webpages` → `results` → `papers` → `documents` → `data` 的 nullish 回退顺序。
 - AnySearch、Querit 和 Moonshot 双站的业务错误消息最多保留 300 码点，超长另加 `… [truncated]`；AnySearch、Querit 的动态业务码和请求标识各保留最多 80 码点，超长另加 `…`。预算不包含固定前缀和标记。短错误格式保持不变，不因业务消息伪造 HTTP status。
 
 <a id="configuration"></a>
@@ -666,6 +666,8 @@ Node 与 Bun 的测试入口均通过 `scripts/test.mjs` 枚举 `test/` 目录�
 可用 `MAGPIE_PLUGIN_DIR` 指定解包后的 npm 插件目录，目录名应保持为 `magpie-websearch` 以维持 Vendor ID。`MAGPIE_SMOKE_ROOT` 可覆盖测试沙箱使用的系统临时目录。CI 分别运行 Node 22／24、Bun 检查和解包后的 npm 包 Magpie 验证，三个作业之间没有顺序依赖。
 
 0.7.0 发布时的本地验证使用 **Node.js 24.19.0、Bun 1.4.4、magpie 0.1.3141**，Node 与 Bun 均通过 329 项测试（26 个测试文件），完整 Magpie 沙箱验证通过。2026-11-07 本轮加固后，**Node.js 20.3.0、Node.js 24.19.0 和 Bun 1.4.4 均通过 371 项测试（28 个测试文件）**；Windows npm/cmd 的 `check:bun` 入口也通过。完整宿主沙箱在 **magpie 0.1.3216** 通过，覆盖注册、数量、超时、匿名冷却、Key 轮换、后备调度和双站 MCP 生命周期。新增测试验证畸形结果不缓存、合法空结果及字段回退、Key/query 守卫、真实 HTTP 重定向拒绝、诊断截断、REST 16 MiB／64 KiB 字节预算、MCP 精确字节预算和超限清理，以及伪装超时的 RPC 文本。
+
+结果 URL scheme 校验新增 9 项回归测试；当前 Node 套件为 **380 项并通过**，覆盖协议白名单、URL 凭证、控制字符、超长地址、全非法结果、过滤发生在截取之前、字段映射，以及 Coding Plan 的 `link`／`url` 回退。Bun 与 Magpie 宿主 smoke 需在发布前重新运行；这里不把尚未运行的结果写成已验证。
 
 Bun 通过 `npm exec --yes --package=bun@1.4.4 -- bun run check:bun` 临时运行，不增加项目依赖或 lockfile。Windows 可通过 `MAGPIE_BIN` 指定实际的 Magpie 可执行文件；未设置时使用 PATH 中的 `magpie`。这些验证使用本地模拟服务与 dummy Key，不代表真实账户搜索、质量或计费验证。此前 **magpie 0.1.2911／0.1.2964／0.1.3026／0.1.3035／0.1.3041／0.1.3097** 的记录属于历史验证；这些记录均不代表最低支持版本。
 

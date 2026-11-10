@@ -1,6 +1,6 @@
 import {
   boundDetail, cacheKey, cleanRetryAfter, configCountPolicy, configInt, configStr, makeCache,
-  normalizeQuery, page, requestJSON, resolveEndpoint, resolveResultCount,
+  normalizeQuery, page, requestJSON, resolveEndpoint, resolveResultCount, safeResultUrl,
 } from "../core.mjs"
 
 function describeKagiError(error) {
@@ -111,7 +111,7 @@ export function createKagi(options = {}) {
         return []
       }
 
-      const valid = json.data.search.filter((item) => item && typeof item === "object" && !Array.isArray(item) && typeof item.url === "string" && item.url.trim())
+      const valid = json.data.search.filter((item) => item && typeof item === "object" && !Array.isArray(item) && safeResultUrl(item.url) !== undefined)
       if (valid.length === 0) {
         throw new Error("Invalid Kagi response: no usable search results in payload")
       }
@@ -125,7 +125,7 @@ export function createKagi(options = {}) {
           snippet,
           age,
         )
-      })
+      }).filter(Boolean)
 
       cache.write(identity, results)
       return results

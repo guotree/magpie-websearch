@@ -1,6 +1,6 @@
 import {
   boundDetail, cacheKey, cleanRetryAfter, configCountPolicy, configInt, configStr, makeCache,
-  normalizeQuery, page, requestJSON, resolveEndpoint, resolveResultCount,
+  normalizeQuery, page, requestJSON, resolveEndpoint, resolveResultCount, safeResultUrl,
 } from "../core.mjs"
 
 function describeSerperError(json) {
@@ -109,7 +109,7 @@ export function createSerper(options = {}) {
         return []
       }
 
-      const valid = json.organic.filter((item) => item && typeof item === "object" && !Array.isArray(item) && typeof item.link === "string" && item.link.trim())
+      const valid = json.organic.filter((item) => item && typeof item === "object" && !Array.isArray(item) && safeResultUrl(item.link) !== undefined)
       if (valid.length === 0) {
         throw new Error("Invalid Serper response: no usable search results in payload")
       }
@@ -123,7 +123,7 @@ export function createSerper(options = {}) {
           snippet,
           age,
         )
-      })
+      }).filter(Boolean)
 
       cache.write(identity, results)
       return results

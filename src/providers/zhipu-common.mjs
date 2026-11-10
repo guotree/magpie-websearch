@@ -1,6 +1,6 @@
 import {
   boundDetail, cacheKey, cleanRetryAfter, configCountPolicy, configInt, configStr, makeCache,
-  normalizeQuery, page, requestJSON, resolveEndpoint, resolveResultCount, truncateCodePoints,
+  normalizeQuery, page, requestJSON, resolveEndpoint, resolveResultCount, safeResultUrl, truncateCodePoints,
 } from "../core.mjs"
 
 // Some proxies wrap successful responses in a conventional status envelope.
@@ -123,7 +123,7 @@ export function createZhipuProvider(meta, options = {}) {
         throw new Error(`Invalid ${label} response: search_result must be an array`)
       }
       const valid = json.search_result.filter((item) => item && typeof item === "object"
-        && !Array.isArray(item) && typeof item.link === "string" && item.link.trim())
+        && !Array.isArray(item) && safeResultUrl(item.link) !== undefined)
       if (json.search_result.length > 0 && valid.length === 0) {
         throw new Error(`Invalid ${label} response: no usable search results in payload`)
       }
@@ -132,7 +132,7 @@ export function createZhipuProvider(meta, options = {}) {
         item.link.trim(),
         truncateCodePoints(typeof item.content === "string" ? item.content : "", contentChars),
         item.publish_date,
-      ))
+      )).filter(Boolean)
       cache.write(identity, results)
       return results
     },

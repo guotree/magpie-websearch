@@ -61,6 +61,7 @@ export function createAnysearch(options = {}) {
       const results = searchRows(json.data?.results, "AnySearch")
         .slice(0, body.max_results)
         .map((item) => page(item.title, item.url, item.content ?? item.snippet))
+        .filter(Boolean)
       cache.write(identity, results)
       return results
     },

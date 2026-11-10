@@ -61,6 +61,7 @@ export function createParallel(options = {}) {
         const results = searchRows(json.results, "Parallel")
           .slice(0, limit)
           .map((item) => page(item.title, item.url, truncateCodePoints(extractText(item.excerpts), contentChars), item.publish_date))
+          .filter(Boolean)
         cache.write(identity, results)
         return results
       }
@@ -78,6 +79,7 @@ export function createParallel(options = {}) {
       const results = searchRows(json.results, "Parallel")
         .slice(0, limit)
         .map((item) => page(item.title, item.url, truncateCodePoints(extractText(item.excerpts), contentChars), item.publish_date))
+        .filter(Boolean)
       cache.write(identity, results)
       return results
     },
