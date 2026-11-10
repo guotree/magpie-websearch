@@ -1,6 +1,6 @@
 {
   "name": "@guotree/magpie-websearch",
-  "version": "0.7.2",
+  "version": "0.7.3",
   "description": "Web search APIs for magpie: 21 REST and MCP providers including Zhipu and Z.ai Standard API and Coding Plan search. Keys are managed by magpie.",
   "type": "module",
   "main": "./index.mjs",
